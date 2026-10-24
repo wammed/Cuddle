@@ -138,6 +138,7 @@ export function App() {
         if (prev.some((f) => f.item_id === item.item_id)) return prev;
         return [...prev, item];
       });
+      setSelectedItem(item);
       addHistory(`Staged "${item.display_name}" via ${staged.clone_method}`);
       addLog(`Staged file "${item.display_name}" (${staged.clone_method}) -> ${staged.staged_path}`);
     } catch (err) {

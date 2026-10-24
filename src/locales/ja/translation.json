@@ -64,7 +64,7 @@
   },
   "diff": {
     "title": "差分プレビュー (原本 vs 作業コピー)",
-    "no_diff": "原本と作業コピーに差分はありません（同一）",
+    "no_diff": "原本と作業コピーの内容は完全に一致しています (変更なし)",
     "binary_file": "バイナリファイルのためテキスト差分は表示できません",
     "additions_deletions": "+{{additions}} 行 / -{{deletions}} 行",
     "reset_to_original": "原本状態へ復元 (リセット)",

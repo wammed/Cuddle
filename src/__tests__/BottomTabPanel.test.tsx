@@ -7,8 +7,26 @@ import type { StagedItemDto } from "../types/StagedItemDto";
 import type { FileDiffResultDto } from "../types/FileDiffResultDto";
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn().mockImplementation((cmd: string) => {
+  invoke: vi.fn().mockImplementation((cmd: string, args?: Record<string, unknown>) => {
     if (cmd === "get_file_diff") {
+      if (args?.stageId === "stage-identical") {
+        const identicalDiff: FileDiffResultDto = {
+          stage_id: "stage-identical",
+          is_binary: false,
+          has_changes: false,
+          additions: 0,
+          deletions: 0,
+          lines: [
+            {
+              change_type: "Equal",
+              old_line_number: 1,
+              new_line_number: 1,
+              content: "identical content",
+            },
+          ],
+        };
+        return Promise.resolve(identicalDiff);
+      }
       const mockDiff: FileDiffResultDto = {
         stage_id: "stage-1",
         is_binary: false,
@@ -215,5 +233,37 @@ describe("BottomTabPanel & Diff Operations (Phase 4.2)", () => {
 
     expect(handleReflect).toHaveBeenCalledWith("stage-1");
   });
+
+  it("displays identical content message without reflect button when no changes exist (Test 2)", async () => {
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    const identicalStaged: StagedItemDto = {
+      ...sampleStaged,
+      stage_id: "stage-identical",
+      display_name: "clean.txt",
+    };
+
+    render(
+      <BottomTabPanel
+        selectedItem={null}
+        extractedInfo={null}
+        appConfig={null}
+        logs={[]}
+        history={[]}
+        stagedItems={[identicalStaged]}
+        onClose={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("原本と作業コピーの内容は完全に一致しています (変更なし)")).toBeDefined();
+    });
+
+    // Verify reflect button is NOT rendered
+    expect(screen.queryByText("原本へ変更を反映")).toBeNull();
+  });
 });
+
 

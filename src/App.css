@@ -1459,6 +1459,22 @@ body {
   color: var(--accent-brand);
 }
 
+.diff-file-select {
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--border-subtle);
+  color: var(--accent-brand);
+  border-radius: var(--radius-xs);
+  padding: 2px 6px;
+  font-size: 11px;
+  cursor: pointer;
+  outline: none;
+  transition: all var(--trans-fast);
+}
+
+.diff-file-select:focus {
+  border-color: var(--accent-brand);
+}
+
 .diff-stat-tag {
   font-family: var(--font-mono);
   font-size: 11px;

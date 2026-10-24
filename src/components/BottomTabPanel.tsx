@@ -37,15 +37,34 @@ export function BottomTabPanel({
   const [isDiffLoading, setIsDiffLoading] = useState(false);
   const [showReflectModal, setShowReflectModal] = useState(false);
   const [isReflecting, setIsReflecting] = useState(false);
+  const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
 
   const matchedStaged = useMemo(() => {
-    if (!selectedItem) return null;
-    return (
-      stagedItems.find(
-        (s) => s.original_item_id === selectedItem.item_id || s.stage_id === selectedItem.item_id
-      ) ?? null
-    );
-  }, [selectedItem, stagedItems]);
+    // 1. If explicit selectedStageId exists in current stagedItems
+    if (selectedStageId) {
+      const found = stagedItems.find((s) => s.stage_id === selectedStageId);
+      if (found) return found;
+    }
+
+    // 2. If selectedItem matches a staged item through any identity
+    if (selectedItem) {
+      const found = stagedItems.find(
+        (s) =>
+          s.stage_id === selectedItem.item_id ||
+          s.original_item_id === selectedItem.item_id ||
+          s.raw_base64 === selectedItem.raw_base64 ||
+          s.staged_raw_base64 === selectedItem.raw_base64 ||
+          (selectedItem.inode > 0n &&
+            s.original_snapshot.inode === selectedItem.inode &&
+            s.original_snapshot.dev === selectedItem.dev) ||
+          s.display_name === selectedItem.display_name
+      );
+      if (found) return found;
+    }
+
+    // 3. Fallback to the most recent staged item if any exist
+    return stagedItems.length > 0 ? stagedItems[stagedItems.length - 1] : null;
+  }, [selectedItem, stagedItems, selectedStageId]);
 
   const loadDiff = useCallback(async (stageId: string) => {
     try {
@@ -66,7 +85,7 @@ export function BottomTabPanel({
     } else {
       setDiffResult(null);
     }
-  }, [matchedStaged, loadDiff]);
+  }, [matchedStaged, loadDiff, activeTab]);
 
   const handleReset = async () => {
     if (!matchedStaged) return;
@@ -225,7 +244,22 @@ export function BottomTabPanel({
                   <div className="diff-header-left">
                     <GitCompare size={14} className="text-cyan-400" />
                     <span className="diff-title">{t("diff.title")}</span>
-                    <span className="diff-file-tag">{matchedStaged.display_name}</span>
+                    {stagedItems.length > 1 ? (
+                      <select
+                        className="diff-file-select font-mono"
+                        value={matchedStaged.stage_id}
+                        onChange={(e) => setSelectedStageId(e.target.value)}
+                        title="Select staged file to preview"
+                      >
+                        {stagedItems.map((s) => (
+                          <option key={s.stage_id} value={s.stage_id}>
+                            {s.display_name} ({s.clone_method === "Reflink" ? "CoW" : "Copy"})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="diff-file-tag">{matchedStaged.display_name}</span>
+                    )}
                     {diffResult && (
                       <span className="diff-stat-tag">
                         {t("diff.additions_deletions", {

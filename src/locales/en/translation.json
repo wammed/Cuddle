@@ -1,0 +1,42 @@
+{
+  "app": {
+    "title": "FileWorkbench (Cuddle)",
+    "subtitle": "Safe Linux file workbench that hugs your originals tight",
+    "welcome": "Welcome to FileWorkbench"
+  },
+  "common": {
+    "switch_language": "Language",
+    "language_en": "English",
+    "language_ja": "日本語",
+    "greet": "Greet",
+    "placeholder_name": "Enter a name...",
+    "status_ready": "Ready",
+    "status_running": "Running",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "close": "Close"
+  },
+  "nav": {
+    "search": "Search",
+    "tree": "Folder Tree",
+    "browser": "File Browser",
+    "workspace": "Workspace",
+    "details": "Details",
+    "logs": "Execution Logs"
+  },
+  "workspace": {
+    "empty_state": "No files staged in workspace-temp",
+    "original_protected": "Original files are strictly protected (read-only)",
+    "reflink_enabled": "Reflink (CoW) copy enabled when supported"
+  },
+  "warnings": {
+    "external_storage": "Target file is on external storage or outside home directory. In-place changes are forbidden.",
+    "conflict_detected": "Original file has been modified externally since staged."
+  },
+  "errors": {
+    "operation_forbidden": "Operation prohibited: Original file cannot be modified directly.",
+    "insufficient_space": "Insufficient free space on disk. At least 1.5x original size is required.",
+    "not_found": "Specified file or directory not found."
+  }
+}

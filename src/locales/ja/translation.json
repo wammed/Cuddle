@@ -1,0 +1,42 @@
+{
+  "app": {
+    "title": "FileWorkbench (Cuddle)",
+    "subtitle": "原本を保護し安全な作業領域を提供するLinux向けファイルワークベンチ",
+    "welcome": "FileWorkbench へようこそ"
+  },
+  "common": {
+    "switch_language": "言語切替",
+    "language_en": "English",
+    "language_ja": "日本語",
+    "greet": "挨拶実行",
+    "placeholder_name": "名前を入力...",
+    "status_ready": "準備完了",
+    "status_running": "実行中",
+    "cancel": "キャンセル",
+    "confirm": "確定",
+    "save": "保存",
+    "close": "閉じる"
+  },
+  "nav": {
+    "search": "検索",
+    "tree": "フォルダツリー",
+    "browser": "ファイルブラウザー",
+    "workspace": "ワークスペース",
+    "details": "詳細情報",
+    "logs": "実行ログ"
+  },
+  "workspace": {
+    "empty_state": "作業領域（workspace-temp）にファイルがありません",
+    "original_protected": "原本ファイルは厳格に保護されています（読み取り専用）",
+    "reflink_enabled": "対応環境では Reflink (CoW) 高速コピーが有効です"
+  },
+  "warnings": {
+    "external_storage": "対象ファイルは外部ストレージまたはホームディレクトリ外にあります。原本の直接変更は禁止されています。",
+    "conflict_detected": "原本ファイルが作業コピー作成後に外部プロセスによって変更されています。"
+  },
+  "errors": {
+    "operation_forbidden": "操作が禁止されました：原本ファイルを直接変更することはできません。",
+    "insufficient_space": "ディスク容量が不足しています。原本サイズの1.5倍以上の空き容量が必要です。",
+    "not_found": "指定されたファイルまたはディレクトリが見つかりません。"
+  }
+}

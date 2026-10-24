@@ -2,6 +2,7 @@ pub mod config;
 pub mod models;
 pub mod sandbox;
 pub mod scanner;
+pub mod search_filename;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct LandlockStatusInfo {
@@ -92,6 +93,15 @@ fn scan_dir(
     scanner::scan_directory(&path, &opts).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn search_files_by_name(
+    pattern: String,
+    options: Option<search_filename::SearchFilenameOptions>,
+) -> Result<search_filename::SearchResultDto, String> {
+    let opts = options.unwrap_or_default();
+    search_filename::search_filename(&pattern, &opts).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -102,7 +112,8 @@ pub fn run() {
             get_demo_items,
             get_app_config,
             save_app_config,
-            scan_dir
+            scan_dir,
+            search_files_by_name
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

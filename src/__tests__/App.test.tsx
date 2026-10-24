@@ -53,6 +53,13 @@ vi.mock("@tauri-apps/api/core", () => ({
         security: { enforce_landlock: true },
       });
     }
+    if (cmd === "search_files_by_name") {
+      return Promise.resolve({
+        items: [],
+        engine_used: "plocate",
+        total_matches: 0,
+      });
+    }
     return Promise.resolve("");
   }),
 }));

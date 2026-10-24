@@ -5,7 +5,7 @@
 </p>
 
 **Document Date:** 2026-10-24  
-**Status:** Phase 2.1 Completed, Ready for Phase 2.2  
+**Status:** Phase 2.2 Completed, Ready for Phase 2.3  
 **Target Audience:** Development, Architecture, and QA Teams; Next Working Session Maintainers  
 
 ---
@@ -97,7 +97,14 @@
   * Non-UTF-8 path testing (`\xFF\xFE`) verifying lossless dual-key traversal and representation
   * Tauri IPC command `scan_dir` exposed
   * Automated testing: 24 Cargo tests 100% pass, 5 Vitest tests 100% pass, Clippy zero warnings
-* [ ] **Phase 2.2 (plocate Index Integration & Fast Filename Search): Awaiting start**
+* [x] **Phase 2.2 (plocate Index Integration & Fast Filename Search): Completed**
+  * Sub-millisecond filename search via `plocate --null` direct argument array invocation (no shell strings) (`src-tauri/src/search_filename.rs`)
+  * Automatic fallback to recursive `walkdir` traversal when `plocate` is missing, unindexed, or errors
+  * Search boundary constraints (`scope_raw_base64`) and case-insensitive (`ignore_case`) / basename (`basename_only`) controls
+  * Automated TypeScript bindings synchronization via `ts-rs` (`SearchFilenameOptions.ts`, `SearchResultDto.ts`)
+  * Tauri IPC command `search_files_by_name` exposed
+  * Automated testing: 30 Cargo tests 100% pass, 5 Vitest tests 100% pass, Clippy zero warnings
+* [ ] **Phase 2.3 (Tantivy + lindera-tantivy Japanese Full-text Search Engine): Awaiting start**
 
 ---
 
@@ -120,30 +127,40 @@ All future development must strictly adhere to the following protocol:
 
 ---
 
-## 6. Next Session Startup Guide (Phase 2.2 Tasks)
+## 6. Next Session Startup Guide (Phase 2.3 Tasks)
 
-Strategic architectural plan and implementation roadmap for Phase 2.2:
+Strategic architectural plan and implementation roadmap for Phase 2.3:
 
-### 6.1 Phase 2.2 Architecture & Design Decisions
-* **plocate Integration & Automatic Fallback:**
-  * When `plocate` binary is available on the system, invoke `plocate --null <pattern>` directly via argument array execution (no shell interpolation) for millisecond filename search.
-  * When `plocate` is unavailable or index is unreadable, automatically fall back to direct directory traversal via `walkdir` engine (built in Phase 2.1).
-* **Batch Conversion to `FileItem`:**
-  * Convert each matching path to dual-key `FileItem` with physical `inode` and `dev` metadata.
-* **Search Scope Confinement:**
-  * Support confining search queries to `$HOME` or specified subdirectories to maintain safety and original protection boundaries.
+### 6.1 Phase 2.3 Architecture & Design Decisions
+* **Tantivy + Lindera (Morphological Analysis) Integration:**
+  * High-performance search library `tantivy` (v0.22) paired with `lindera-tantivy` (IPADIC tokenizer) for Japanese and English full-text search.
+  * Schema definition:
+    * `item_id`: String (UUID, fast facet)
+    * `raw_base64`: Plain string
+    * `display_name`: Text (Japanese tokenizer + n-gram indexing)
+    * `body`: Text (Japanese tokenizer + highlighted snippet generation)
+    * `mtime_ms`: Integer (i64)
+    * `size`: Integer (u64)
+* **Index Storage Location:**
+  * `$XDG_DATA_HOME/Cuddle/index/` (fallback to `~/.local/share/Cuddle/index/`)
+* **Incremental Index Updates & Memory Quota:**
+  * Cross-reference `mtime` and `inode` to only index modified or newly added files.
+  * Bound indexing memory buffer (default: 50 MiB).
 
 ### 6.2 Step-by-Step Implementation Guide
-1. **Implement Filename Search Module (`src-tauri/src/search_filename.rs`):**
-   * `search_filename(pattern: &str, scope: Option<&Path>) -> Result<Vec<FileItem>, SearchError>`
-   * `plocate` probe and direct execution
-   * Automatic fallback to `walkdir` scanner
-2. **Expose Tauri IPC Commands & Tests:**
-   * `search_files_by_name(pattern: String, scope_base64: Option<String>) -> Result<Vec<FileItem>, String>`
-   * Test matrix covering normal matches, wildcard patterns, non-existent files, and fallback execution
-3. **Validation Commands:**
+1. **Add Dependencies (`src-tauri/Cargo.toml`):**
+   * `tantivy = "0.22"`
+   * `lindera-tantivy = "0.32"` (or compatible release)
+2. **Implement Full-text Search Module (`src-tauri/src/search_fulltext.rs`):**
+   * Index lifecycle management and schema registration
+   * Document insertion, incremental update, and deletion
+   * Query execution with BM25 scoring and snippet generation
+3. **Expose Tauri IPC Commands & Tests:**
+   * `search_fulltext(query: String, limit: Option<usize>) -> Result<Vec<FulltextHitDto>, String>`
+   * Morphological tokenization, compound word matching, and accuracy tests
+4. **Validation Commands:**
    ```bash
-   cargo test --lib search_filename::tests
+   cargo test --lib search_fulltext::tests
    cargo clippy -- -D warnings
    pnpm test
    ```

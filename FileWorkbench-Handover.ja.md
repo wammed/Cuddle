@@ -5,7 +5,7 @@
 </p>
 
 **文書作成日：** 2026-10-24  
-**ステータス：** Phase 2.1 完了、Phase 2.2 着手準備完了  
+**ステータス：** Phase 2.2 完了、Phase 2.3 着手準備完了  
 **対象：** 開発・設計・テスト担当者、次期作業セッション担当  
 
 ---
@@ -97,7 +97,14 @@
   * 非 UTF-8 不正バイト列（`\xFF\xFE`）ファイル名の安全走査・二重キー保持テスト全件パス
   * Tauri IPC コマンド `scan_dir` 公開
   * Cargo テスト 24 件 100% パス、Vitest 5 件 100% パス、Clippy 警告ゼロ
-* [ ] **Phase 2.2（plocate インデックス連携 & 高速ファイル名検索）：着手待ち**
+* [x] **Phase 2.2（plocate インデックス連携 & 高速ファイル名検索）：完了**
+  * `plocate --null` による直接引数配列起動（シェル介在なし）でのミリ秒単位ファイル名検索実装（`src-tauri/src/search_filename.rs`）
+  * `plocate` 不在・未インデックス・エラー時の `walkdir` 直接走査自動フォールバック機構
+  * スコープディレクトリ制限（`scope_raw_base64`）および大文字小文字無視（`ignore_case`）・ベースネーム照合（`basename_only`）制御
+  * `ts-rs` による TypeScript 型自動同期（`SearchFilenameOptions.ts`, `SearchResultDto.ts`）
+  * Tauri IPC コマンド `search_files_by_name` 公開
+  * Cargo テスト 30 件 100% パス、Vitest 5 件 100% パス、Clippy 警告ゼロ
+* [ ] **Phase 2.3（Tantivy + lindera-tantivy 日本語全文検索エンジン）：着手待ち**
 
 ---
 
@@ -120,30 +127,40 @@
 
 ---
 
-## 6. 次期セッション着手手順（Phase 2.2 のタスク）
+## 6. 次期セッション着手手順（Phase 2.3 のタスク）
 
-Phase 2.2 における方針および実装計画：
+Phase 2.3 における方針および実装計画：
 
-### 6.1 Phase 2.2 の目的と設計方針
-* **plocate 連携 & 自動フォールバック仕様：**
-  * システムに `plocate` コマンドが存在する場合は `plocate --null <pattern>` を直接引数配列起動（シェル介在なし）で実行し、ミリ秒単位でファイル名検索。
-  * `plocate` 未インストール時または `updatedb` データベース不在・アクセス権限エラー時は、Phase 2.1 で構築した `walkdir` スキャナによる直接走査へ自動フォールバック。
-* **検索結果の `FileItem` 変換：**
-  * 検索ヒットした各パスから `symlink_metadata` を取得し、二重キー `FileItem`（Base64 + display_name + inode + dev）へバッチ変換。
-* **検索スコープ制限：**
-  * ホームディレクトリ（`$HOME`）配下または指定ディレクトリ配下に検索スコープを限定可能とし、原本保護境界を遵守。
+### 6.1 Phase 2.3 の目的と設計方針
+* **Tantivy + Lindera（形態素解析）の統合：**
+  * 高速全文検索エンジン `tantivy` (v0.22) と日本語形態素解析トークナイザー `lindera-tantivy`（IPADIC 辞書）の統合。
+  * スキーマ定義：
+    * `item_id`: 文字列（UUID・ファセット）
+    * `raw_base64`: プレーン文字列
+    * `display_name`: テキスト（日本語トークナイザー + n-gram）
+    * `body`: テキスト（日本語トークナイザー + プレビュー用ハイライトスニペット生成）
+    * `mtime_ms`: 数値（i64）
+    * `size`: 数値（u64）
+* **インデックス配置場所：**
+  * `$XDG_DATA_HOME/Cuddle/index/`（未定義時は `~/.local/share/Cuddle/index/`）
+* **差分インデックス更新 & メモリ制御：**
+  * `mtime` と `inode` を照合し、変更があったファイルのみ差分インデックス。
+  * インデックス書き込み時のメモリバッファ制限（既定 50 MiB）。
 
 ### 6.2 実行する実装手順
-1. **検索モジュール作成（`src-tauri/src/search_filename.rs`）：**
-   * `search_filename(pattern: &str, scope: Option<&Path>) -> Result<Vec<FileItem>, SearchError>`
-   * `plocate` 存在判定機構（`which plocate` / 直接実行プローブ）
-   * 直接走査フォールバック機構
-2. **Tauri コマンド公開 & テスト：**
-   * `search_files_by_name(pattern: String, scope_base64: Option<String>) -> Result<Vec<FileItem>, String>`
-   * 正常検索・ワイルドカード検索・存在しないファイル・フォールバック動作の自動テスト
-3. **テスト実行コマンド：**
+1. **依存クレート追加（`src-tauri/Cargo.toml`）：**
+   * `tantivy = "0.22"`
+   * `lindera-tantivy = "0.32"` (または互換バージョン)
+2. **全文検索モジュール作成（`src-tauri/src/search_fulltext.rs`）：**
+   * インデックス初期化・スキーマ登録
+   * ドキュメント追加・差分更新・削除
+   * スニペット付きクエリ検索（BM25 スコアリング）
+3. **Tauri コマンド公開 & テスト：**
+   * `search_fulltext(query: String, limit: Option<usize>) -> Result<Vec<FulltextHitDto>, String>`
+   * 形態素解析（分かち書き）と複合語の検索精度テスト
+4. **テスト実行コマンド：**
    ```bash
-   cargo test --lib search_filename::tests
+   cargo test --lib search_fulltext::tests
    cargo clippy -- -D warnings
    pnpm test
    ```

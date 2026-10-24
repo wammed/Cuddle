@@ -165,7 +165,19 @@
   * One-click "Reset to Original" button in preview header connected to live backend reset
   * Full bilingual dictionary expansion (`diff.*`, `errors.ERR_DIFF_FAILED`)
   * Automated testing: 69 Cargo tests 100% pass, 12 Vitest tests 100% pass, Clippy zero warnings, Vite build success
-* [ ] **Phase 4.3 (Safe Original Reflection Transaction, Conflict Guard & TOCTOU Race Defense): Ready to start**
+* [x] **Phase 4.3 (Safe Original Reflection Transaction, Conflict Guard & TOCTOU Race Defense): Completed**
+  * Safe original reflection transaction engine implemented (`src-tauri/src/workspace.rs`)
+  * Pre-flight rigorous multi-guardrails:
+    * Dynamic forbidden zone enforcement (`validate_reflection` blocks writes outside `$HOME`, mount boundaries, or external storage)
+    * TOCTOU conflict detection (`verify_conflict` automatically aborts upon external SHA-256 mismatch, mtime variance, inode change, or size drift)
+    * Destination disk space availability check
+  * POSIX `fs::rename` atomic replacement using sibling temporary file (`.cuddle_reflect_<uuid>.tmp`) within the identical parent directory/filesystem
+  * Automatic post-reflection snapshot refreshment (SHA-256 update) and staging status transition to `StageStatus::Reflected`
+  * Tauri IPC command `reflect_staged_file` exposed and registered in `invoke_handler`
+  * Added "Reflect Changes to Original" button in `BottomTabPanel.tsx` diff header with safety confirmation modal dialog displaying original/staged paths, diff statistics, and warnings
+  * UI execution integration in `App.tsx` with automatic directory re-scanning to synchronize size and timestamps
+  * Full bilingual dictionary expansion (`reflection.*`)
+  * Automated testing: 71 Cargo tests 100% pass, 13 Vitest tests 100% pass, Clippy zero warnings, Vite build success
 
 ---
 
@@ -178,38 +190,35 @@ All future development must strictly adhere to the following protocol:
 2. **Strict Bilingual Implementation:**  
    * All UI text, system messages, warnings, and error dialogs must be declared in both `locales/en/*.json` and `locales/ja/*.json`. No hardcoded monolingual strings permitted.
    * All documentation (READMEs, design documents, handover notes) must be written and synchronized in both English and Japanese.
+3. **Color Themes & Pipeline Presets Notification Protocol:**
+   * **Color Themes:** Notify and form user consensus at the start of the final UI polishing phase (Phases 8–9).
+   * **Pipeline Presets:** Notify and form user consensus at the recommended timing (Phase 7: Pipeline Runner).
 4. **Mandatory Manual Testing on Major Phase Transitions:**  
-   At major phase boundaries (e.g. Phase 1 → 2, Phase 2 → 3, Phase 3 → 4), the assistant must present a concrete manual verification checklist on real hardware/GUI/CLI and confirm functionality before proceeding to the next major phase.
+   At major phase boundaries (e.g. Phase 1 → 2, Phase 2 → 3, Phase 3 → 4, Phase 4 → 5), the assistant must present a concrete manual verification checklist on real hardware/GUI/CLI and confirm functionality before proceeding to the next major phase.
 
 ---
 
-## 6. Next Session Startup Guide (Phase 4.1 Tasks)
+## 6. Next Session Startup Guide (Phase 5.1 Tasks)
 
-Strategic architectural plan and implementation roadmap for Phase 4.1:
+Having completed Major Phase 4 (Workspace Separation, Diff Comparison & Atomic Reflection), the project proceeds to Major Phase 5 (Batch Renaming, Normalization & Safe Dry-Run) **after manual testing verification**.
 
-### 6.1 Phase 4.1 Architecture & Design Decisions (Working Copy Isolation & Same-Volume Preferred Placement)
-* **Working Copy Isolation Engine (`src-tauri/src/workspace.rs`):**
-  * Absolute Original Protection: create isolated working copies (staging copies) before permitting any mutation or batch pipelines.
-  * **Same-Volume Preferred Placement & Reflink (CoW) Fast Cloning:**
-    * Prioritize staging in a hidden `.cuddle-temp/` directory located on the same filesystem/mount point as the original file.
-    * Issue Linux `ioctl(dest_fd, FICLONE, src_fd)` to achieve zero-storage, millisecond-speed Copy-on-Write (CoW) clones on Btrfs/XFS.
-    * Automatically fallback to `$XDG_CACHE_HOME/Cuddle/staging/` or configured temporary directory with standard byte-stream copying if Reflink fails, the filesystem is non-CoW (e.g. EXT4), or the volume lacks write permissions.
-  * **Pre-flight Capacity Multiplier Guardrail:**
-    * Query `check_disk_space` from Phase 3.2 to abort staging if available space is less than 1.5x original file size (`ERR_INSUFFICIENT_SPACE`).
-  * **Dual-Key Staged Item Tracking (`StagedItemDto`):**
-    * Original `item_id`, `raw_base64`, `display_name`
-    * Staged path details (`staged_raw_base64`, `staged_path`)
-    * Clone method (`CloneMethod`: `Reflink` | `StandardCopy`)
-    * Staging status (`StageStatus`: `Staged` | `Modified` | `Reflected`)
-    * Snapshot pairing (`OriginalSnapshotDto`) for TOCTOU conflict checks
-  * **Tauri IPC Commands:**
-    * `stage_file(path_base64: String) -> Result<StagedItemDto, String>`
-    * `unstage_file(stage_id: String) -> Result<(), String>`
-    * `list_staged_items() -> Result<Vec<StagedItemDto>, String>`
-    * `clear_staged_items() -> Result<(), String>`
+### 6.1 Phase 5.1 Architecture & Design Decisions (Normalization & Batch Rename Rules Engine with Dry-Run)
+* **Rule Engine Construction (`src-tauri/src/renamer.rs`):**
+  * Strict Original Protection: Renaming rules are applied exclusively to workspace copies, generating a virtual pre/post mapping table (Dry-Run).
+  * **Rule Capabilities:**
+    * Unicode NFC/NFD Normalization (resolves separated voiced sound marks in Japanese filenames)
+    * Full-width / Half-width conversion (alphanumerics and symbols)
+    * Case conversion (lowercase, UPPERCASE, camelCase, snake_case, kebab-case)
+    * Sequential numbering (zero-padding, prefixes, suffixes, custom start/step)
+    * Regular expression substitution (regex pattern matching with capture group references)
+  * **Collision & Anomaly Detection (Dry-Run Validation):**
+    * In-directory collision detection (preventing duplicate target names)
+    * Filesystem forbidden character validation (`/`, NULL bytes, newlines)
+    * 255-byte filename length limit checks (Linux ext4/xfs constraints)
+  * **Dual-Key Compatibility:** Lossless handling for non-UTF-8 filenames.
   * **TypeScript Bindings & Frontend Integration via `ts-rs`:**
-    * Auto-export `StagedItemDto.ts`, `CloneMethod.ts`, `StageStatus.ts`.
-    * Connect with `WorkspacePanel.tsx` to display real-time staged files, clone method badges, and unstage actions.
+    * Automated generation of `RenameRuleDto`, `RenamePreviewItemDto`, `RenameResultDto`.
+    * UI for configuring rules and displaying real-time dry-run preview tables.
 
 ---
 

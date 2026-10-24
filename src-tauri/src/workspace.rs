@@ -280,6 +280,56 @@ impl WorkspaceManager {
         Ok(diff_result)
     }
 
+    /// Reflects staged working copy changes back to the original file safely.
+    /// STRICT PROTOCOL:
+    /// 1. Policy validation: Forbidden Zone checks (outside $HOME, mount boundaries, external storage)
+    /// 2. TOCTOU conflict verification: verifies original inode, dev, size, mtime, and SHA-256 against snapshot
+    /// 3. Atomic replace: creates temporary file in the original's directory, clones/copies staged data, and renames
+    /// 4. Updates snapshot & status to Reflected
+    pub fn reflect_staged_file(&self, stage_id: &str) -> Result<StagedItemDto, WorkspaceError> {
+        let mut map = self.staged_items.lock().unwrap();
+        let staged = map
+            .get_mut(stage_id)
+            .ok_or_else(|| WorkspaceError::NotFound(stage_id.to_string()))?;
+
+        let orig_path = decode_path_from_base64(&staged.raw_base64)?;
+        let staged_path = decode_path_from_base64(&staged.staged_raw_base64)?;
+
+        // 1. Policy Validation: Forbidden Zone
+        OperationPolicy::validate_reflection(&orig_path)?;
+
+        // 2. TOCTOU Race & External Conflict Verification
+        OperationPolicy::verify_conflict(&staged.original_snapshot, true)?;
+
+        // 3. Atomic Replace via Temporary File in same directory
+        let orig_parent = orig_path
+            .parent()
+            .ok_or(WorkspaceError::StagingDirUnavailable)?;
+        let tmp_reflect_name = format!(".cuddle_reflect_{}.tmp", Uuid::new_v4());
+        let tmp_reflect_path = orig_parent.join(tmp_reflect_name);
+
+        // Copy staged content to temporary file in destination volume
+        if let Err(e) = fs::copy(&staged_path, &tmp_reflect_path) {
+            let _ = fs::remove_file(&tmp_reflect_path);
+            return Err(WorkspaceError::Io(e));
+        }
+
+        // Atomic replace via POSIX rename
+        if let Err(e) = fs::rename(&tmp_reflect_path, &orig_path) {
+            let _ = fs::remove_file(&tmp_reflect_path);
+            return Err(WorkspaceError::Io(e));
+        }
+
+        // 4. Update snapshot and status
+        let updated_item = FileItem::from_path(&orig_path)?;
+        let new_snapshot = OperationPolicy::create_snapshot(&updated_item, true)?;
+
+        staged.original_snapshot = new_snapshot;
+        staged.status = StageStatus::Reflected;
+
+        Ok(staged.clone())
+    }
+
     /// Lists all currently active staged items.
     pub fn list_staged(&self) -> Vec<StagedItemDto> {
         let map = self.staged_items.lock().unwrap();
@@ -425,6 +475,58 @@ mod tests {
         assert!(!diff_after.has_changes);
 
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_workspace_manager_reflect_success() {
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_reflect_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("document.txt");
+        fs::write(&orig_file, b"Original v1").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+
+        // Mutate staged working copy
+        fs::write(&staged.staged_path, b"Mutated in staging v2").unwrap();
+
+        // Reflect back to original
+        let reflected = mgr.reflect_staged_file(&staged.stage_id).unwrap();
+        assert_eq!(reflected.status, StageStatus::Reflected);
+
+        // Verify original content is updated
+        assert_eq!(fs::read(&orig_file).unwrap(), b"Mutated in staging v2");
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_workspace_manager_reflect_conflict_blocked() {
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_conflict_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("protected.txt");
+        fs::write(&orig_file, b"Original content").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+
+        // Simulate external process modifying the original behind our back
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        fs::write(&orig_file, b"External rogue mutation").unwrap();
+
+        // Attempt reflection: must be blocked by conflict verification
+        let err = mgr.reflect_staged_file(&staged.stage_id);
+        assert!(err.is_err());
+        assert_eq!(err.unwrap_err().error_code(), "ERR_CONFLICT_DETECTED");
+
+        // Original content must not be overwritten by staged content
+        assert_eq!(fs::read(&orig_file).unwrap(), b"External rogue mutation");
+
+        let _ = fs::remove_dir_all(&test_dir);
     }
 
     #[test]

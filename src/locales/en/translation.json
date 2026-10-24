@@ -74,6 +74,18 @@
     "original_badge": "Original (Read-Only Protected)",
     "staged_badge": "Staged Copy (workspace-temp)"
   },
+  "reflection": {
+    "reflect_btn": "Reflect to Original",
+    "reflect_title": "Confirm Original Reflection",
+    "reflect_warning": "This operation will safely and atomically reflect changes from the staging copy back to the original file. A pre-flight cryptographic check (SHA-256) ensures reflection is aborted if the original was modified externally.",
+    "original_path_label": "Target Original Path",
+    "staged_path_label": "Source Staged Copy",
+    "confirm_reflect_btn": "Execute Reflection",
+    "cancel_btn": "Cancel",
+    "reflect_success": "Reflection to original completed safely",
+    "reflect_failed": "Reflection to original failed",
+    "status_reflected": "Reflected to Original"
+  },
   "policy": {
     "title": "Operation Safety Policy (OperationPolicy)",
     "forbidden_zone": "Forbidden Zone for Reflection (Outside $HOME, mount boundary, external storage)",

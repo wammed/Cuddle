@@ -74,6 +74,18 @@
     "original_badge": "原本 (読み取り専用保護)",
     "staged_badge": "作業コピー (workspace-temp)"
   },
+  "reflection": {
+    "reflect_btn": "原本へ変更を反映",
+    "reflect_title": "原本反映の安全確認",
+    "reflect_warning": "この操作は作業コピーの変更を原本ファイルへ安全にアトミック反映します。原本は更新されますが、事前の競合検査（SHA-256）によって外部変更がある場合は自動遮断されます。",
+    "original_path_label": "反映先原本パス",
+    "staged_path_label": "反映元作業コピー",
+    "confirm_reflect_btn": "原本への反映を実行",
+    "cancel_btn": "キャンセル",
+    "reflect_success": "原本への反映が安全に完了しました",
+    "reflect_failed": "原本への反映に失敗しました",
+    "status_reflected": "原本反映済 (Pristine)"
+  },
   "policy": {
     "title": "安全操作ポリシー (OperationPolicy)",
     "forbidden_zone": "原本反映禁止領域（$HOME外・マウント境界・外部ストレージ）",

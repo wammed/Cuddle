@@ -171,4 +171,49 @@ describe("BottomTabPanel & Diff Operations (Phase 4.2)", () => {
       expect(screen.getByText("+1 line(s) / -1 line(s)")).toBeDefined();
     });
   });
+
+  it("opens reflection confirmation dialog and executes reflection (Phase 4.3)", async () => {
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    const handleReflect = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <BottomTabPanel
+        selectedItem={sampleItem}
+        extractedInfo={null}
+        appConfig={null}
+        logs={[]}
+        history={[]}
+        stagedItems={[sampleStaged]}
+        onReflectStagedItem={handleReflect}
+        onClose={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("原本へ変更を反映")).toBeDefined();
+    });
+
+    // Click reflect button in diff header
+    const reflectHeaderBtn = screen.getByText("原本へ変更を反映");
+    await act(async () => {
+      fireEvent.click(reflectHeaderBtn);
+    });
+
+    // Confirm dialog is displayed
+    expect(screen.getByText("原本反映の安全確認")).toBeDefined();
+    expect(screen.getByText("/home/susie/app.ts")).toBeDefined();
+    expect(screen.getByText("/home/susie/.cuddle-temp/stage-1_app.ts")).toBeDefined();
+
+    // Click confirm reflect button inside dialog
+    const confirmBtn = screen.getByText("原本への反映を実行");
+    await act(async () => {
+      fireEvent.click(confirmBtn);
+    });
+
+    expect(handleReflect).toHaveBeenCalledWith("stage-1");
+  });
 });
+

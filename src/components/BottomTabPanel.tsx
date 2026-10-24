@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Eye, History, Shield, Terminal, X, RotateCcw, GitCompare, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Eye, History, Shield, Terminal, X, RotateCcw, GitCompare, AlertCircle, CheckCircle2, Upload, AlertTriangle } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
@@ -16,6 +16,7 @@ interface BottomTabPanelProps {
   history: string[];
   stagedItems?: StagedItemDto[];
   onResetStagedItem?: (stageId: string) => void;
+  onReflectStagedItem?: (stageId: string) => Promise<void> | void;
   onClose: () => void;
 }
 
@@ -27,12 +28,15 @@ export function BottomTabPanel({
   history,
   stagedItems = [],
   onResetStagedItem,
+  onReflectStagedItem,
   onClose,
 }: BottomTabPanelProps) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<"preview" | "history" | "security" | "logs">("preview");
   const [diffResult, setDiffResult] = useState<FileDiffResultDto | null>(null);
   const [isDiffLoading, setIsDiffLoading] = useState(false);
+  const [showReflectModal, setShowReflectModal] = useState(false);
+  const [isReflecting, setIsReflecting] = useState(false);
 
   const matchedStaged = useMemo(() => {
     if (!selectedItem) return null;
@@ -79,8 +83,91 @@ export function BottomTabPanel({
     }
   };
 
+  const handleExecuteReflect = async () => {
+    if (!matchedStaged) return;
+    try {
+      setIsReflecting(true);
+      if (onReflectStagedItem) {
+        await onReflectStagedItem(matchedStaged.stage_id);
+      } else {
+        await invoke("reflect_staged_file", { stageId: matchedStaged.stage_id });
+      }
+      setShowReflectModal(false);
+      await loadDiff(matchedStaged.stage_id);
+    } catch (err) {
+      console.error("Reflection failed:", err);
+    } finally {
+      setIsReflecting(false);
+    }
+  };
+
   return (
     <div className="panel-container bottom-tab-container">
+      {/* Reflection Confirmation Modal */}
+      {showReflectModal && matchedStaged && (
+        <div className="modal-backdrop">
+          <div className="reflect-confirm-dialog">
+            <div className="dialog-header">
+              <div className="dialog-title-group">
+                <AlertTriangle size={18} className="text-amber-400" />
+                <h4>{t("reflection.reflect_title")}</h4>
+              </div>
+              <button
+                type="button"
+                className="panel-header-btn"
+                onClick={() => setShowReflectModal(false)}
+                title={t("reflection.cancel_btn")}
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="dialog-body">
+              <p className="dialog-warning-text">{t("reflection.reflect_warning")}</p>
+
+              <div className="dialog-meta-card">
+                <div className="dialog-meta-row">
+                  <span className="dialog-label">{t("reflection.original_path_label")}:</span>
+                  <span className="dialog-value font-mono">{matchedStaged.original_snapshot.canonical_path}</span>
+                </div>
+                <div className="dialog-meta-row">
+                  <span className="dialog-label">{t("reflection.staged_path_label")}:</span>
+                  <span className="dialog-value font-mono">{matchedStaged.staged_path}</span>
+                </div>
+                {diffResult && (
+                  <div className="dialog-meta-row">
+                    <span className="dialog-label">{t("diff.title")}:</span>
+                    <span className="dialog-value font-mono text-cyan-400">
+                      +{diffResult.additions} / -{diffResult.deletions} lines
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="dialog-footer">
+              <button
+                type="button"
+                className="dialog-btn secondary"
+                onClick={() => setShowReflectModal(false)}
+                disabled={isReflecting}
+              >
+                {t("reflection.cancel_btn")}
+              </button>
+              <button
+                type="button"
+                className="dialog-btn primary reflect-action-btn"
+                onClick={handleExecuteReflect}
+                disabled={isReflecting}
+              >
+                <Upload size={14} />
+                <span>{isReflecting ? "Reflecting..." : t("reflection.confirm_reflect_btn")}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bottom-tabs-header">
         <div className="tab-buttons-group">
           <button
@@ -150,12 +237,24 @@ export function BottomTabPanel({
                   </div>
 
                   <div className="diff-header-right">
+                    {diffResult?.has_changes && (
+                      <button
+                        type="button"
+                        className="diff-reflect-btn"
+                        onClick={() => setShowReflectModal(true)}
+                        title={t("reflection.reflect_btn")}
+                        disabled={isDiffLoading || isReflecting}
+                      >
+                        <Upload size={12} />
+                        <span>{t("reflection.reflect_btn")}</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="diff-reset-btn"
                       onClick={handleReset}
                       title={t("diff.reset_to_original")}
-                      disabled={isDiffLoading}
+                      disabled={isDiffLoading || isReflecting}
                     >
                       <RotateCcw size={12} />
                       <span>{t("diff.reset_to_original")}</span>

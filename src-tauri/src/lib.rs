@@ -217,6 +217,12 @@ fn reset_staged_file(stage_id: String) -> Result<workspace::StagedItemDto, Strin
     mgr.reset_staged_file(&stage_id).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn reflect_staged_file(stage_id: String) -> Result<workspace::StagedItemDto, String> {
+    let mgr = workspace::get_workspace_manager();
+    mgr.reflect_staged_file(&stage_id).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -240,7 +246,8 @@ pub fn run() {
             list_staged_items,
             clear_staged_items,
             get_file_diff,
-            reset_staged_file
+            reset_staged_file,
+            reflect_staged_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

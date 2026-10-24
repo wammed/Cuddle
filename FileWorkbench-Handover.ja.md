@@ -165,7 +165,19 @@
   * プレビューヘッダーでの「原本状態へ復元 (リセット)」ボタン連携
   * 日英完全バイリンガル辞書（`diff.*`, `errors.ERR_DIFF_FAILED`）整備
   * Cargo テスト 69 件 100% パス、Vitest 12 件 100% パス、Clippy 警告ゼロ、Vite ビルド成功
-* [ ] **Phase 4.3（安全な原本反映トランザクション・競合遮断 & TOCTOU レース防御）：着手準備完了**
+* [x] **Phase 4.3（安全な原本反映トランザクション・競合遮断 & TOCTOU レース防御）：完了**
+  * 安全な原本反映（Reflection）トランザクションエンジン実装（`src-tauri/src/workspace.rs`）
+  * 反映前の厳格な多重ガードレール：
+    * 禁止領域動的検証（`validate_reflection` による `$HOME` 外、マウント境界、外部ストレージへの書き込み強制遮断）
+    * TOCTOU 競合検出（`verify_conflict` による SHA-256 ハッシュ、mtime、inode、ファイルサイズ不整合の自動遮断）
+    * 反映先ディスク空き容量チェック
+  * 同一親ディレクトリ内一時退避ファイル（`.cuddle_reflect_<uuid>.tmp`）と Linux POSIX `fs::rename` による同一ファイルシステム内完全アトミック置換
+  * 置換成功後の原本スナップショット自動再取得（SHA-256更新）およびステージング状態 `StageStatus::Reflected` 移行
+  * Tauri IPC コマンド `reflect_staged_file` 公開と `invoke_handler` 登録
+  * `BottomTabPanel.tsx` 差分ヘッダーへの「原本へ変更を反映」ボタン追加および安全確認モーダルダイアログ（原本・作業コピーパス、変更行数、警告表示）統合
+  * `App.tsx` での反映 IPC 実行とブラウザー一覧の自動再スキャン・サイズ同期
+  * 日英完全バイリンガル辞書（`reflection.*`）整備
+  * Cargo テスト 71 件 100% パス、Vitest 13 件 100% パス、Clippy 警告ゼロ、Vite ビルド成功
 
 ---
 
@@ -178,38 +190,35 @@
 2. **完全バイリンガル実装の徹底：**  
    * 実装するすべての UI、メッセージ、エラーテキストは `locales/en/*.json` および `locales/ja/*.json` の両方に定義する。ハードコードされた単一言語テキストを一切残さない。
    * 作成・更新するすべてのドキュメント（README、設計書、タスクシート等）は同内容の日英両言語で作成する。
+3. **カラーテーマ & パイプラインプリセットの通知合意ルール：**
+   * **カラーテーマ:** UI の最終調整時（Phase 8〜9）の実装フェーズに入る時点で事前通知し、ユーザーと合意形成を行う。
+   * **パイプラインプリセット:** 推奨タイミング（Phase 7: パイプラインランナー）の実装フェーズに入る時点で事前通知し、ユーザーと合意形成を行う。
 4. **メジャーフェーズ移行時の手動テスト実施：**  
-   メジャーフェーズ（Phase 1 → 2、Phase 2 → 3、Phase 3 → 4 等）が切り替わる境界において、必ず実機 GUI / CLI 上での手動テストチェックリストをユーザーに提示し、動作検証ステップを実施・確認した上で次メジャーフェーズへ進む。
+   メジャーフェーズ（Phase 1 → 2、Phase 2 → 3、Phase 3 → 4、Phase 4 → 5 等）が切り替わる境界において、必ず実機 GUI / CLI 上での手動テストチェックリストをユーザーに提示し、動作検証ステップを実施・確認した上で次メジャーフェーズへ進む。
 
 ---
 
-## 6. 次期セッション着手手順（Phase 4.1 のタスク）
+## 6. 次期セッション着手手順（Phase 5.1 のタスク）
 
-Phase 4.1 における方針および実装計画：
+メジャーフェーズ 4（作業コピー分離・差分比較・アトミック原本反映）が完了したため、**手動テスト実施・確認後**にメジャーフェーズ 5（一括リネーム・正規化処理層 & 安全ドライラン）へ移行する。
 
-### 6.1 Phase 4.1 の目的と設計方針（作業コピー分離 & 同一ボリューム優先配置）
-* **作業コピー管理エンジン構築（`src-tauri/src/workspace.rs`）：**
-  * 原本保護の徹底：原本ファイルから安全な作業領域（Staging Area）へ作業コピーを作成。
-  * **同一ボリューム優先配置 & Reflink (CoW) 高速クローン：**
-    * 原本が存在する同一マウントポイント・ファイルシステム内の作業用隠しディレクトリ（同一ディレクトリ階層または直近の親ディレクトリ内の `.cuddle-temp/`）を最優先。
-    * Linux `ioctl(dest_fd, FICLONE, src_fd)` を発行し、Btrfs/XFS 等の CoW (Copy-on-Write) ファイルシステム上でストレージ消費ゼロ・ミリ秒単位の Reflink クローンを実行。
-    * Reflink 非対応（EXT4 等）または同一ボリュームへの書き込み権限がない場合は、`$XDG_CACHE_HOME/Cuddle/staging/` または設定で指定された作業ディレクトリへ安全にフォールバック（通常のバイトストリームコピー）。
-  * **ディスク容量ガードレールの事前チェック：**
-    * Phase 3.2 の `check_disk_space` を呼び出し、原本サイズの 1.5 倍以上の空き容量がない場合は `ERR_INSUFFICIENT_SPACE` でコピーを中断。
-  * **二重キー整合性と状態追跡（`StagedItemDto`）：**
-    * 原本 `item_id`, `raw_base64`, `display_name`
-    * ステージング先パス（`staged_raw_base64`, `staged_path`）
-    * コピー種別（`CloneMethod`: `Reflink` | `StandardCopy`）
-    * ステージング状態（`StageStatus`: `Staged` | `Modified` | `Reflected`）
-    * 原本スナップショット（`OriginalSnapshotDto`）の自動保持
-  * **Tauri IPC コマンド公開：**
-    * `stage_file(path_base64: String) -> Result<StagedItemDto, String>`
-    * `unstage_file(stage_id: String) -> Result<(), String>`
-    * `list_staged_items() -> Result<Vec<StagedItemDto>, String>`
-    * `clear_staged_items() -> Result<(), String>`
+### 6.1 Phase 5.1 の目的と設計方針（正規化・一括リネームルールエンジン & ドライラン検証）
+* **リネーム・正規化ルールエンジン構築（`src-tauri/src/renamer.rs`）：**
+  * 原本保護の徹底：リネーム操作はまず作業コピーに対してのみ適用し、ドライラン（変更前後の仮想マッピング一覧）を生成。
+  * **ルール仕様：**
+    * Unicode NFC/NFD 正規化（濁点・半濁点の結合文字分離問題の解決）
+    * 全角半角変換（英数字・記号の統一）
+    * ケース変換（lowercase / UPPERCASE / camelCase / snake_case / kebab-case）
+    * 連番付与（ゼロパディング指定、プレフィックス・サフィックス、開始番号・増分）
+    * 正規表現置換（Regex 置換・キャプチャグループ参照）
+  * **衝突・異常検知エンジン（ドライランバリデーション）：**
+    * 同一ディレクトリ内での同名衝突（Collision）検知
+    * Linux ファイルシステム禁止文字（`/` や NULL バイト）、不正文字（改行等）の検証
+    * 255 バイト超過（Linux ext4/xfs のファイル名長上限）の警告
+  * **二重キー対応：** 非 UTF-8 バイト列に対しても UTF-8 ロスレスまたは安全なエンコードでリネーム可能とする。
   * **`ts-rs` による TypeScript 型同期 & UI 連携：**
-    * `StagedItemDto.ts`, `CloneMethod.ts`, `StageStatus.ts` の自動同期。
-    * `WorkspacePanel.tsx` と連携し、実際に作業コピーを作成・一覧表示・削除できる状態に統合。
+    * `RenameRuleDto`, `RenamePreviewItemDto`, `RenameResultDto` の自動同期。
+    * UI 上でルールを設定し、ドライラン差分テーブルをリアルタイム表示する機能の実装。
 
 ---
 

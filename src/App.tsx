@@ -174,6 +174,20 @@ export function App() {
     }
   };
 
+  const handleReflectStagedItem = async (stageId: string) => {
+    try {
+      const updated = await invoke<StagedItemDto>("reflect_staged_file", { stageId });
+      setStagedItems((prev) => prev.map((s) => (s.stage_id === stageId ? updated : s)));
+      addHistory(`Reflected changes of "${updated.display_name}" back to original safely`);
+      addLog(`Reflected staged item "${updated.display_name}" to original: ${updated.original_snapshot.canonical_path}`);
+      // Refresh browser items to update size/mtime
+      await scanDirectory(currentPath);
+    } catch (err) {
+      addLog(`Failed to reflect staged item ${stageId}: ${String(err)}`);
+      throw err;
+    }
+  };
+
   const handleExtractText = async (item: FileItem) => {
     try {
       setExtractLoading(true);
@@ -324,6 +338,7 @@ export function App() {
                       history={history}
                       stagedItems={stagedItems}
                       onResetStagedItem={handleResetStagedItem}
+                      onReflectStagedItem={handleReflectStagedItem}
                       onClose={() => setBottomVisible(false)}
                     />
                   </Panel>
@@ -354,7 +369,7 @@ export function App() {
         <div className="statusbar-left">
           <span className="status-label">Cuddle</span>
           <span className="status-sep">|</span>
-          <span>Phase 4.2 Diff Comparison &amp; Safe Reset Active</span>
+          <span>Phase 4.3 Atomic Reflection &amp; TOCTOU Guard Active</span>
         </div>
         <div className="statusbar-right">
           <span>Staged: {stagedFiles.length} files</span>

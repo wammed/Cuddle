@@ -312,7 +312,7 @@ export function App() {
         <div className="statusbar-left">
           <span className="status-label">Cuddle</span>
           <span className="status-sep">|</span>
-          <span>Phase 3.1 6-Region Layout &amp; Virtualized Virtual Scrolling Active</span>
+          <span>Phase 3.2 OperationPolicy &amp; Original Protection Active</span>
         </div>
         <div className="statusbar-right">
           <span>Staged: {stagedFiles.length} files</span>

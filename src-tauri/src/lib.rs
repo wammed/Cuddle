@@ -1,6 +1,7 @@
 pub mod config;
 pub mod extractor;
 pub mod models;
+pub mod policy;
 pub mod sandbox;
 pub mod scanner;
 pub mod search_filename;
@@ -131,6 +132,52 @@ fn index_file_with_text(
     extractor::index_file_with_text(&path_base64, options).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn check_operation_policy(
+    path_base64: String,
+    for_reflection: bool,
+) -> Result<policy::PolicyCheckResultDto, String> {
+    let path = models::decode_path_from_base64(&path_base64).map_err(|e| e.to_string())?;
+    Ok(policy::OperationPolicy::check_policy(&path, for_reflection))
+}
+
+#[tauri::command]
+fn create_original_snapshot(
+    path_base64: String,
+    compute_sha256: bool,
+) -> Result<policy::OriginalSnapshotDto, String> {
+    let path = models::decode_path_from_base64(&path_base64).map_err(|e| e.to_string())?;
+    let item = models::FileItem::from_path(&path).map_err(|e| e.to_string())?;
+    policy::OperationPolicy::create_snapshot(&item, compute_sha256).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn verify_original_conflict(
+    snapshot: policy::OriginalSnapshotDto,
+    verify_sha256: bool,
+) -> Result<policy::PolicyCheckResultDto, String> {
+    match policy::OperationPolicy::verify_conflict(&snapshot, verify_sha256) {
+        Ok(()) => Ok(policy::PolicyCheckResultDto {
+            allowed: true,
+            is_in_home: true,
+            is_external_or_mount: false,
+            can_reflect_original: true,
+            conflict_detected: false,
+            error_code: None,
+            error_message: None,
+        }),
+        Err(e) => Ok(policy::PolicyCheckResultDto {
+            allowed: false,
+            is_in_home: true,
+            is_external_or_mount: false,
+            can_reflect_original: false,
+            conflict_detected: true,
+            error_code: Some(e.error_code().to_string()),
+            error_message: Some(e.to_string()),
+        }),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -145,7 +192,10 @@ pub fn run() {
             search_files_by_name,
             search_fulltext,
             extract_file_text,
-            index_file_with_text
+            index_file_with_text,
+            check_operation_policy,
+            create_original_snapshot,
+            verify_original_conflict
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -84,6 +84,41 @@ vi.mock("@tauri-apps/api/core", () => ({
     if (cmd === "search_fulltext") {
       return Promise.resolve([]);
     }
+    if (cmd === "check_operation_policy") {
+      return Promise.resolve({
+        allowed: true,
+        is_in_home: true,
+        is_external_or_mount: false,
+        can_reflect_original: true,
+        conflict_detected: false,
+        error_code: null,
+        error_message: null,
+      });
+    }
+    if (cmd === "create_original_snapshot") {
+      return Promise.resolve({
+        item_id: "00000000-0000-0000-0000-000000000001",
+        raw_base64: "L2hvbWUvc3VzaWUvZG9jdW1lbnRzL3NhbXBsZV9wcm9qZWN0Lm1k",
+        display_name: "sample_project.md",
+        canonical_path: "/home/susie/documents/sample_project.md",
+        inode: 12345678n,
+        dev: 66305n,
+        size: 2048n,
+        mtime_ms: 1729750000000n,
+        sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      });
+    }
+    if (cmd === "verify_original_conflict") {
+      return Promise.resolve({
+        allowed: true,
+        is_in_home: true,
+        is_external_or_mount: false,
+        can_reflect_original: true,
+        conflict_detected: false,
+        error_code: null,
+        error_message: null,
+      });
+    }
     return Promise.resolve("");
   }),
 }));

@@ -132,7 +132,18 @@
   * 深色ベルベット（Dark Velvet Slate `#070b12`）グラスモーフィズムデザイン
   * 完全バイリンガル辞書キー（`panels.*`, `browser.*`, `tree.*`, `details.*`）追加＆動的切替
   * Cargo テスト 45 件 100% パス、Vitest 6 件 100% パス、Clippy 警告ゼロ、Vite ビルド成功
-* [ ] **Phase 3.2（安全操作層 OperationPolicy エンジン & 原本保護・競合検出）：着手準備完了**
+* [x] **Phase 3.2（安全操作層 OperationPolicy エンジン & 原本保護・競合検出）：完了**
+  * 安全操作ポリシーエンジン実装（`src-tauri/src/policy.rs`）
+  * `/proc/mounts` 解析による外部ストレージ・マウント境界・`$HOME` 外の禁止領域動的検出機構（`is_external_or_mount_boundary`, `is_in_home_directory`）
+  * 原本反映（Reflection）に対する絶対的原本保護ガードレール（`validate_reflection` による `ERR_FORBIDDEN_ZONE` 強制遮断）
+  * 原本スナップショット記録（`OriginalSnapshotDto`：inode, dev, size, mtime, SHA-256）
+  * TOCTOU 外部競合検出エンジン（`verify_conflict`：inode 置換、ファイルサイズ変動、mtime 変更、SHA-256 ハッシュ不整合の厳格検知）
+  * `libc::statvfs` を用いた作業領域ディスク空き容量ガードレール（原本サイズの 1.5 倍下限チェック：`check_disk_space`）
+  * `ts-rs` による TypeScript 型自動同期（`OriginalSnapshotDto.ts`, `PolicyCheckResultDto.ts`）
+  * Tauri IPC コマンド `check_operation_policy`, `create_original_snapshot`, `verify_original_conflict` 公開
+  * 日英完全バイリンガル辞書（`policy.*`, `errors.ERR_*`）整備および詳細サイドバーでのリアルタイム安全性評価・スナップショット検証 UI 連携
+  * Cargo テスト 54 件 100% パス、Vitest 8 件 100% パス、Clippy 警告ゼロ、Vite ビルド成功
+* [ ] **Phase 4.1（作業コピー分離 & 同一ボリューム優先配置）：着手準備完了**
 
 ---
 

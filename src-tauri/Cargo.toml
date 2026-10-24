@@ -35,6 +35,7 @@ lindera-tantivy = { version = "5", features = ["embed-ipadic"] }
 encoding_rs = "0.8"
 chardetng = "0.1"
 libc = "0.2"
+sha2 = "0.10"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

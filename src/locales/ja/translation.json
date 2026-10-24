@@ -42,7 +42,22 @@
   "errors": {
     "operation_forbidden": "操作が禁止されました：原本ファイルを直接変更することはできません。",
     "insufficient_space": "ディスク容量が不足しています。原本サイズの1.5倍以上の空き容量が必要です。",
-    "not_found": "指定されたファイルまたはディレクトリが見つかりません。"
+    "not_found": "指定されたファイルまたはディレクトリが見つかりません。",
+    "ERR_FORBIDDEN_ZONE": "禁止領域：$HOME外、マウント境界、または外部ストレージへの原本反映は禁止されています。",
+    "ERR_CONFLICT_DETECTED": "競合検出：ステージング後に原本ファイルが外部で更新されました。",
+    "ERR_INSUFFICIENT_SPACE": "容量不足：安全基準（1.5倍）を満たすディスク空き容量がありません。",
+    "ERR_SYMLINK_ESCAPE": "シンボリックリンク脱出：リンク先が許可領域外を参照しています。"
+  },
+  "policy": {
+    "title": "安全操作ポリシー (OperationPolicy)",
+    "forbidden_zone": "原本反映禁止領域（$HOME外・マウント境界・外部ストレージ）",
+    "conflict_detected": "原本の外部更新が検出されました（競合）",
+    "safe_to_stage": "作業領域へのステージング可能",
+    "safe_to_reflect": "原本への反映可能",
+    "snapshot_created": "原本スナップショット記録済み",
+    "verifying_conflict": "原本の競合状態を確認中...",
+    "hash_sha256": "SHA-256 ハッシュ",
+    "check_policy_btn": "安全性ポリシー判定"
   },
   "security": {
     "landlock_active": "Linux Landlock LSM 有効（カーネル隔離保護中）",

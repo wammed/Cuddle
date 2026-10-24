@@ -42,7 +42,22 @@
   "errors": {
     "operation_forbidden": "Operation prohibited: Original file cannot be modified directly.",
     "insufficient_space": "Insufficient free space on disk. At least 1.5x original size is required.",
-    "not_found": "Specified file or directory not found."
+    "not_found": "Specified file or directory not found.",
+    "ERR_FORBIDDEN_ZONE": "Forbidden Zone: Direct reflection to original outside $HOME, on mount boundaries, or external storage is prohibited.",
+    "ERR_CONFLICT_DETECTED": "Conflict Detected: Original file was modified externally after staging.",
+    "ERR_INSUFFICIENT_SPACE": "Insufficient Space: Free disk space does not meet the 1.5x safety multiplier.",
+    "ERR_SYMLINK_ESCAPE": "Symlink Escape: Symlink targets an unauthorized path outside safe boundaries."
+  },
+  "policy": {
+    "title": "Operation Safety Policy (OperationPolicy)",
+    "forbidden_zone": "Forbidden Zone for Reflection (Outside $HOME, mount boundary, external storage)",
+    "conflict_detected": "Original file modified externally (Conflict detected)",
+    "safe_to_stage": "Eligible for workspace staging",
+    "safe_to_reflect": "Eligible for reflecting back to original",
+    "snapshot_created": "Original snapshot recorded",
+    "verifying_conflict": "Checking for conflicts with original...",
+    "hash_sha256": "SHA-256 Checksum",
+    "check_policy_btn": "Evaluate Policy"
   },
   "security": {
     "landlock_active": "Linux Landlock LSM Active (Kernel Protection)",

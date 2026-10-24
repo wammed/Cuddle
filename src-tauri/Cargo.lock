@@ -1212,6 +1212,7 @@ dependencies = [
  "lindera-tantivy",
  "serde",
  "serde_json",
+ "sha2",
  "tantivy",
  "tauri",
  "tauri-build",

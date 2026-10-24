@@ -1298,3 +1298,106 @@ body {
 .status-sep {
   color: rgba(255, 255, 255, 0.15);
 }
+
+/* OperationPolicy & Snapshot Card Styles (Phase 3.2) */
+.policy-evaluation-card {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-xs);
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid var(--border-subtle);
+}
+
+.policy-evaluation-card.allowed {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.policy-evaluation-card.forbidden {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.policy-eval-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.policy-eval-header .text-green-500 {
+  color: #34d399;
+}
+
+.policy-eval-header .text-amber-500 {
+  color: #fbbf24;
+}
+
+.policy-eval-title {
+  flex: 1;
+}
+
+.policy-eval-error {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  color: #f87171;
+  font-size: 11px;
+}
+
+.policy-error-detail {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.snapshot-action-group {
+  margin-top: 8px;
+}
+
+.snapshot-info-card {
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.snapshot-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.snapshot-tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+.snapshot-verify-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-xs);
+  transition: all var(--trans-fast);
+}
+
+.snapshot-verify-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.snapshot-hash-line {
+  color: var(--text-muted);
+  word-break: break-all;
+}
+

@@ -5,7 +5,7 @@
 </p>
 
 **Document Date:** 2026-10-24  
-**Status:** Phase 2.2 Completed, Ready for Phase 2.3  
+**Status:** Phase 2.4 Completed, Ready for Phase 3.1  
 **Target Audience:** Development, Architecture, and QA Teams; Next Working Session Maintainers  
 
 ---
@@ -112,7 +112,18 @@
   * Automated TypeScript bindings synchronization via `ts-rs` (`FulltextHitDto.ts`, `FulltextSearchOptions.ts`)
   * Tauri IPC command `search_fulltext` exposed and registered in `invoke_handler`
   * Automated tests: 35 Cargo tests 100% pass, 5 Vitest tests 100% pass, Clippy zero warnings
-* [ ] **Phase 2.4 (Text Extraction Isolated Worker: Plaintext/MD Direct + Memory-Bounded Isolated Process): Ready to start**
+* [x] **Phase 2.4 (Text Extraction Isolated Worker: Plaintext/MD Direct + Memory-Bounded Isolated Process): Completed**
+  * Two-tier text extraction architecture implemented (`src-tauri/src/extractor.rs`)
+  * Tier 1 direct in-process extraction for text/code files with Mozilla `chardetng` and `encoding_rs` automatic character encoding detection (UTF-8, Shift_JIS, EUC-JP)
+  * 10 MiB size quota guard and bounded character truncation (`truncated`) for OOM prevention
+  * Tier 2 isolated worker (PDF): Linux Landlock LSM read-only original protection, RLIMIT_AS (256 MiB) memory ceiling, and 30s timeout execution
+  * Safe handling and warning notifications when `pdftotext` is missing
+  * Unified extraction pipeline into Tantivy + Lindera Japanese full-text search index (`index_file_with_text`)
+  * Automated TypeScript bindings synchronization via `ts-rs` (`ExtractedTextDto.ts`, `ExtractTextOptions.ts`)
+  * Tauri IPC commands `extract_file_text`, `index_file_with_text` exposed
+  * Full bilingual dictionary (`extractor.*`) and UI extractor card integration
+  * Automated tests: 45 Cargo tests 100% pass, 5 Vitest tests 100% pass, Clippy zero warnings
+* [ ] **Phase 3.1 (6-Region Main Layout UI Integration & @tanstack/react-virtual Virtual Scrolling): Ready to start**
 
 ---
 
@@ -135,41 +146,22 @@ All future development must strictly adhere to the following protocol:
 
 ---
 
-## 6. Next Session Startup Guide (Phase 2.4 Tasks)
+## 6. Next Session Startup Guide (Phase 3.1 Tasks)
 
-Strategic architectural plan and implementation roadmap for Phase 2.4:
+Strategic architectural plan and implementation roadmap for Phase 3.1:
 
-### 6.1 Phase 2.4 Architecture & Design Decisions
-* **Two-Tier Text Extraction Architecture:**
-  * **Tier 1: Fast In-process Direct Extraction (Text & Source Code)**
-    * Target extensions: `.txt`, `.md`, `.markdown`, `.json`, `.csv`, `.tsv`, `.toml`, `.yaml`, `.yml`, `.rs`, `.ts`, `.tsx`, `.js`, `.py`, `.sh`, etc.
-    * Character encoding autodetection (UTF-8, Shift_JIS, EUC-JP) and loss-free fallback.
-    * File size quota guard (default: 10 MiB to prevent OOM on enormous logs/dumps).
-  * **Tier 2: Out-of-process Isolated Worker (PDF, Complex Binaries, Extreme Files)**
-    * Landlock LSM kernel-level read-only protection of original files.
-    * Strict process resource caps via `ulimit` (256 MiB memory quota) and 30-second execution timeout.
-    * External parser (`pdftotext`, etc.) direct argument array execution (zero shell string invocation).
-    * Fault containment: any panic, segmentation fault, or OOM terminates only the child worker, leaving the Cuddle main process 100% resilient.
-* **Data Structures & DTOs:**
-  * `ExtractedTextDto`: `item_id`, `text`, `extracted_chars`, `tier_used`, `truncated`
-  * Automated TypeScript bindings synchronization via `ts-rs`.
-
-### 6.2 Step-by-Step Implementation Guide
-1. **Implement Text Extraction Module (`src-tauri/src/extractor.rs`):**
-   * Tier 1 streaming reader with charset sniffing.
-   * Tier 2 isolated child worker launcher with Landlock read-only sandboxing.
-2. **Pipeline Integration with Tantivy Full-text Engine:**
-   * Hand off extracted text stream into `search_fulltext::index_document`.
-3. **Expose Tauri IPC Commands & Automated Tests:**
-   * `extract_file_text(path_base64: String) -> Result<ExtractedTextDto, String>`
-   * Multi-encoding extraction tests, size clamping tests, and Landlock isolation verification.
-4. **Validation Commands:**
-   ```bash
-   cargo test --lib extractor::tests
-   cargo clippy -- -D warnings
-   pnpm test
-   pnpm build
-   ```
+### 6.1 Phase 3.1 Architecture & Design Decisions
+* **6-Region Main UI Shell Construction:**
+  1. Navigation & Global Header (language switch & security badge)
+  2. Folder Tree pane (high-speed scanning & lazy expansion)
+  3. File Browser (@tanstack/react-virtual 10,000 items 60fps virtualized list)
+  4. Search Pane (plocate filename search & Tantivy+Lindera full-text search tabs)
+  5. Workspace Pane (workspace-temp staging list)
+  6. Detail Inspector & Execution Logs
+* **Rich Glassmorphism Visual Polish:**
+  * Dark Velvet Slate palette (`#070b12`)
+  * Micro translucent blur (16px), 1px hairline borders, soft pulse animations
+  * Instant dynamic bilingual switching (EN / JA)
 
 ---
 

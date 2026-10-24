@@ -4,7 +4,8 @@ import { useTranslation } from "react-i18next";
 import { changeLanguage, SupportedLanguage } from "./i18n";
 import type { FileItem } from "./types/FileItem";
 import type { AppConfig } from "./types/AppConfig";
-import { Globe, ShieldCheck, HardDrive, Terminal, Lock, FileCode, Binary, Sliders } from "lucide-react";
+import type { ExtractedTextDto } from "./types/ExtractedTextDto";
+import { Globe, ShieldCheck, HardDrive, Terminal, Lock, FileCode, Binary, Sliders, FileText, Layers } from "lucide-react";
 import "./App.css";
 
 interface LandlockStatus {
@@ -19,12 +20,29 @@ function App() {
   const [landlock, setLandlock] = useState<LandlockStatus | null>(null);
   const [files, setFiles] = useState<FileItem[]>([]);
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const [extractedInfo, setExtractedInfo] = useState<ExtractedTextDto | null>(null);
+  const [extractLoading, setExtractLoading] = useState(false);
 
   const currentLang = (i18n.language.startsWith("ja") ? "ja" : "en") as SupportedLanguage;
 
   const toggleLanguage = () => {
     const nextLang: SupportedLanguage = currentLang === "ja" ? "en" : "ja";
     changeLanguage(nextLang);
+  };
+
+  const handleExtractText = async (file: FileItem) => {
+    try {
+      setExtractLoading(true);
+      const res = await invoke<ExtractedTextDto>("extract_file_text", {
+        pathBase64: file.raw_base64,
+        options: null,
+      });
+      setExtractedInfo(res);
+    } catch (err) {
+      console.error("Text extraction failed:", err);
+    } finally {
+      setExtractLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -117,6 +135,16 @@ function App() {
                   )}
                   <span className="file-item-name">{file.display_name}</span>
                   <span className="file-item-size">{file.size.toString()} B</span>
+                  <button
+                    type="button"
+                    className="extract-action-btn"
+                    onClick={() => handleExtractText(file)}
+                    disabled={extractLoading}
+                    title={t("extractor.title")}
+                  >
+                    <FileText size={12} />
+                    <span>{t("extractor.title")}</span>
+                  </button>
                 </div>
                 <div className="file-item-b64">
                   <span className="b64-label">{t("workspace.raw_base64_label")}:</span>
@@ -125,6 +153,50 @@ function App() {
               </div>
             ))}
           </div>
+        </div>
+
+        <div className="card">
+          <div className="card-header">
+            <Layers size={18} />
+            <h2>{t("extractor.title")}</h2>
+          </div>
+          {extractedInfo ? (
+            <div className="extractor-result">
+              <div className="config-item">
+                <span className="config-label">{t("extractor.encoding_label")}:</span>
+                <span className="config-val-pill secure">{extractedInfo.encoding_used}</span>
+              </div>
+              <div className="config-item">
+                <span className="config-label">Tier:</span>
+                <span className="config-val-pill">
+                  {extractedInfo.tier_used === "tier1_direct"
+                    ? t("extractor.tier1_label")
+                    : extractedInfo.tier_used === "tier2_isolated_pdf"
+                    ? t("extractor.tier2_label")
+                    : t("extractor.skipped_label")}
+                </span>
+              </div>
+              <div className="config-item">
+                <span className="config-label">{t("extractor.chars_count", { count: extractedInfo.extracted_chars })}</span>
+                {extractedInfo.truncated && (
+                  <span className="status-badge warning">{t("extractor.truncated_warning")}</span>
+                )}
+              </div>
+              {extractedInfo.warning && (
+                <p className="card-meta warning">{extractedInfo.warning}</p>
+              )}
+              {extractedInfo.text && (
+                <div className="extracted-text-preview">
+                  <p className="b64-label">{t("search.snippet_label")}:</p>
+                  <pre className="extracted-text-box">{extractedInfo.text.slice(0, 300)}</pre>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="card-desc">
+              {t("extractor.tier1_label")} / {t("extractor.tier2_label")}
+            </p>
+          )}
         </div>
 
         <div className="card">
@@ -183,7 +255,7 @@ function App() {
       </section>
 
       <footer className="app-footer">
-        <span className="footer-brand">Cuddle: File Workbench - Phase 2.3 Search Engines (plocate + Tantivy + Lindera) Verified</span>
+        <span className="footer-brand">Cuddle: File Workbench - Phase 2.4 Text Extraction (Tier 1 Direct & Tier 2 Isolated Worker) Verified</span>
         <span className="footer-font-hint">Nerd Font: Pre-required (System Fallback)</span>
       </footer>
     </main>

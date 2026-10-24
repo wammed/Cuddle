@@ -1,4 +1,5 @@
 pub mod config;
+pub mod extractor;
 pub mod models;
 pub mod sandbox;
 pub mod scanner;
@@ -113,6 +114,23 @@ fn search_fulltext(
     engine.search(&query, &opts).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn extract_file_text(
+    path_base64: String,
+    options: Option<extractor::ExtractTextOptions>,
+) -> Result<extractor::ExtractedTextDto, String> {
+    let path = models::decode_path_from_base64(&path_base64).map_err(|e| e.to_string())?;
+    extractor::extract_file_text(&path, options).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn index_file_with_text(
+    path_base64: String,
+    options: Option<extractor::ExtractTextOptions>,
+) -> Result<extractor::ExtractedTextDto, String> {
+    extractor::index_file_with_text(&path_base64, options).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -125,7 +143,9 @@ pub fn run() {
             save_app_config,
             scan_dir,
             search_files_by_name,
-            search_fulltext
+            search_fulltext,
+            extract_file_text,
+            index_file_with_text
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

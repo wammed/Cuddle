@@ -128,6 +128,17 @@ impl LandlockSandbox {
 
     /// Configures a `std::process::Command` with Landlock sandbox pre-exec hook and isolated TMPDIR.
     pub fn configure_command(&self, cmd: &mut Command, isolated_tmpdir: &Path) {
+        self.configure_command_with_limits(cmd, isolated_tmpdir, None);
+    }
+
+    /// Configures a `std::process::Command` with Landlock sandbox pre-exec hook, isolated TMPDIR,
+    /// and an optional memory limit (RLIMIT_AS).
+    pub fn configure_command_with_limits(
+        &self,
+        cmd: &mut Command,
+        isolated_tmpdir: &Path,
+        memory_limit_bytes: Option<u64>,
+    ) {
         // Isolate TMPDIR environment variable
         cmd.env("TMPDIR", isolated_tmpdir);
 
@@ -135,6 +146,16 @@ impl LandlockSandbox {
 
         unsafe {
             cmd.pre_exec(move || {
+                if let Some(limit_bytes) = memory_limit_bytes {
+                    let rlimit = libc::rlimit {
+                        rlim_cur: limit_bytes,
+                        rlim_max: limit_bytes,
+                    };
+                    let ret = libc::setrlimit(libc::RLIMIT_AS, &rlimit);
+                    if ret != 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                }
                 sandbox.apply().map_err(|e| {
                     std::io::Error::new(std::io::ErrorKind::PermissionDenied, e.to_string())
                 })?;

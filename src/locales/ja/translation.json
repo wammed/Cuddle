@@ -72,5 +72,15 @@
     "search_button": "検索",
     "hits_count": "{{count}} 件ヒット",
     "snippet_label": "本文スニペット"
+  },
+  "extractor": {
+    "title": "テキスト抽出 & インデックス登録",
+    "tier1_label": "Tier 1: 高速直接抽出",
+    "tier2_label": "Tier 2: 分離プロセス抽出 (PDF)",
+    "skipped_label": "スキップ (バイナリ/非対象)",
+    "encoding_label": "検出文字コード",
+    "chars_count": "{{count}} 文字抽出",
+    "truncated_warning": "最大サイズ上限に達したため、先頭部分のみ抽出しました",
+    "pdftotext_missing": "pdftotext (poppler-utils) が見つからないため、PDF抽出を安全にスキップしました"
   }
 }

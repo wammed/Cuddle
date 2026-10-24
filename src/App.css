@@ -512,6 +512,51 @@ body {
   border-color: rgba(16, 185, 129, 0.3);
 }
 
+/* --- Extractor Styles --- */
+.extract-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: var(--accent-brand);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  margin-left: auto;
+  transition: all var(--transition-fast);
+}
+
+.extract-action-btn:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.25);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+}
+
+.extract-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.extracted-text-preview {
+  margin-top: 10px;
+}
+
+.extracted-text-box {
+  margin-top: 4px;
+  background: rgba(8, 14, 26, 0.8);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: #e2e8f0;
+  max-height: 120px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 /* --- Footer --- */
 .app-footer {
   margin-top: auto;

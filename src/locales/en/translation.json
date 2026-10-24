@@ -72,5 +72,15 @@
     "search_button": "Search",
     "hits_count": "{{count}} hit(s)",
     "snippet_label": "Content Snippet"
+  },
+  "extractor": {
+    "title": "Text Extraction & Indexing",
+    "tier1_label": "Tier 1: Direct In-Process",
+    "tier2_label": "Tier 2: Isolated Worker (PDF)",
+    "skipped_label": "Skipped (Binary/Unsupported)",
+    "encoding_label": "Detected Encoding",
+    "chars_count": "{{count}} character(s) extracted",
+    "truncated_warning": "Text truncated at maximum limit",
+    "pdftotext_missing": "pdftotext (poppler-utils) not found; PDF extraction safely skipped"
   }
 }

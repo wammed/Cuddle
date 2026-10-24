@@ -32,6 +32,9 @@ walkdir = "2"
 tantivy = "0.26"
 lindera = { version = "5", features = ["embed-ipadic"] }
 lindera-tantivy = { version = "5", features = ["embed-ipadic"] }
+encoding_rs = "0.8"
+chardetng = "0.1"
+libc = "0.2"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

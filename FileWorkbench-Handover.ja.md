@@ -5,7 +5,7 @@
 </p>
 
 **文書作成日：** 2026-10-24  
-**ステータス：** Phase 2.2 完了、Phase 2.3 着手準備完了  
+**ステータス：** Phase 2.4 完了、Phase 3.1 着手準備完了  
 **対象：** 開発・設計・テスト担当者、次期作業セッション担当  
 
 ---
@@ -112,7 +112,18 @@
   * `ts-rs` による TypeScript 型自動同期（`FulltextHitDto.ts`, `FulltextSearchOptions.ts`）
   * Tauri IPC コマンド `search_fulltext` 公開と `invoke_handler` 登録
   * Cargo テスト 35 件 100% パス、Vitest 5 件 100% パス、Clippy 警告ゼロ
-* [ ] **Phase 2.4（テキスト抽出分離ワーカー：プレーンテキスト/MD直接抽出 + メモリ制限付き分離プロセス）：着手準備完了**
+* [x] **Phase 2.4（テキスト抽出分離ワーカー：プレーンテキスト/MD直接抽出 + メモリ制限付き分離プロセス）：完了**
+  * 2段階テキスト抽出アーキテクチャ実装（`src-tauri/src/extractor.rs`）
+  * Tier 1 高速直接抽出（テキスト・コード系）＆ Mozilla `chardetng` / `encoding_rs` による日本語文字コード（UTF-8, Shift_JIS, EUC-JP）自動判定
+  * 10 MiB サイズ上限ガード＆最大文字数切り詰め（`truncated`）安全設計
+  * Tier 2 分離ワーカー（PDF）：Landlock LSM による原本読み取り専用保護、RLIMIT_AS（256 MiB）メモリ上限、30秒タイムアウト付き安全実行
+  * `pdftotext` 不在時の安全スキップ・警告通知ハンドリング
+  * テキスト抽出から Tantivy + Lindera 日本語全文検索インデックスへの自動パイプライン連携（`index_file_with_text`）
+  * `ts-rs` による TypeScript 型自動同期（`ExtractedTextDto.ts`, `ExtractTextOptions.ts`）
+  * Tauri IPC コマンド `extract_file_text`, `index_file_with_text` 公開
+  * 日英完全バイリンガル辞書（`extractor.*`）整備および UI 抽出カード追加
+  * Cargo テスト 45 件 100% パス、Vitest 5 件 100% パス、Clippy 警告ゼロ
+* [ ] **Phase 3.1（6領域メインレイアウト UI 統合 & @tanstack/react-virtual 仮想スクロール結合）：着手準備完了**
 
 ---
 
@@ -135,41 +146,22 @@
 
 ---
 
-## 6. 次期セッション着手手順（Phase 2.4 のタスク）
+## 6. 次期セッション着手手順（Phase 3.1 のタスク）
 
-Phase 2.4 における方針および実装計画：
+Phase 3.1 における方針および実装計画：
 
-### 6.1 Phase 2.4 の目的と設計方針
-* **2段階（Tier 1 / Tier 2）テキスト抽出アーキテクチャ：**
-  * **Tier 1: インプロセス高速直接抽出（テキスト・コード系）**
-    * 対象拡張子: `.txt`, `.md`, `.markdown`, `.json`, `.csv`, `.tsv`, `.toml`, `.yaml`, `.yml`, `.rs`, `.ts`, `.tsx`, `.js`, `.py`, `.sh` 等
-    * 文字コード自動判定（UTF-8, Shift_JIS, EUC-JP）とフォールバック
-    * ファイルサイズ上限ガード（既定 10 MiB、巨大ファイルの OOM 予防）
-  * **Tier 2: 分離プロセス抽出（PDF・複雑バイナリ・極大ファイル）**
-    * Landlock LSM による原本読み取り専用保護
-    * メモリ上限（256 MiB）およびタイムアウト（30秒）によるプロセス保護
-    * 外部パーサー（`pdftotext` 等）の直接引数配列起動（シェル介在なし）
-    * 万一のパニック・クラッシュ・OOM 発生時もメインプロセスを 100% 巻き込まない設計
-* **データ構造 & DTO：**
-  * `ExtractedTextDto`: `item_id`, `text`, `extracted_chars`, `tier_used`, `truncated`
-  * `ts-rs` による TypeScript 型自動同期
-
-### 6.2 実行する実装手順
-1. **テキスト抽出モジュール作成（`src-tauri/src/extractor.rs`）：**
-   * Tier 1 直接テキスト読み込み・エンコーディング自動判定
-   * Tier 2 分離プロセス実行器（Landlock 読み取り専用 + リソース制限）
-2. **全文検索インデクサーとの連携：**
-   * `extract_file_text` により抽出したテキストを `search_fulltext` の `index_document` に受け渡すパイプライン
-3. **Tauri コマンド公開 & テスト：**
-   * `extract_file_text(path_base64: String) -> Result<ExtractedTextDto, String>`
-   * 日本語テキスト（UTF-8 / Shift_JIS）抽出テスト、サイズ上限クリップテスト、原本保護分離テスト
-4. **テスト実行コマンド：**
-   ```bash
-   cargo test --lib extractor::tests
-   cargo clippy -- -D warnings
-   pnpm test
-   pnpm build
-   ```
+### 6.1 Phase 3.1 の目的と設計方針
+* **6領域メインUIシェル構築：**
+  1. ナビゲーション & グローバルヘッダー（言語切替・セキュリティバッジ）
+  2. フォルダツリーペイン（高速走査・展開）
+  3. ファイルブラウザー（@tanstack/react-virtual による 10,000 件 60fps 仮想スクロール）
+  4. 検索ペイン（plocate ファイル名検索 ＆ Tantivy+Lindera 全文検索切り替えタブ）
+  5. 作業領域（workspace-temp ステージング一覧）
+  6. 詳細インスペクター＆実行ログ
+* **リッチグラスモーフィズムデザインの具現化：**
+  * 深色ベルベット（Dark Velvet Slate `#070b12`）
+  * 微細半透明ブラー（16px）、1px 極細ヘアライン、ソフト発光パルスアニメーション
+  * 完全バイリンガル（日英）即時動的切り替え
 
 ---
 

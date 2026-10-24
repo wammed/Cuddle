@@ -4,8 +4,8 @@
   <a href="FileWorkbench-Handover.en.md">English</a> | <strong>日本語</strong>
 </p>
 
-**文書作成日：** 2026-10-24  
-**ステータス：** Phase 2.4 完了、Phase 3.1 着手準備完了  
+**文書作成日：** 2026-10-25  
+**ステータス：** Phase 3.1 完了、Phase 3.2 着手準備完了  
 **対象：** 開発・設計・テスト担当者、次期作業セッション担当  
 
 ---
@@ -123,7 +123,16 @@
   * Tauri IPC コマンド `extract_file_text`, `index_file_with_text` 公開
   * 日英完全バイリンガル辞書（`extractor.*`）整備および UI 抽出カード追加
   * Cargo テスト 45 件 100% パス、Vitest 5 件 100% パス、Clippy 警告ゼロ
-* [ ] **Phase 3.1（6領域メインレイアウト UI 統合 & @tanstack/react-virtual 仮想スクロール結合）：着手準備完了**
+* [x] **Phase 3.1（6領域メインレイアウト UI 統合 & @tanstack/react-virtual 仮想スクロール結合）：完了**
+  * `react-resizable-panels` による 6 領域スプリットペイン統合（`src/App.tsx`）
+  * 左列（検索結果＋ディレクトリツリー）、中央列（ファイルブラウザー＋作業ワークスペース）、右列（詳細インスペクターサイドバー）、下部列（プレビュー／履歴／セキュリティ／ログ）
+  * `@tanstack/react-virtual` による Standard 密度（行高 42px: アイコン、名前、サイズ、更新日時、inode、原本保護バッジ）の 60fps 仮想スクロール（`src/components/VirtualFileList.tsx`）
+  * パネルコンポーネント群の実装（`Header`, `SearchPanel`, `FolderTreePanel`, `FileBrowserPanel`, `WorkspacePanel`, `DetailsSidebarPanel`, `BottomTabPanel`）
+  * 右サイドバー・下部パネルの開閉トグル＆レイアウト初期化機能
+  * 深色ベルベット（Dark Velvet Slate `#070b12`）グラスモーフィズムデザイン
+  * 完全バイリンガル辞書キー（`panels.*`, `browser.*`, `tree.*`, `details.*`）追加＆動的切替
+  * Cargo テスト 45 件 100% パス、Vitest 6 件 100% パス、Clippy 警告ゼロ、Vite ビルド成功
+* [ ] **Phase 3.2（安全操作層 OperationPolicy エンジン & 原本保護・競合検出）：着手準備完了**
 
 ---
 
@@ -146,22 +155,18 @@
 
 ---
 
-## 6. 次期セッション着手手順（Phase 3.1 のタスク）
+## 6. 次期セッション着手手順（Phase 3.2 のタスク）
 
-Phase 3.1 における方針および実装計画：
+Phase 3.2 における方針および実装計画：
 
-### 6.1 Phase 3.1 の目的と設計方針
-* **6領域メインUIシェル構築：**
-  1. ナビゲーション & グローバルヘッダー（言語切替・セキュリティバッジ）
-  2. フォルダツリーペイン（高速走査・展開）
-  3. ファイルブラウザー（@tanstack/react-virtual による 10,000 件 60fps 仮想スクロール）
-  4. 検索ペイン（plocate ファイル名検索 ＆ Tantivy+Lindera 全文検索切り替えタブ）
-  5. 作業領域（workspace-temp ステージング一覧）
-  6. 詳細インスペクター＆実行ログ
-* **リッチグラスモーフィズムデザインの具現化：**
-  * 深色ベルベット（Dark Velvet Slate `#070b12`）
-  * 微細半透明ブラー（16px）、1px 極細ヘアライン、ソフト発光パルスアニメーション
-  * 完全バイリンガル（日英）即時動的切り替え
+### 6.1 Phase 3.2 の目的と設計方針
+* **安全操作ポリシー（`OperationPolicy`）エンジン構築（`src-tauri/src/policy.rs`）：**
+  * 原本変更反映の禁止領域判定：マウントポイント境界、外部ストレージ、ホームディレクトリ外のパスにある原本に対する直接変更反映の一律禁止
+  * ホームディレクトリ判定ルール（シンボリックリンク経由のホーム外脱出を実パス解決で完全阻止）
+  * 破壊的操作・原本競合検出（原本の SHA-256、サイズ、更新時刻 mtime を照合し、作業コピー作成後の外部変更を即時検知）
+  * ディスク空き容量事前検証（原本合計サイズ × 1.5 倍以上の空き容量確保を強制）
+  * TOCTOU 対策（操作実行直前での inode/mtime/dev 再検証）
+  * 構造化エラー・警告の多言語コード体系（`OperationErrorDto`）
 
 ---
 

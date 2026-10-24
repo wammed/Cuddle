@@ -4,8 +4,8 @@
   <strong>English</strong> | <a href="FileWorkbench-Handover.ja.md">日本語</a>
 </p>
 
-**Document Date:** 2026-10-24  
-**Status:** Phase 2.4 Completed, Ready for Phase 3.1  
+**Document Date:** 2026-10-25  
+**Status:** Phase 3.1 Completed, Ready for Phase 3.2  
 **Target Audience:** Development, Architecture, and QA Teams; Next Working Session Maintainers  
 
 ---
@@ -123,7 +123,16 @@
   * Tauri IPC commands `extract_file_text`, `index_file_with_text` exposed
   * Full bilingual dictionary (`extractor.*`) and UI extractor card integration
   * Automated tests: 45 Cargo tests 100% pass, 5 Vitest tests 100% pass, Clippy zero warnings
-* [ ] **Phase 3.1 (6-Region Main Layout UI Integration & @tanstack/react-virtual Virtual Scrolling): Ready to start**
+* [x] **Phase 3.1 (6-Region Main Layout UI Integration & @tanstack/react-virtual Virtual Scrolling): Completed**
+  * Integrated 6-region resizable split layout via `react-resizable-panels` (`src/App.tsx`)
+  * Left column (Search Results + Directory Tree), center column (File Browser + Workbench), right column (Detail Inspector sidebar), bottom column (Preview / History / Security / Logs)
+  * Standard density (row height 42px: icons, filename, size, modified date, inode, original protection pill) 60fps virtualized scrolling via `@tanstack/react-virtual` (`src/components/VirtualFileList.tsx`)
+  * Specialized modular panels (`Header`, `SearchPanel`, `FolderTreePanel`, `FileBrowserPanel`, `WorkspacePanel`, `DetailsSidebarPanel`, `BottomTabPanel`)
+  * Collapsible toggling for right sidebar and bottom panel, plus one-click layout reset
+  * Dark Velvet Slate (`#070b12`) glassmorphism aesthetic with subtle glow accents
+  * Full bilingual dictionary expansion (`panels.*`, `browser.*`, `tree.*`, `details.*`) with instant language toggle
+  * Automated testing: 45 Cargo tests 100% pass, 6 Vitest tests 100% pass, Clippy zero warnings, Vite build success
+* [ ] **Phase 3.2 (Safety Operation Layer OperationPolicy Engine & Conflict Detection): Ready to start**
 
 ---
 
@@ -146,22 +155,18 @@ All future development must strictly adhere to the following protocol:
 
 ---
 
-## 6. Next Session Startup Guide (Phase 3.1 Tasks)
+## 6. Next Session Startup Guide (Phase 3.2 Tasks)
 
-Strategic architectural plan and implementation roadmap for Phase 3.1:
+Strategic architectural plan and implementation roadmap for Phase 3.2:
 
-### 6.1 Phase 3.1 Architecture & Design Decisions
-* **6-Region Main UI Shell Construction:**
-  1. Navigation & Global Header (language switch & security badge)
-  2. Folder Tree pane (high-speed scanning & lazy expansion)
-  3. File Browser (@tanstack/react-virtual 10,000 items 60fps virtualized list)
-  4. Search Pane (plocate filename search & Tantivy+Lindera full-text search tabs)
-  5. Workspace Pane (workspace-temp staging list)
-  6. Detail Inspector & Execution Logs
-* **Rich Glassmorphism Visual Polish:**
-  * Dark Velvet Slate palette (`#070b12`)
-  * Micro translucent blur (16px), 1px hairline borders, soft pulse animations
-  * Instant dynamic bilingual switching (EN / JA)
+### 6.1 Phase 3.2 Architecture & Design Decisions
+* **Safety Operation Policy Engine (`src-tauri/src/policy.rs`):**
+  * Original modification forbidden zone enforcement: categorically block in-place reflection to paths outside `$HOME`, on mount point boundaries, or external storage
+  * Home directory jail verification (prevent symlink-based escapes using canonical path and inode validation)
+  * Conflict and external mutation detection (verify SHA-256, byte length, and mtime against staging snapshots)
+  * Disk capacity safety margin (enforce at least 1.5x original aggregate size before staging)
+  * TOCTOU race mitigation (atomic pre-flight verification of inode/dev/mtime immediately before execution)
+  * Structured error and warning DTOs with bilingual localization codes (`OperationErrorDto`)
 
 ---
 

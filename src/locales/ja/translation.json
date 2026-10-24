@@ -82,5 +82,47 @@
     "chars_count": "{{count}} 文字抽出",
     "truncated_warning": "最大サイズ上限に達したため、先頭部分のみ抽出しました",
     "pdftotext_missing": "pdftotext (poppler-utils) が見つからないため、PDF抽出を安全にスキップしました"
+  },
+  "panels": {
+    "search_title": "検索結果",
+    "tree_title": "ディレクトリツリー",
+    "browser_title": "ファイルブラウザー",
+    "workspace_title": "作業ワークスペース",
+    "details_title": "アイテム詳細",
+    "bottom_title": "インスペクター & ログ",
+    "toggle_sidebar": "サイドバー切替",
+    "toggle_bottom": "下部パネル切替",
+    "reset_layout": "レイアウト初期化",
+    "tab_preview": "プレビュー",
+    "tab_history": "操作履歴",
+    "tab_security": "セキュリティ & 設定",
+    "tab_logs": "実行ログ"
+  },
+  "browser": {
+    "col_name": "名前",
+    "col_size": "サイズ",
+    "col_mtime": "更新日時",
+    "col_inode": "inode",
+    "empty_folder": "このフォルダは空です",
+    "stage_to_workspace": "作業領域へコピー",
+    "items_count": "{{count}} 項目",
+    "selected_count": "{{count}} 項目選択中"
+  },
+  "tree": {
+    "home": "ホーム",
+    "root": "ルート (/)",
+    "quick_access": "クイックアクセス"
+  },
+  "details": {
+    "no_selection": "アイテムが選択されていません",
+    "file_type": "種類",
+    "file_type_dir": "ディレクトリ",
+    "file_type_file": "ファイル",
+    "file_type_symlink": "シンボリックリンク",
+    "path": "原本パス",
+    "permissions": "権限",
+    "device_id": "デバイス ID",
+    "safe_status": "原本保護状態",
+    "actions": "利用可能な操作"
   }
 }

@@ -82,5 +82,47 @@
     "chars_count": "{{count}} character(s) extracted",
     "truncated_warning": "Text truncated at maximum limit",
     "pdftotext_missing": "pdftotext (poppler-utils) not found; PDF extraction safely skipped"
+  },
+  "panels": {
+    "search_title": "Search Results",
+    "tree_title": "Directory Tree",
+    "browser_title": "File Browser",
+    "workspace_title": "Workbench",
+    "details_title": "Item Details",
+    "bottom_title": "Inspector & Logs",
+    "toggle_sidebar": "Toggle Sidebar",
+    "toggle_bottom": "Toggle Bottom Panel",
+    "reset_layout": "Reset Layout",
+    "tab_preview": "Preview",
+    "tab_history": "History",
+    "tab_security": "Security & Config",
+    "tab_logs": "Execution Logs"
+  },
+  "browser": {
+    "col_name": "Name",
+    "col_size": "Size",
+    "col_mtime": "Modified",
+    "col_inode": "inode",
+    "empty_folder": "This directory is empty",
+    "stage_to_workspace": "Stage to Workspace",
+    "items_count": "{{count}} item(s)",
+    "selected_count": "{{count}} selected"
+  },
+  "tree": {
+    "home": "Home",
+    "root": "Root (/)",
+    "quick_access": "Quick Access"
+  },
+  "details": {
+    "no_selection": "No item selected",
+    "file_type": "Type",
+    "file_type_dir": "Directory",
+    "file_type_file": "File",
+    "file_type_symlink": "Symlink",
+    "path": "Original Path",
+    "permissions": "Permissions",
+    "device_id": "Device ID",
+    "safe_status": "Protection Status",
+    "actions": "Available Actions"
   }
 }

@@ -1,11 +1,18 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
+import { Panel, Group, Separator } from "react-resizable-panels";
 import { changeLanguage, SupportedLanguage } from "./i18n";
 import type { FileItem } from "./types/FileItem";
 import type { AppConfig } from "./types/AppConfig";
 import type { ExtractedTextDto } from "./types/ExtractedTextDto";
-import { Globe, ShieldCheck, HardDrive, Terminal, Lock, FileCode, Binary, Sliders, FileText, Layers } from "lucide-react";
+import { Header } from "./components/Header";
+import { SearchPanel } from "./components/SearchPanel";
+import { FolderTreePanel } from "./components/FolderTreePanel";
+import { FileBrowserPanel } from "./components/FileBrowserPanel";
+import { WorkspacePanel } from "./components/WorkspacePanel";
+import { DetailsSidebarPanel } from "./components/DetailsSidebarPanel";
+import { BottomTabPanel } from "./components/BottomTabPanel";
 import "./App.css";
 
 interface LandlockStatus {
@@ -13,252 +20,307 @@ interface LandlockStatus {
   abi_version: string | null;
 }
 
-function App() {
-  const { t, i18n } = useTranslation();
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+export function App() {
+  const { i18n } = useTranslation();
+  const [currentPath, setCurrentPath] = useState<string>(".");
+  const [browserItems, setBrowserItems] = useState<FileItem[]>([]);
+  const [stagedFiles, setStagedFiles] = useState<FileItem[]>([]);
+  const [selectedItem, setSelectedItem] = useState<FileItem | null>(null);
+
   const [landlock, setLandlock] = useState<LandlockStatus | null>(null);
-  const [files, setFiles] = useState<FileItem[]>([]);
-  const [config, setConfig] = useState<AppConfig | null>(null);
+  const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+
+  const [sidebarVisible, setSidebarVisible] = useState(true);
+  const [bottomVisible, setBottomVisible] = useState(true);
+
   const [extractedInfo, setExtractedInfo] = useState<ExtractedTextDto | null>(null);
   const [extractLoading, setExtractLoading] = useState(false);
 
+  const [logs, setLogs] = useState<string[]>([]);
+  const [history, setHistory] = useState<string[]>([]);
+
+  const [layoutKey, setLayoutKey] = useState(0);
+
   const currentLang = (i18n.language.startsWith("ja") ? "ja" : "en") as SupportedLanguage;
+
+  const addLog = useCallback((msg: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setLogs((prev) => [`[${timestamp}] ${msg}`, ...prev.slice(0, 99)]);
+  }, []);
+
+  const addHistory = useCallback((entry: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setHistory((prev) => [`[${timestamp}] ${entry}`, ...prev]);
+  }, []);
 
   const toggleLanguage = () => {
     const nextLang: SupportedLanguage = currentLang === "ja" ? "en" : "ja";
     changeLanguage(nextLang);
+    addLog(`Language switched to ${nextLang}`);
   };
 
-  const handleExtractText = async (file: FileItem) => {
+  // Scans a directory via Tauri IPC
+  const scanDirectory = useCallback(
+    async (pathStr: string) => {
+      setIsScanning(true);
+      try {
+        // Encode path to Base64 (standard for Cuddle dual-key IPC)
+        const b64 = btoa(pathStr);
+        const items = await invoke<FileItem[]>("scan_dir", {
+          pathBase64: b64,
+          options: {
+            max_depth: 1,
+            include_hidden: false,
+            follow_symlinks: false,
+          },
+        });
+        setBrowserItems(items);
+        setCurrentPath(pathStr);
+        addLog(`Scanned directory "${pathStr}": found ${items.length} items`);
+      } catch (err: unknown) {
+        addLog(`scan_dir failed for "${pathStr}", falling back to demo items: ${String(err)}`);
+        // Fallback to demo items
+        try {
+          const demo = await invoke<FileItem[]>("get_demo_items");
+          setBrowserItems(demo);
+        } catch {
+          // ignore
+        }
+      } finally {
+        setIsScanning(false);
+      }
+    },
+    [addLog]
+  );
+
+  useEffect(() => {
+    invoke<LandlockStatus>("get_landlock_status")
+      .then((status) => {
+        setLandlock(status);
+        addLog(`Landlock LSM status: supported=${status.supported}, ABI=${status.abi_version}`);
+      })
+      .catch((err) => console.error(err));
+
+    invoke<AppConfig>("get_app_config")
+      .then((cfg) => setAppConfig(cfg))
+      .catch((err) => console.error(err));
+
+    // Initial scan
+    scanDirectory(".");
+  }, [scanDirectory, addLog]);
+
+  const handleStageFile = (item: FileItem) => {
+    setStagedFiles((prev) => {
+      if (prev.some((f) => f.item_id === item.item_id)) return prev;
+      return [...prev, item];
+    });
+    addHistory(`Staged "${item.display_name}" to workspace-temp/`);
+    addLog(`Staged file "${item.display_name}" (size: ${item.size} bytes)`);
+  };
+
+  const handleStageAll = () => {
+    const newItems = browserItems.filter(
+      (b) => !b.is_dir && !stagedFiles.some((s) => s.item_id === b.item_id)
+    );
+    if (newItems.length > 0) {
+      setStagedFiles((prev) => [...prev, ...newItems]);
+      addHistory(`Staged all ${newItems.length} files to workspace-temp/`);
+      addLog(`Staged ${newItems.length} files to workspace-temp/`);
+    }
+  };
+
+  const handleClearWorkspace = () => {
+    setStagedFiles([]);
+    addHistory("Cleared all items from workspace-temp/");
+    addLog("Cleared workspace-temp/ staging area");
+  };
+
+  const handleExtractText = async (item: FileItem) => {
     try {
       setExtractLoading(true);
+      addLog(`Starting text extraction for "${item.display_name}"...`);
       const res = await invoke<ExtractedTextDto>("extract_file_text", {
-        pathBase64: file.raw_base64,
+        pathBase64: item.raw_base64,
         options: null,
       });
       setExtractedInfo(res);
-    } catch (err) {
-      console.error("Text extraction failed:", err);
+      addHistory(`Extracted text from "${item.display_name}" (${res.extracted_chars} chars, ${res.encoding_used})`);
+      addLog(`Extraction completed: ${res.tier_used}, encoding: ${res.encoding_used}, chars: ${res.extracted_chars}`);
+    } catch (err: unknown) {
+      const msg = typeof err === "string" ? err : String(err);
+      addLog(`Extraction error for "${item.display_name}": ${msg}`);
     } finally {
       setExtractLoading(false);
     }
   };
 
-  useEffect(() => {
-    invoke<LandlockStatus>("get_landlock_status")
-      .then((status) => setLandlock(status))
-      .catch((err) => console.error("Failed to query landlock status:", err));
+  const handleResetLayout = () => {
+    setSidebarVisible(true);
+    setBottomVisible(true);
+    setLayoutKey((prev) => prev + 1);
+    addLog("Reset 6-region pane layout");
+  };
 
-    invoke<FileItem[]>("get_demo_items")
-      .then((items) => setFiles(items))
-      .catch((err) => console.error("Failed to load demo files:", err));
+  const quickDirs = [
+    { name: "Current (.)", path: ".", icon: "folder" as const },
+    { name: "Root (/)", path: "/", icon: "root" as const },
+  ];
 
-    invoke<AppConfig>("get_app_config")
-      .then((cfg) => setConfig(cfg))
-      .catch((err) => console.error("Failed to load app config:", err));
-  }, []);
-
-  async function greet() {
-    try {
-      const res = await invoke<string>("greet", { name });
-      setGreetMsg(res);
-    } catch (err) {
-      console.error(err);
-    }
-  }
+  const subdirs = browserItems.filter((i) => i.is_dir);
 
   return (
-    <main className="app-container">
-      <header className="app-header">
-        <div className="brand-group">
-          <img src="/Cuddle-Icon.svg" alt="Cuddle Icon" className="brand-logo-img" />
-          <div>
-            <div className="brand-title-row">
-              <h1 className="brand-title">{t("app.title")}</h1>
-              <span className="brand-badge">v0.1.0</span>
-            </div>
-            <p className="brand-subtitle">{t("app.subtitle")}</p>
-          </div>
-        </div>
+    <div className="cuddle-root-app">
+      <Header
+        currentLang={currentLang}
+        onToggleLang={toggleLanguage}
+        landlockSupported={landlock?.supported ?? false}
+        landlockAbi={landlock?.abi_version ?? null}
+        sidebarVisible={sidebarVisible}
+        bottomVisible={bottomVisible}
+        onToggleSidebar={() => setSidebarVisible((v) => !v)}
+        onToggleBottom={() => setBottomVisible((v) => !v)}
+        onResetLayout={handleResetLayout}
+      />
 
-        <button
-          type="button"
-          className="lang-toggle-button"
-          onClick={toggleLanguage}
-          title={t("common.switch_language")}
+      <main className="workbench-workspace-layout">
+        <Group
+          key={layoutKey}
+          orientation="horizontal"
+          id="cuddle-main-h-panels"
+          className="main-panel-group"
         >
-          <Globe size={16} />
-          <span>{currentLang === "ja" ? "English" : "日本語"}</span>
-        </button>
-      </header>
+          {/* LEFT COLUMN: Top: Search Results, Bottom: Folder Tree */}
+          <Panel defaultSize={22} minSize={14} className="panel-left-col">
+            <Group orientation="vertical" id="cuddle-left-v-panels">
+              <Panel defaultSize={48} minSize={20} className="subpanel-wrap">
+                <SearchPanel
+                  onSelectItem={(partialItem) => {
+                    const found = browserItems.find((i) => i.item_id === partialItem.item_id);
+                    if (found) {
+                      setSelectedItem(found);
+                    } else if (partialItem.item_id && partialItem.display_name && partialItem.raw_base64) {
+                      const pseudo: FileItem = {
+                        item_id: partialItem.item_id,
+                        raw_base64: partialItem.raw_base64,
+                        display_name: partialItem.display_name,
+                        parent_raw_base64: null,
+                        is_dir: false,
+                        is_symlink: false,
+                        size: BigInt(partialItem.size ?? 0),
+                        mtime_ms: BigInt(partialItem.mtime_ms ?? 0),
+                        readonly: false,
+                        inode: 0n,
+                        dev: 0n,
+                      };
+                      setSelectedItem(pseudo);
+                    }
+                  }}
+                  onLog={addLog}
+                />
+              </Panel>
 
-      <section className="dashboard-grid">
-        <div className="card">
-          <div className="card-header">
-            {landlock?.supported ? <ShieldCheck size={18} /> : <Lock size={18} />}
-            <h2>Landlock LSM</h2>
-          </div>
-          {landlock?.supported ? (
-            <>
-              <p className="status-badge secure">
-                {t("security.landlock_active")}
-              </p>
-              <p className="card-desc">
-                {t("security.landlock_abi", { abi: landlock.abi_version || "Unknown" })}
-              </p>
-              <p className="card-meta">{t("workspace.original_protected")}</p>
-            </>
-          ) : (
-            <>
-              <p className="status-badge warning">
-                {t("security.landlock_unsupported")}
-              </p>
-              <p className="card-desc">{t("workspace.original_protected")}</p>
-            </>
-          )}
-        </div>
+              <Separator className="cuddle-resize-handle-v" />
 
-        <div className="card">
-          <div className="card-header">
-            <HardDrive size={18} />
-            <h2>{t("workspace.demo_items_title")}</h2>
-          </div>
-          <div className="file-list">
-            {files.map((file) => (
-              <div key={file.item_id} className="file-item-card">
-                <div className="file-item-header">
-                  {file.display_name.includes("\uFFFD") ? (
-                    <Binary size={16} className="non-utf8-icon" />
-                  ) : (
-                    <FileCode size={16} className="utf8-icon" />
-                  )}
-                  <span className="file-item-name">{file.display_name}</span>
-                  <span className="file-item-size">{file.size.toString()} B</span>
-                  <button
-                    type="button"
-                    className="extract-action-btn"
-                    onClick={() => handleExtractText(file)}
-                    disabled={extractLoading}
-                    title={t("extractor.title")}
-                  >
-                    <FileText size={12} />
-                    <span>{t("extractor.title")}</span>
-                  </button>
-                </div>
-                <div className="file-item-b64">
-                  <span className="b64-label">{t("workspace.raw_base64_label")}:</span>
-                  <code className="b64-value">{file.raw_base64}</code>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+              <Panel defaultSize={52} minSize={20} className="subpanel-wrap">
+                <FolderTreePanel
+                  currentPath={currentPath}
+                  onNavigatePath={(p) => scanDirectory(p)}
+                  quickDirs={quickDirs}
+                  subdirs={subdirs}
+                  isScanning={isScanning}
+                  onRefresh={() => scanDirectory(currentPath)}
+                />
+              </Panel>
+            </Group>
+          </Panel>
 
-        <div className="card">
-          <div className="card-header">
-            <Layers size={18} />
-            <h2>{t("extractor.title")}</h2>
-          </div>
-          {extractedInfo ? (
-            <div className="extractor-result">
-              <div className="config-item">
-                <span className="config-label">{t("extractor.encoding_label")}:</span>
-                <span className="config-val-pill secure">{extractedInfo.encoding_used}</span>
-              </div>
-              <div className="config-item">
-                <span className="config-label">Tier:</span>
-                <span className="config-val-pill">
-                  {extractedInfo.tier_used === "tier1_direct"
-                    ? t("extractor.tier1_label")
-                    : extractedInfo.tier_used === "tier2_isolated_pdf"
-                    ? t("extractor.tier2_label")
-                    : t("extractor.skipped_label")}
-                </span>
-              </div>
-              <div className="config-item">
-                <span className="config-label">{t("extractor.chars_count", { count: extractedInfo.extracted_chars })}</span>
-                {extractedInfo.truncated && (
-                  <span className="status-badge warning">{t("extractor.truncated_warning")}</span>
-                )}
-              </div>
-              {extractedInfo.warning && (
-                <p className="card-meta warning">{extractedInfo.warning}</p>
+          <Separator className="cuddle-resize-handle-h" />
+
+          {/* CENTER & BOTTOM COLUMN */}
+          <Panel defaultSize={sidebarVisible ? 56 : 78} minSize={30} className="panel-center-col">
+            <Group orientation="vertical" id="cuddle-center-v-panels">
+              {/* TOP: Center-Left Browser & Center-Right Workspace */}
+              <Panel defaultSize={bottomVisible ? 68 : 100} minSize={30} className="subpanel-wrap">
+                <Group orientation="horizontal" id="cuddle-center-h-panels">
+                  {/* Central-Left: File Browser */}
+                  <Panel defaultSize={50} minSize={25} className="subpanel-wrap">
+                    <FileBrowserPanel
+                      currentPath={currentPath}
+                      items={browserItems}
+                      selectedId={selectedItem?.item_id ?? null}
+                      onSelect={(item) => setSelectedItem(item)}
+                      onOpenDir={(dir) => scanDirectory(dir.display_name)}
+                      onStage={handleStageFile}
+                      onStageAll={handleStageAll}
+                      isScanning={isScanning}
+                      onRefresh={() => scanDirectory(currentPath)}
+                    />
+                  </Panel>
+
+                  <Separator className="cuddle-resize-handle-h" />
+
+                  {/* Central-Right: Workspace-temp */}
+                  <Panel defaultSize={50} minSize={25} className="subpanel-wrap">
+                    <WorkspacePanel
+                      stagedFiles={stagedFiles}
+                      selectedId={selectedItem?.item_id ?? null}
+                      onSelect={(item) => setSelectedItem(item)}
+                      onClearWorkspace={handleClearWorkspace}
+                    />
+                  </Panel>
+                </Group>
+              </Panel>
+
+              {bottomVisible && (
+                <>
+                  <Separator className="cuddle-resize-handle-v" />
+                  <Panel defaultSize={32} minSize={15} className="subpanel-wrap">
+                    <BottomTabPanel
+                      selectedItem={selectedItem}
+                      extractedInfo={extractedInfo}
+                      appConfig={appConfig}
+                      logs={logs}
+                      history={history}
+                      onClose={() => setBottomVisible(false)}
+                    />
+                  </Panel>
+                </>
               )}
-              {extractedInfo.text && (
-                <div className="extracted-text-preview">
-                  <p className="b64-label">{t("search.snippet_label")}:</p>
-                  <pre className="extracted-text-box">{extractedInfo.text.slice(0, 300)}</pre>
-                </div>
-              )}
-            </div>
-          ) : (
-            <p className="card-desc">
-              {t("extractor.tier1_label")} / {t("extractor.tier2_label")}
-            </p>
-          )}
-        </div>
+            </Group>
+          </Panel>
 
-        <div className="card">
-          <div className="card-header">
-            <Sliders size={18} />
-            <h2>{t("config.title")}</h2>
-          </div>
-          {config ? (
+          {/* RIGHT COLUMN: Details Sidebar */}
+          {sidebarVisible && (
             <>
-              <div className="config-item">
-                <span className="config-label">{t("config.theme_label")}:</span>
-                <span className="config-val-pill">{config.app.theme}</span>
-              </div>
-              <div className="config-item">
-                <span className="config-label">{t("config.min_space_label")}:</span>
-                <span className="config-val-pill secure">{config.workspace.min_free_space_multiplier}x</span>
-              </div>
-              <div className="config-item">
-                <span className="config-label">{t("config.landlock_enforced")}:</span>
-                <span className="config-val-pill secure">
-                  {config.security.enforce_landlock ? "true" : "false"}
-                </span>
-              </div>
-              <p className="card-meta">{t("config.guardrail_note")}</p>
+              <Separator className="cuddle-resize-handle-h" />
+              <Panel defaultSize={22} minSize={15} className="panel-right-col subpanel-wrap">
+                <DetailsSidebarPanel
+                  item={selectedItem}
+                  onClose={() => setSidebarVisible(false)}
+                  onExtractText={handleExtractText}
+                  extractLoading={extractLoading}
+                  extractedInfo={extractedInfo}
+                />
+              </Panel>
             </>
-          ) : (
-            <p className="card-desc">Loading config.toml...</p>
           )}
-        </div>
+        </Group>
+      </main>
 
-        <div className="card">
-          <div className="card-header">
-            <Terminal size={18} />
-            <h2>{t("common.greet")} (IPC)</h2>
-          </div>
-          <form
-            className="input-row"
-            onSubmit={(e) => {
-              e.preventDefault();
-              greet();
-            }}
-          >
-            <input
-              id="greet-input"
-              className="text-input"
-              value={name}
-              onChange={(e) => setName(e.currentTarget.value)}
-              placeholder={t("common.placeholder_name")}
-            />
-            <button type="submit" className="primary-button">
-              {t("common.greet")}
-            </button>
-          </form>
-          {greetMsg && <p className="greet-result">{greetMsg}</p>}
+      <footer className="cuddle-global-statusbar">
+        <div className="statusbar-left">
+          <span className="status-label">Cuddle</span>
+          <span className="status-sep">|</span>
+          <span>Phase 3.1 6-Region Layout &amp; Virtualized Virtual Scrolling Active</span>
         </div>
-      </section>
-
-      <footer className="app-footer">
-        <span className="footer-brand">Cuddle: File Workbench - Phase 2.4 Text Extraction (Tier 1 Direct & Tier 2 Isolated Worker) Verified</span>
-        <span className="footer-font-hint">Nerd Font: Pre-required (System Fallback)</span>
+        <div className="statusbar-right">
+          <span>Staged: {stagedFiles.length} files</span>
+          <span className="status-sep">|</span>
+          <span>Nerd Font: Pre-required</span>
+        </div>
       </footer>
-    </main>
+    </div>
   );
 }
 

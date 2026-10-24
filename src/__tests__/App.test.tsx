@@ -1,14 +1,21 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import App from "../App";
-import "../i18n";
 import { changeLanguage } from "../i18n";
+
+// Polyfill ResizeObserver for jsdom
+class ResizeObserverMock {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+globalThis.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
 
 // Mock Tauri API invoke
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn().mockImplementation((cmd: string, args: { name?: string }) => {
+  invoke: vi.fn().mockImplementation((cmd: string) => {
     if (cmd === "greet") {
-      return Promise.resolve(`Hello, ${args.name || "World"}! You've been greeted from Rust!`);
+      return Promise.resolve("Hello, World! You've been greeted from Rust!");
     }
     if (cmd === "get_landlock_status") {
       return Promise.resolve({ supported: true, abi_version: "V5" });
@@ -44,7 +51,21 @@ vi.mock("@tauri-apps/api/core", () => ({
       ]);
     }
     if (cmd === "scan_dir") {
-      return Promise.resolve([]);
+      return Promise.resolve([
+        {
+          item_id: "00000000-0000-0000-0000-000000000001",
+          raw_base64: "L2hvbWUvc3VzaWUvZG9jdW1lbnRzL3NhbXBsZV9wcm9qZWN0Lm1k",
+          display_name: "sample_project.md",
+          parent_raw_base64: null,
+          is_dir: false,
+          is_symlink: false,
+          size: 2048n,
+          mtime_ms: 1729750000000n,
+          readonly: false,
+          inode: 12345678n,
+          dev: 66305n,
+        },
+      ]);
     }
     if (cmd === "get_app_config") {
       return Promise.resolve({
@@ -67,8 +88,8 @@ vi.mock("@tauri-apps/api/core", () => ({
   }),
 }));
 
-describe("App component", () => {
-  it("renders brand title, dual-key non-UTF-8 items, and responds to dynamic language toggle", async () => {
+describe("App component (6-Region Main Shell)", () => {
+  it("renders 6-region layout panes and responds to dynamic language toggle", async () => {
     await act(async () => {
       await changeLanguage("ja");
     });
@@ -76,9 +97,12 @@ describe("App component", () => {
     render(<App />);
 
     // In Japanese
-    expect(screen.getByText("Cuddle")).toBeDefined();
-    expect(screen.getByText("二重キーファイルIPC（UTF-8 & 非UTF-8）")).toBeDefined();
-    expect(screen.getByText("設定管理 (TOML)")).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Cuddle" })).toBeDefined();
+    expect(screen.getByText("検索結果")).toBeDefined();
+    expect(screen.getByText("ディレクトリツリー")).toBeDefined();
+    expect(screen.getByText("ファイルブラウザー")).toBeDefined();
+    expect(screen.getByText("作業ワークスペース")).toBeDefined();
+    expect(screen.getByText("アイテム詳細")).toBeDefined();
     expect(screen.getByTitle("言語切替")).toBeDefined();
 
     // Toggle to English
@@ -88,10 +112,34 @@ describe("App component", () => {
     });
 
     // In English
-    expect(screen.getByText("Cuddle")).toBeDefined();
-    expect(screen.getByText("Dual-Key File IPC (UTF-8 & Non-UTF-8)")).toBeDefined();
-    expect(screen.getByText("Configuration (TOML)")).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Cuddle" })).toBeDefined();
+    expect(screen.getByText("Search Results")).toBeDefined();
+    expect(screen.getByText("Directory Tree")).toBeDefined();
+    expect(screen.getByText("File Browser")).toBeDefined();
+    expect(screen.getByText("Workbench")).toBeDefined();
+    expect(screen.getByText("Item Details")).toBeDefined();
     expect(screen.getByTitle("Language")).toBeDefined();
   });
-});
 
+  it("supports sidebar and bottom panel visibility toggling", async () => {
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    render(<App />);
+
+    // Toggle sidebar off
+    const sidebarToggleBtn = screen.getByTitle("サイドバー切替");
+    await act(async () => {
+      fireEvent.click(sidebarToggleBtn);
+    });
+
+    expect(screen.queryByText("アイテム詳細")).toBeNull();
+
+    // Toggle sidebar back on
+    await act(async () => {
+      fireEvent.click(sidebarToggleBtn);
+    });
+    expect(screen.getByText("アイテム詳細")).toBeDefined();
+  });
+});

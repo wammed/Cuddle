@@ -135,42 +135,40 @@ All future development must strictly adhere to the following protocol:
 
 ---
 
-## 6. Next Session Startup Guide (Phase 2.3 Tasks)
+## 6. Next Session Startup Guide (Phase 2.4 Tasks)
 
-Strategic architectural plan and implementation roadmap for Phase 2.3:
+Strategic architectural plan and implementation roadmap for Phase 2.4:
 
-### 6.1 Phase 2.3 Architecture & Design Decisions
-* **Tantivy + Lindera (Morphological Analysis) Integration:**
-  * High-performance search library `tantivy` (v0.22) paired with `lindera-tantivy` (IPADIC tokenizer) for Japanese and English full-text search.
-  * Schema definition:
-    * `item_id`: String (UUID, fast facet)
-    * `raw_base64`: Plain string
-    * `display_name`: Text (Japanese tokenizer + n-gram indexing)
-    * `body`: Text (Japanese tokenizer + highlighted snippet generation)
-    * `mtime_ms`: Integer (i64)
-    * `size`: Integer (u64)
-* **Index Storage Location:**
-  * `$XDG_DATA_HOME/Cuddle/index/` (fallback to `~/.local/share/Cuddle/index/`)
-* **Incremental Index Updates & Memory Quota:**
-  * Cross-reference `mtime` and `inode` to only index modified or newly added files.
-  * Bound indexing memory buffer (default: 50 MiB).
+### 6.1 Phase 2.4 Architecture & Design Decisions
+* **Two-Tier Text Extraction Architecture:**
+  * **Tier 1: Fast In-process Direct Extraction (Text & Source Code)**
+    * Target extensions: `.txt`, `.md`, `.markdown`, `.json`, `.csv`, `.tsv`, `.toml`, `.yaml`, `.yml`, `.rs`, `.ts`, `.tsx`, `.js`, `.py`, `.sh`, etc.
+    * Character encoding autodetection (UTF-8, Shift_JIS, EUC-JP) and loss-free fallback.
+    * File size quota guard (default: 10 MiB to prevent OOM on enormous logs/dumps).
+  * **Tier 2: Out-of-process Isolated Worker (PDF, Complex Binaries, Extreme Files)**
+    * Landlock LSM kernel-level read-only protection of original files.
+    * Strict process resource caps via `ulimit` (256 MiB memory quota) and 30-second execution timeout.
+    * External parser (`pdftotext`, etc.) direct argument array execution (zero shell string invocation).
+    * Fault containment: any panic, segmentation fault, or OOM terminates only the child worker, leaving the Cuddle main process 100% resilient.
+* **Data Structures & DTOs:**
+  * `ExtractedTextDto`: `item_id`, `text`, `extracted_chars`, `tier_used`, `truncated`
+  * Automated TypeScript bindings synchronization via `ts-rs`.
 
 ### 6.2 Step-by-Step Implementation Guide
-1. **Add Dependencies (`src-tauri/Cargo.toml`):**
-   * `tantivy = "0.22"`
-   * `lindera-tantivy = "0.32"` (or compatible release)
-2. **Implement Full-text Search Module (`src-tauri/src/search_fulltext.rs`):**
-   * Index lifecycle management and schema registration
-   * Document insertion, incremental update, and deletion
-   * Query execution with BM25 scoring and snippet generation
-3. **Expose Tauri IPC Commands & Tests:**
-   * `search_fulltext(query: String, limit: Option<usize>) -> Result<Vec<FulltextHitDto>, String>`
-   * Morphological tokenization, compound word matching, and accuracy tests
+1. **Implement Text Extraction Module (`src-tauri/src/extractor.rs`):**
+   * Tier 1 streaming reader with charset sniffing.
+   * Tier 2 isolated child worker launcher with Landlock read-only sandboxing.
+2. **Pipeline Integration with Tantivy Full-text Engine:**
+   * Hand off extracted text stream into `search_fulltext::index_document`.
+3. **Expose Tauri IPC Commands & Automated Tests:**
+   * `extract_file_text(path_base64: String) -> Result<ExtractedTextDto, String>`
+   * Multi-encoding extraction tests, size clamping tests, and Landlock isolation verification.
 4. **Validation Commands:**
    ```bash
-   cargo test --lib search_fulltext::tests
+   cargo test --lib extractor::tests
    cargo clippy -- -D warnings
    pnpm test
+   pnpm build
    ```
 
 ---

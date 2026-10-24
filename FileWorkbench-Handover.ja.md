@@ -135,42 +135,40 @@
 
 ---
 
-## 6. 次期セッション着手手順（Phase 2.3 のタスク）
+## 6. 次期セッション着手手順（Phase 2.4 のタスク）
 
-Phase 2.3 における方針および実装計画：
+Phase 2.4 における方針および実装計画：
 
-### 6.1 Phase 2.3 の目的と設計方針
-* **Tantivy + Lindera（形態素解析）の統合：**
-  * 高速全文検索エンジン `tantivy` (v0.22) と日本語形態素解析トークナイザー `lindera-tantivy`（IPADIC 辞書）の統合。
-  * スキーマ定義：
-    * `item_id`: 文字列（UUID・ファセット）
-    * `raw_base64`: プレーン文字列
-    * `display_name`: テキスト（日本語トークナイザー + n-gram）
-    * `body`: テキスト（日本語トークナイザー + プレビュー用ハイライトスニペット生成）
-    * `mtime_ms`: 数値（i64）
-    * `size`: 数値（u64）
-* **インデックス配置場所：**
-  * `$XDG_DATA_HOME/Cuddle/index/`（未定義時は `~/.local/share/Cuddle/index/`）
-* **差分インデックス更新 & メモリ制御：**
-  * `mtime` と `inode` を照合し、変更があったファイルのみ差分インデックス。
-  * インデックス書き込み時のメモリバッファ制限（既定 50 MiB）。
+### 6.1 Phase 2.4 の目的と設計方針
+* **2段階（Tier 1 / Tier 2）テキスト抽出アーキテクチャ：**
+  * **Tier 1: インプロセス高速直接抽出（テキスト・コード系）**
+    * 対象拡張子: `.txt`, `.md`, `.markdown`, `.json`, `.csv`, `.tsv`, `.toml`, `.yaml`, `.yml`, `.rs`, `.ts`, `.tsx`, `.js`, `.py`, `.sh` 等
+    * 文字コード自動判定（UTF-8, Shift_JIS, EUC-JP）とフォールバック
+    * ファイルサイズ上限ガード（既定 10 MiB、巨大ファイルの OOM 予防）
+  * **Tier 2: 分離プロセス抽出（PDF・複雑バイナリ・極大ファイル）**
+    * Landlock LSM による原本読み取り専用保護
+    * メモリ上限（256 MiB）およびタイムアウト（30秒）によるプロセス保護
+    * 外部パーサー（`pdftotext` 等）の直接引数配列起動（シェル介在なし）
+    * 万一のパニック・クラッシュ・OOM 発生時もメインプロセスを 100% 巻き込まない設計
+* **データ構造 & DTO：**
+  * `ExtractedTextDto`: `item_id`, `text`, `extracted_chars`, `tier_used`, `truncated`
+  * `ts-rs` による TypeScript 型自動同期
 
 ### 6.2 実行する実装手順
-1. **依存クレート追加（`src-tauri/Cargo.toml`）：**
-   * `tantivy = "0.22"`
-   * `lindera-tantivy = "0.32"` (または互換バージョン)
-2. **全文検索モジュール作成（`src-tauri/src/search_fulltext.rs`）：**
-   * インデックス初期化・スキーマ登録
-   * ドキュメント追加・差分更新・削除
-   * スニペット付きクエリ検索（BM25 スコアリング）
+1. **テキスト抽出モジュール作成（`src-tauri/src/extractor.rs`）：**
+   * Tier 1 直接テキスト読み込み・エンコーディング自動判定
+   * Tier 2 分離プロセス実行器（Landlock 読み取り専用 + リソース制限）
+2. **全文検索インデクサーとの連携：**
+   * `extract_file_text` により抽出したテキストを `search_fulltext` の `index_document` に受け渡すパイプライン
 3. **Tauri コマンド公開 & テスト：**
-   * `search_fulltext(query: String, limit: Option<usize>) -> Result<Vec<FulltextHitDto>, String>`
-   * 形態素解析（分かち書き）と複合語の検索精度テスト
+   * `extract_file_text(path_base64: String) -> Result<ExtractedTextDto, String>`
+   * 日本語テキスト（UTF-8 / Shift_JIS）抽出テスト、サイズ上限クリップテスト、原本保護分離テスト
 4. **テスト実行コマンド：**
    ```bash
-   cargo test --lib search_fulltext::tests
+   cargo test --lib extractor::tests
    cargo clippy -- -D warnings
    pnpm test
+   pnpm build
    ```
 
 ---

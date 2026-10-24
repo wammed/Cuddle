@@ -38,5 +38,10 @@
     "operation_forbidden": "Operation prohibited: Original file cannot be modified directly.",
     "insufficient_space": "Insufficient free space on disk. At least 1.5x original size is required.",
     "not_found": "Specified file or directory not found."
+  },
+  "security": {
+    "landlock_active": "Linux Landlock LSM Active (Kernel Protection)",
+    "landlock_abi": "ABI Version: {{abi}}",
+    "landlock_unsupported": "Landlock LSM is not enforced on this kernel"
   }
 }

@@ -140,6 +140,18 @@ body {
   border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
+.status-badge.secure {
+  background-color: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.status-badge.warning {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
 .card-desc {
   color: #cbd5e1;
   font-size: 0.95rem;

@@ -38,5 +38,10 @@
     "operation_forbidden": "操作が禁止されました：原本ファイルを直接変更することはできません。",
     "insufficient_space": "ディスク容量が不足しています。原本サイズの1.5倍以上の空き容量が必要です。",
     "not_found": "指定されたファイルまたはディレクトリが見つかりません。"
+  },
+  "security": {
+    "landlock_active": "Linux Landlock LSM 有効（カーネル隔離保護中）",
+    "landlock_abi": "ABI バージョン: {{abi}}",
+    "landlock_unsupported": "このカーネルでは Landlock LSM は有効化されていません"
   }
 }

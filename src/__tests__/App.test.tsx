@@ -10,6 +10,9 @@ vi.mock("@tauri-apps/api/core", () => ({
     if (cmd === "greet") {
       return Promise.resolve(`Hello, ${args.name || "World"}! You've been greeted from Rust!`);
     }
+    if (cmd === "get_landlock_status") {
+      return Promise.resolve({ supported: true, abi_version: "V5" });
+    }
     return Promise.resolve("");
   }),
 }));

@@ -5,7 +5,7 @@
 </p>
 
 **Document Date:** 2026-10-24  
-**Status:** Phase 1.1 Completed, Ready for Phase 1.2  
+**Status:** Phase 1.2 Completed, Ready for Phase 1.3  
 **Target Audience:** Development, Architecture, and QA Teams; Next Working Session Maintainers  
 
 ---
@@ -64,7 +64,14 @@
   * Frontend packages configured (`i18next`, `@tanstack/react-virtual`, `lucide-react`)
   * Full bilingual dictionaries (`en` / `ja`) implemented, dynamic language toggle verified, missing key test (Vitest 100% pass)
   * Rust unit tests passing (Cargo test 100% pass)
-* [ ] **Phase 1.2 (Landlock & Security PoC Verification): Awaiting start**
+* [x] **Phase 1.2 (Landlock & Security PoC Verification): Completed**
+  * Probed and confirmed host CachyOS kernel Landlock ABI version (detected: ABI V5)
+  * Implemented `LandlockSandbox` builder with `pre_exec` syscall isolation
+  * Injected isolated temporary directory (`TMPDIR`) per process
+  * Automated testing verifying write prevention outside whitelist (`EACCES` enforced at kernel level)
+  * Verified external CLI tool (`magick`) cannot tamper with protected original directory
+  * Exposed `get_landlock_status` Tauri command with UI security status badge
+* [ ] **Phase 1.3 (IPC Type Definitions & Non-UTF-8 Dual-Key Infrastructure): Awaiting start**
 
 ---
 

@@ -1,14 +1,20 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { changeLanguage, SupportedLanguage } from "./i18n";
-import { Globe, ShieldCheck, HardDrive, Terminal } from "lucide-react";
+import { Globe, ShieldCheck, HardDrive, Terminal, Lock } from "lucide-react";
 import "./App.css";
+
+interface LandlockStatus {
+  supported: boolean;
+  abi_version: string | null;
+}
 
 function App() {
   const { t, i18n } = useTranslation();
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
+  const [landlock, setLandlock] = useState<LandlockStatus | null>(null);
 
   const currentLang = (i18n.language.startsWith("ja") ? "ja" : "en") as SupportedLanguage;
 
@@ -16,6 +22,12 @@ function App() {
     const nextLang: SupportedLanguage = currentLang === "ja" ? "en" : "ja";
     changeLanguage(nextLang);
   };
+
+  useEffect(() => {
+    invoke<LandlockStatus>("get_landlock_status")
+      .then((status) => setLandlock(status))
+      .catch((err) => console.error("Failed to query landlock status:", err));
+  }, []);
 
   async function greet() {
     try {
@@ -51,11 +63,36 @@ function App() {
       <section className="dashboard-grid">
         <div className="card">
           <div className="card-header">
+            <Lock size={18} />
+            <h2>Landlock LSM</h2>
+          </div>
+          {landlock?.supported ? (
+            <>
+              <p className="status-badge secure">
+                {t("security.landlock_active")}
+              </p>
+              <p className="card-desc">
+                {t("security.landlock_abi", { abi: landlock.abi_version || "Unknown" })}
+              </p>
+              <p className="card-meta">{t("workspace.original_protected")}</p>
+            </>
+          ) : (
+            <>
+              <p className="status-badge warning">
+                {t("security.landlock_unsupported")}
+              </p>
+              <p className="card-desc">{t("workspace.original_protected")}</p>
+            </>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="card-header">
             <HardDrive size={18} />
             <h2>{t("nav.workspace")}</h2>
           </div>
           <p className="status-badge ready">{t("common.status_ready")}</p>
-          <p className="card-desc">{t("workspace.original_protected")}</p>
+          <p className="card-desc">{t("workspace.empty_state")}</p>
           <p className="card-meta">{t("workspace.reflink_enabled")}</p>
         </div>
 
@@ -87,7 +124,7 @@ function App() {
       </section>
 
       <footer className="app-footer">
-        <span>FileWorkbench Foundation - Phase 1.1 Scaffolded</span>
+        <span>FileWorkbench Security PoC - Landlock Kernel Isolation Active</span>
       </footer>
     </main>
   );

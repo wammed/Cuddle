@@ -5,7 +5,7 @@
 </p>
 
 **文書作成日：** 2026-10-24  
-**ステータス：** Phase 1.1 完了、Phase 1.2 着手準備完了  
+**ステータス：** Phase 1.2 完了、Phase 1.3 着手準備完了  
 **対象：** 開発・設計・テスト担当者、次期作業セッション担当  
 
 ---
@@ -64,7 +64,14 @@
   * フロントエンド（i18next, @tanstack/react-virtual, lucide-react）整備
   * 完全バイリンガル辞書（en / ja）整備、動的言語切替、欠損キー検証テスト（Vitest 100% パス）
   * Rust ユニットテスト（Cargo test 100% パス）
-* [ ] **Phase 1.2（Landlock & セキュリティ機構の PoC 検証）：着手待ち**
+* [x] **Phase 1.2（Landlock & セキュリティ機構の PoC 検証）：完了**
+  * CachyOS カーネルの Landlock ABI 自動プローブ機構実装（実機検出: ABI V5）
+  * `LandlockSandbox` ビルダー実装（`pre_exec` フックでのカーネルレベル隔離適用）
+  * 隔離一時ディレクトリ（`TMPDIR`）環境変数注入機構
+  * 子プロセス遮断テスト（原本ディレクトリへの書き込みが `EACCES` で確実に遮断されることを自動検証）
+  * 外部ツール（ImageMagick `magick`）での原本保護実証テスト（パス）
+  * Tauri コマンド `get_landlock_status` と UI セキュリティバッジの組み込み
+* [ ] **Phase 1.3（IPC 型定義 & 非 UTF-8 二重キー基盤）：着手待ち**
 
 ---
 

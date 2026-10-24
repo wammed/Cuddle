@@ -6,6 +6,7 @@ pub mod sandbox;
 pub mod scanner;
 pub mod search_filename;
 pub mod search_fulltext;
+pub mod workspace;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct LandlockStatusInfo {
@@ -178,6 +179,31 @@ fn verify_original_conflict(
     }
 }
 
+#[tauri::command]
+fn stage_file(path_base64: String) -> Result<workspace::StagedItemDto, String> {
+    let path = models::decode_path_from_base64(&path_base64).map_err(|e| e.to_string())?;
+    let mgr = workspace::get_workspace_manager();
+    mgr.stage_file(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn unstage_file(stage_id: String) -> Result<(), String> {
+    let mgr = workspace::get_workspace_manager();
+    mgr.unstage_file(&stage_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_staged_items() -> Result<Vec<workspace::StagedItemDto>, String> {
+    let mgr = workspace::get_workspace_manager();
+    Ok(mgr.list_staged())
+}
+
+#[tauri::command]
+fn clear_staged_items() -> Result<(), String> {
+    let mgr = workspace::get_workspace_manager();
+    mgr.clear_all().map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -195,7 +221,11 @@ pub fn run() {
             index_file_with_text,
             check_operation_policy,
             create_original_snapshot,
-            verify_original_conflict
+            verify_original_conflict,
+            stage_file,
+            unstage_file,
+            list_staged_items,
+            clear_staged_items
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

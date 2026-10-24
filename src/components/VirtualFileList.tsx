@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { FileItem } from "../types/FileItem";
 import { formatBytes, formatTimestamp } from "../utils/format";
-import { Folder, FileText, Binary, Shield, CornerDownRight } from "lucide-react";
+import { Folder, FileText, Binary, Shield, CornerDownRight, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 interface VirtualFileListProps {
@@ -11,6 +11,8 @@ interface VirtualFileListProps {
   onSelect: (item: FileItem) => void;
   onOpenDir?: (item: FileItem) => void;
   onStage?: (item: FileItem) => void;
+  onUnstage?: (item: FileItem) => void;
+  cloneMethodMap?: Record<string, "Reflink" | "StandardCopy">;
   emptyMessage?: string;
   isWorkspace?: boolean;
 }
@@ -23,6 +25,8 @@ export function VirtualFileList({
   onSelect,
   onOpenDir,
   onStage,
+  onUnstage,
+  cloneMethodMap,
   emptyMessage,
   isWorkspace = false,
 }: VirtualFileListProps) {
@@ -94,9 +98,16 @@ export function VirtualFileList({
                 <span className="file-name-text">{item.display_name}</span>
                 {isNonUtf8 && <span className="warning-pill-sm">Non-UTF-8</span>}
                 {isWorkspace && (
-                  <span className="reflink-pill-sm" title={t("workspace.reflink_enabled")}>
+                  <span
+                    className={`reflink-pill-sm ${cloneMethodMap?.[item.item_id] === "Reflink" ? "is-reflink" : ""}`}
+                    title={
+                      cloneMethodMap?.[item.item_id] === "Reflink"
+                        ? t("workspace.clone_method_reflink")
+                        : t("workspace.clone_method_standard")
+                    }
+                  >
                     <Shield size={10} />
-                    <span>Copy</span>
+                    <span>{cloneMethodMap?.[item.item_id] === "Reflink" ? "Reflink" : "Copy"}</span>
                   </span>
                 )}
               </div>
@@ -113,8 +124,8 @@ export function VirtualFileList({
                 #{item.inode}
               </div>
 
-              {onStage && !item.is_dir && (
-                <div className="row-col-actions">
+              <div className="row-col-actions">
+                {onStage && !item.is_dir && (
                   <button
                     type="button"
                     className="row-action-btn"
@@ -126,8 +137,21 @@ export function VirtualFileList({
                   >
                     <CornerDownRight size={12} />
                   </button>
-                </div>
-              )}
+                )}
+                {isWorkspace && onUnstage && (
+                  <button
+                    type="button"
+                    className="row-action-btn danger"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUnstage(item);
+                    }}
+                    title={t("workspace.unstage_btn")}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
+              </div>
             </div>
           );
         })}

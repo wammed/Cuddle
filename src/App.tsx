@@ -6,6 +6,7 @@ import { changeLanguage, SupportedLanguage } from "./i18n";
 import type { FileItem } from "./types/FileItem";
 import type { AppConfig } from "./types/AppConfig";
 import type { ExtractedTextDto } from "./types/ExtractedTextDto";
+import type { StagedItemDto } from "./types/StagedItemDto";
 import { Header } from "./components/Header";
 import { SearchPanel } from "./components/SearchPanel";
 import { FolderTreePanel } from "./components/FolderTreePanel";
@@ -25,6 +26,7 @@ export function App() {
   const [currentPath, setCurrentPath] = useState<string>(".");
   const [browserItems, setBrowserItems] = useState<FileItem[]>([]);
   const [stagedFiles, setStagedFiles] = useState<FileItem[]>([]);
+  const [stagedItems, setStagedItems] = useState<StagedItemDto[]>([]);
   const [selectedItem, setSelectedItem] = useState<FileItem | null>(null);
 
   const [landlock, setLandlock] = useState<LandlockStatus | null>(null);
@@ -110,30 +112,55 @@ export function App() {
     scanDirectory(".");
   }, [scanDirectory, addLog]);
 
-  const handleStageFile = (item: FileItem) => {
-    setStagedFiles((prev) => {
-      if (prev.some((f) => f.item_id === item.item_id)) return prev;
-      return [...prev, item];
-    });
-    addHistory(`Staged "${item.display_name}" to workspace-temp/`);
-    addLog(`Staged file "${item.display_name}" (size: ${item.size} bytes)`);
-  };
-
-  const handleStageAll = () => {
-    const newItems = browserItems.filter(
-      (b) => !b.is_dir && !stagedFiles.some((s) => s.item_id === b.item_id)
-    );
-    if (newItems.length > 0) {
-      setStagedFiles((prev) => [...prev, ...newItems]);
-      addHistory(`Staged all ${newItems.length} files to workspace-temp/`);
-      addLog(`Staged ${newItems.length} files to workspace-temp/`);
+  const handleStageFile = async (item: FileItem) => {
+    try {
+      const staged = await invoke<StagedItemDto>("stage_file", { pathBase64: item.raw_base64 });
+      setStagedItems((prev) => [...prev.filter((s) => s.stage_id !== staged.stage_id), staged]);
+      setStagedFiles((prev) => {
+        if (prev.some((f) => f.item_id === item.item_id)) return prev;
+        return [...prev, item];
+      });
+      addHistory(`Staged "${item.display_name}" via ${staged.clone_method}`);
+      addLog(`Staged file "${item.display_name}" (${staged.clone_method}) -> ${staged.staged_path}`);
+    } catch (err) {
+      addLog(`Failed to stage "${item.display_name}": ${String(err)}`);
     }
   };
 
-  const handleClearWorkspace = () => {
-    setStagedFiles([]);
-    addHistory("Cleared all items from workspace-temp/");
-    addLog("Cleared workspace-temp/ staging area");
+  const handleStageAll = async () => {
+    const candidates = browserItems.filter(
+      (b) => !b.is_dir && !stagedItems.some((s) => s.original_item_id === b.item_id)
+    );
+    for (const item of candidates) {
+      await handleStageFile(item);
+    }
+  };
+
+  const handleUnstageItem = async (stageId: string) => {
+    try {
+      await invoke("unstage_file", { stageId });
+      const target = stagedItems.find((s) => s.stage_id === stageId);
+      setStagedItems((prev) => prev.filter((s) => s.stage_id !== stageId));
+      if (target) {
+        setStagedFiles((prev) => prev.filter((f) => f.item_id !== target.original_item_id && f.item_id !== stageId));
+        addHistory(`Unstaged "${target.display_name}"`);
+        addLog(`Unstaged file "${target.display_name}" from staging area`);
+      }
+    } catch (err) {
+      addLog(`Failed to unstage item ${stageId}: ${String(err)}`);
+    }
+  };
+
+  const handleClearWorkspace = async () => {
+    try {
+      await invoke("clear_staged_items");
+      setStagedFiles([]);
+      setStagedItems([]);
+      addHistory("Cleared all items from workspace-temp/");
+      addLog("Cleared workspace-temp/ staging area");
+    } catch (err) {
+      addLog(`Failed to clear workspace: ${String(err)}`);
+    }
   };
 
   const handleExtractText = async (item: FileItem) => {
@@ -264,9 +291,11 @@ export function App() {
                   <Panel defaultSize={50} minSize={25} className="subpanel-wrap">
                     <WorkspacePanel
                       stagedFiles={stagedFiles}
+                      stagedItems={stagedItems}
                       selectedId={selectedItem?.item_id ?? null}
                       onSelect={(item) => setSelectedItem(item)}
                       onClearWorkspace={handleClearWorkspace}
+                      onUnstageItem={handleUnstageItem}
                     />
                   </Panel>
                 </Group>
@@ -312,7 +341,7 @@ export function App() {
         <div className="statusbar-left">
           <span className="status-label">Cuddle</span>
           <span className="status-sep">|</span>
-          <span>Phase 3.2 OperationPolicy &amp; Original Protection Active</span>
+          <span>Phase 4.1 Working Copy Isolation &amp; Reflink Placement Active</span>
         </div>
         <div className="statusbar-right">
           <span>Staged: {stagedFiles.length} files</span>

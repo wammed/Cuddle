@@ -1,22 +1,50 @@
+import { useMemo } from "react";
 import { Briefcase, ShieldCheck, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
+import type { StagedItemDto } from "../types/StagedItemDto";
 import { VirtualFileList } from "./VirtualFileList";
 
 interface WorkspacePanelProps {
   stagedFiles: FileItem[];
+  stagedItems?: StagedItemDto[];
   selectedId: string | null;
   onSelect: (item: FileItem) => void;
   onClearWorkspace: () => void;
+  onUnstageItem?: (stageId: string) => void;
 }
 
 export function WorkspacePanel({
   stagedFiles,
+  stagedItems = [],
   selectedId,
   onSelect,
   onClearWorkspace,
+  onUnstageItem,
 }: WorkspacePanelProps) {
   const { t } = useTranslation();
+
+  // Map item_id to clone method (Reflink or StandardCopy)
+  const cloneMethodMap = useMemo(() => {
+    const map: Record<string, "Reflink" | "StandardCopy"> = {};
+    for (const s of stagedItems) {
+      map[s.original_item_id] = s.clone_method;
+      map[s.stage_id] = s.clone_method;
+    }
+    return map;
+  }, [stagedItems]);
+
+  const handleUnstage = (item: FileItem) => {
+    if (!onUnstageItem) return;
+    const match = stagedItems.find(
+      (s) => s.original_item_id === item.item_id || s.stage_id === item.item_id
+    );
+    if (match) {
+      onUnstageItem(match.stage_id);
+    } else {
+      onUnstageItem(item.item_id);
+    }
+  };
 
   return (
     <div className="panel-container workspace-panel-container">
@@ -36,10 +64,10 @@ export function WorkspacePanel({
               type="button"
               className="panel-header-btn-danger"
               onClick={onClearWorkspace}
-              title="Clear Workspace"
+              title={t("workspace.clear_all_btn")}
             >
               <Trash2 size={13} />
-              <span>Clear</span>
+              <span>{t("workspace.clear_all_btn")}</span>
             </button>
           )}
         </div>
@@ -64,13 +92,15 @@ export function WorkspacePanel({
           items={stagedFiles}
           selectedId={selectedId}
           onSelect={onSelect}
+          onUnstage={handleUnstage}
+          cloneMethodMap={cloneMethodMap}
           isWorkspace
           emptyMessage={t("workspace.empty_state")}
         />
       </div>
 
       <div className="browser-footer-status">
-        <span>{t("browser.items_count", { count: stagedFiles.length })}</span>
+        <span>{t("workspace.staged_files_count", { count: stagedFiles.length })}</span>
         <span className="reflink-note">{t("workspace.reflink_enabled")}</span>
       </div>
     </div>

@@ -905,6 +905,24 @@ body {
   background: rgba(56, 189, 248, 0.25);
 }
 
+.row-action-btn.danger {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
+.row-action-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+}
+
+.reflink-pill-sm.is-reflink {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.5);
+  color: #6ee7b7;
+  font-weight: 600;
+}
+
 /* Details Sidebar Specifics */
 .details-empty-state {
   display: flex;

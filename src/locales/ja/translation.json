@@ -33,7 +33,18 @@
     "file_name": "名前",
     "raw_base64_label": "実体 Base64 キー",
     "file_size": "サイズ",
-    "load_demo_files": "デモファイル読込"
+    "load_demo_files": "デモファイル読込",
+    "clone_method_reflink": "Reflink (CoW)",
+    "clone_method_standard": "標準コピー",
+    "status_staged": "作業コピー作成済",
+    "status_modified": "作業中変更あり",
+    "status_reflected": "原本反映済",
+    "staged_files_count": "{{count}} 個の作業コピー",
+    "unstage_btn": "作業解除",
+    "clear_all_btn": "すべて解除",
+    "staging_path": "作業コピー配置先",
+    "staged_time": "ステージング日時",
+    "stage_all": "すべて作業領域へ"
   },
   "warnings": {
     "external_storage": "対象ファイルは外部ストレージまたはホームディレクトリ外にあります。原本の直接変更は禁止されています。",
@@ -46,7 +57,9 @@
     "ERR_FORBIDDEN_ZONE": "禁止領域：$HOME外、マウント境界、または外部ストレージへの原本反映は禁止されています。",
     "ERR_CONFLICT_DETECTED": "競合検出：ステージング後に原本ファイルが外部で更新されました。",
     "ERR_INSUFFICIENT_SPACE": "容量不足：安全基準（1.5倍）を満たすディスク空き容量がありません。",
-    "ERR_SYMLINK_ESCAPE": "シンボリックリンク脱出：リンク先が許可領域外を参照しています。"
+    "ERR_SYMLINK_ESCAPE": "シンボリックリンク脱出：リンク先が許可領域外を参照しています。",
+    "ERR_STAGE_NOT_FOUND": "指定された作業コピーが見つかりません。",
+    "ERR_STAGING_DIR_UNAVAILABLE": "作業領域ディレクトリを作成または利用できません。"
   },
   "policy": {
     "title": "安全操作ポリシー (OperationPolicy)",

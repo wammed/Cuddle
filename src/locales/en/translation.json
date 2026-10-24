@@ -33,7 +33,18 @@
     "file_name": "Name",
     "raw_base64_label": "Raw Base64 Key",
     "file_size": "Size",
-    "load_demo_files": "Load Demo Files"
+    "load_demo_files": "Load Demo Files",
+    "clone_method_reflink": "Reflink (CoW)",
+    "clone_method_standard": "Standard Copy",
+    "status_staged": "Staged",
+    "status_modified": "Modified",
+    "status_reflected": "Reflected",
+    "staged_files_count": "{{count}} staged copy(ies)",
+    "unstage_btn": "Unstage",
+    "clear_all_btn": "Clear All",
+    "staging_path": "Staging Destination",
+    "staged_time": "Staged At",
+    "stage_all": "Stage All"
   },
   "warnings": {
     "external_storage": "Target file is on external storage or outside home directory. In-place changes are forbidden.",
@@ -46,7 +57,9 @@
     "ERR_FORBIDDEN_ZONE": "Forbidden Zone: Direct reflection to original outside $HOME, on mount boundaries, or external storage is prohibited.",
     "ERR_CONFLICT_DETECTED": "Conflict Detected: Original file was modified externally after staging.",
     "ERR_INSUFFICIENT_SPACE": "Insufficient Space: Free disk space does not meet the 1.5x safety multiplier.",
-    "ERR_SYMLINK_ESCAPE": "Symlink Escape: Symlink targets an unauthorized path outside safe boundaries."
+    "ERR_SYMLINK_ESCAPE": "Symlink Escape: Symlink targets an unauthorized path outside safe boundaries.",
+    "ERR_STAGE_NOT_FOUND": "Specified staged file was not found.",
+    "ERR_STAGING_DIR_UNAVAILABLE": "Failed to create or access the staging directory."
   },
   "policy": {
     "title": "Operation Safety Policy (OperationPolicy)",

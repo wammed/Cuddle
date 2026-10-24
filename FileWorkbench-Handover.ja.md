@@ -143,7 +143,18 @@
   * Tauri IPC コマンド `check_operation_policy`, `create_original_snapshot`, `verify_original_conflict` 公開
   * 日英完全バイリンガル辞書（`policy.*`, `errors.ERR_*`）整備および詳細サイドバーでのリアルタイム安全性評価・スナップショット検証 UI 連携
   * Cargo テスト 54 件 100% パス、Vitest 8 件 100% パス、Clippy 警告ゼロ、Vite ビルド成功
-* [ ] **Phase 4.1（作業コピー分離 & 同一ボリューム優先配置）：着手準備完了**
+* [x] **Phase 4.1（作業コピー分離 & 同一ボリューム優先配置）：完了**
+  * 作業コピー隔離エンジン実装（`src-tauri/src/workspace.rs`）
+  * 原本と同一ボリューム内の `.cuddle-temp/` 優先配置および Linux `ioctl(FICLONE)` による Reflink (CoW) 瞬時クローン実装
+  * Reflink 非対応ファイルシステムまたは書き込み不可時の `$XDG_CACHE_HOME/Cuddle/staging/` への自動フォールバック
+  * 事前空き容量ガードレール（原本サイズの 1.5 倍以上空き容量必須チェック）
+  * 二重キー整合性と作業コピー状態追跡（`StagedItemDto`：原本情報、ステージング先パス、クローン方式 `Reflink` | `StandardCopy`、状態 `Staged` | `Modified` | `Reflected`、原本スナップショット）
+  * `ts-rs` による TypeScript 型自動同期（`StagedItemDto.ts`, `CloneMethod.ts`, `StageStatus.ts`）
+  * Tauri IPC コマンド `stage_file`, `unstage_file`, `list_staged_items`, `clear_staged_items` 公開
+  * `WorkspacePanel.tsx` および `VirtualFileList.tsx` での Reflink バッジ表示、作業解除、一括解除 UI 統合
+  * 日英完全バイリンガル辞書（`workspace.*`, `errors.ERR_STAGE_*`）整備
+  * Cargo テスト 61 件 100% パス、Vitest 10 件 100% パス、Clippy 警告ゼロ、Vite ビルド成功
+* [ ] **Phase 4.2（作業領域内高速スワップ・差分比較 & 原本保護下プレビュー）：着手準備完了**
 
 ---
 

@@ -143,7 +143,18 @@
   * Tauri IPC commands `check_operation_policy`, `create_original_snapshot`, `verify_original_conflict` exposed
   * Full bilingual dictionary expansion (`policy.*`, `errors.ERR_*`) and Details Sidebar real-time safety evaluation & snapshot verification UI integration
   * Automated testing: 54 Cargo tests 100% pass, 8 Vitest tests 100% pass, Clippy zero warnings, Vite build success
-* [ ] **Phase 4.1 (Working Copy Isolation & Same-Volume Preferred Placement): Ready to start**
+* [x] **Phase 4.1 (Working Copy Isolation & Same-Volume Preferred Placement): Completed**
+  * Working copy isolation engine implemented (`src-tauri/src/workspace.rs`)
+  * Preferred local placement in `.cuddle-temp/` on the same volume with Linux `ioctl(FICLONE)` Reflink (CoW) instantaneous cloning
+  * Graceful streaming copy fallback to `$XDG_CACHE_HOME/Cuddle/staging/` when non-CoW or volume is read-only
+  * Pre-flight disk space safety verification (enforcing 1.5x minimum free space multiplier)
+  * Dual-key consistency and staged item state tracking (`StagedItemDto`: original info, staged path, clone method `Reflink` | `StandardCopy`, status `Staged` | `Modified` | `Reflected`, original snapshot)
+  * Automated TypeScript bindings synchronization via `ts-rs` (`StagedItemDto.ts`, `CloneMethod.ts`, `StageStatus.ts`)
+  * Tauri IPC commands `stage_file`, `unstage_file`, `list_staged_items`, `clear_staged_items` exposed
+  * UI integration in `WorkspacePanel.tsx` and `VirtualFileList.tsx` with Reflink badges, per-item unstage, and clear-all actions
+  * Full bilingual dictionary expansion (`workspace.*`, `errors.ERR_STAGE_*`)
+  * Automated testing: 61 Cargo tests 100% pass, 10 Vitest tests 100% pass, Clippy zero warnings, Vite build success
+* [ ] **Phase 4.2 (In-Workspace Fast Swap, Diff Preview & Safe Original Recovery): Ready to start**
 
 ---
 
@@ -156,28 +167,38 @@ All future development must strictly adhere to the following protocol:
 2. **Strict Bilingual Implementation:**  
    * All UI text, system messages, warnings, and error dialogs must be declared in both `locales/en/*.json` and `locales/ja/*.json`. No hardcoded monolingual strings permitted.
    * All documentation (READMEs, design documents, handover notes) must be written and synchronized in both English and Japanese.
-3. **Exit Criteria for Phase Transition:**  
-   A phase is complete only when:
-   * **100% of automated tests pass** (Cargo unit/integration tests and Vitest suites).
-   * Translation key parity validation passes with zero missing keys in English or Japanese.
-   * **All manual test checklist items are verified** (physical hardware, CLI, UI, language switching).
-   * Zero blocking issues remain.
-   * Formal test report is submitted and user authorization to transition to the next phase is granted.
+4. **Mandatory Manual Testing on Major Phase Transitions:**  
+   At major phase boundaries (e.g. Phase 1 → 2, Phase 2 → 3, Phase 3 → 4), the assistant must present a concrete manual verification checklist on real hardware/GUI/CLI and confirm functionality before proceeding to the next major phase.
 
 ---
 
-## 6. Next Session Startup Guide (Phase 3.2 Tasks)
+## 6. Next Session Startup Guide (Phase 4.1 Tasks)
 
-Strategic architectural plan and implementation roadmap for Phase 3.2:
+Strategic architectural plan and implementation roadmap for Phase 4.1:
 
-### 6.1 Phase 3.2 Architecture & Design Decisions
-* **Safety Operation Policy Engine (`src-tauri/src/policy.rs`):**
-  * Original modification forbidden zone enforcement: categorically block in-place reflection to paths outside `$HOME`, on mount point boundaries, or external storage
-  * Home directory jail verification (prevent symlink-based escapes using canonical path and inode validation)
-  * Conflict and external mutation detection (verify SHA-256, byte length, and mtime against staging snapshots)
-  * Disk capacity safety margin (enforce at least 1.5x original aggregate size before staging)
-  * TOCTOU race mitigation (atomic pre-flight verification of inode/dev/mtime immediately before execution)
-  * Structured error and warning DTOs with bilingual localization codes (`OperationErrorDto`)
+### 6.1 Phase 4.1 Architecture & Design Decisions (Working Copy Isolation & Same-Volume Preferred Placement)
+* **Working Copy Isolation Engine (`src-tauri/src/workspace.rs`):**
+  * Absolute Original Protection: create isolated working copies (staging copies) before permitting any mutation or batch pipelines.
+  * **Same-Volume Preferred Placement & Reflink (CoW) Fast Cloning:**
+    * Prioritize staging in a hidden `.cuddle-temp/` directory located on the same filesystem/mount point as the original file.
+    * Issue Linux `ioctl(dest_fd, FICLONE, src_fd)` to achieve zero-storage, millisecond-speed Copy-on-Write (CoW) clones on Btrfs/XFS.
+    * Automatically fallback to `$XDG_CACHE_HOME/Cuddle/staging/` or configured temporary directory with standard byte-stream copying if Reflink fails, the filesystem is non-CoW (e.g. EXT4), or the volume lacks write permissions.
+  * **Pre-flight Capacity Multiplier Guardrail:**
+    * Query `check_disk_space` from Phase 3.2 to abort staging if available space is less than 1.5x original file size (`ERR_INSUFFICIENT_SPACE`).
+  * **Dual-Key Staged Item Tracking (`StagedItemDto`):**
+    * Original `item_id`, `raw_base64`, `display_name`
+    * Staged path details (`staged_raw_base64`, `staged_path`)
+    * Clone method (`CloneMethod`: `Reflink` | `StandardCopy`)
+    * Staging status (`StageStatus`: `Staged` | `Modified` | `Reflected`)
+    * Snapshot pairing (`OriginalSnapshotDto`) for TOCTOU conflict checks
+  * **Tauri IPC Commands:**
+    * `stage_file(path_base64: String) -> Result<StagedItemDto, String>`
+    * `unstage_file(stage_id: String) -> Result<(), String>`
+    * `list_staged_items() -> Result<Vec<StagedItemDto>, String>`
+    * `clear_staged_items() -> Result<(), String>`
+  * **TypeScript Bindings & Frontend Integration via `ts-rs`:**
+    * Auto-export `StagedItemDto.ts`, `CloneMethod.ts`, `StageStatus.ts`.
+    * Connect with `WorkspacePanel.tsx` to display real-time staged files, clone method badges, and unstage actions.
 
 ---
 

@@ -3,7 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { changeLanguage, SupportedLanguage } from "./i18n";
 import type { FileItem } from "./types/FileItem";
-import { Globe, ShieldCheck, HardDrive, Terminal, Lock, FileCode, Binary } from "lucide-react";
+import type { AppConfig } from "./types/AppConfig";
+import { Globe, ShieldCheck, HardDrive, Terminal, Lock, FileCode, Binary, Sliders } from "lucide-react";
 import "./App.css";
 
 interface LandlockStatus {
@@ -17,6 +18,7 @@ function App() {
   const [name, setName] = useState("");
   const [landlock, setLandlock] = useState<LandlockStatus | null>(null);
   const [files, setFiles] = useState<FileItem[]>([]);
+  const [config, setConfig] = useState<AppConfig | null>(null);
 
   const currentLang = (i18n.language.startsWith("ja") ? "ja" : "en") as SupportedLanguage;
 
@@ -33,6 +35,10 @@ function App() {
     invoke<FileItem[]>("get_demo_items")
       .then((items) => setFiles(items))
       .catch((err) => console.error("Failed to load demo files:", err));
+
+    invoke<AppConfig>("get_app_config")
+      .then((cfg) => setConfig(cfg))
+      .catch((err) => console.error("Failed to load app config:", err));
   }, []);
 
   async function greet() {
@@ -48,9 +54,12 @@ function App() {
     <main className="app-container">
       <header className="app-header">
         <div className="brand-group">
-          <ShieldCheck className="brand-icon" size={28} />
+          <img src="/Cuddle-Icon.svg" alt="Cuddle Icon" className="brand-logo-img" />
           <div>
-            <h1 className="brand-title">{t("app.title")}</h1>
+            <div className="brand-title-row">
+              <h1 className="brand-title">{t("app.title")}</h1>
+              <span className="brand-badge">v0.1.0</span>
+            </div>
             <p className="brand-subtitle">{t("app.subtitle")}</p>
           </div>
         </div>
@@ -69,7 +78,7 @@ function App() {
       <section className="dashboard-grid">
         <div className="card">
           <div className="card-header">
-            <Lock size={18} />
+            {landlock?.supported ? <ShieldCheck size={18} /> : <Lock size={18} />}
             <h2>Landlock LSM</h2>
           </div>
           {landlock?.supported ? (
@@ -120,6 +129,34 @@ function App() {
 
         <div className="card">
           <div className="card-header">
+            <Sliders size={18} />
+            <h2>{t("config.title")}</h2>
+          </div>
+          {config ? (
+            <>
+              <div className="config-item">
+                <span className="config-label">{t("config.theme_label")}:</span>
+                <span className="config-val-pill">{config.app.theme}</span>
+              </div>
+              <div className="config-item">
+                <span className="config-label">{t("config.min_space_label")}:</span>
+                <span className="config-val-pill secure">{config.workspace.min_free_space_multiplier}x</span>
+              </div>
+              <div className="config-item">
+                <span className="config-label">{t("config.landlock_enforced")}:</span>
+                <span className="config-val-pill secure">
+                  {config.security.enforce_landlock ? "true" : "false"}
+                </span>
+              </div>
+              <p className="card-meta">{t("config.guardrail_note")}</p>
+            </>
+          ) : (
+            <p className="card-desc">Loading config.toml...</p>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="card-header">
             <Terminal size={18} />
             <h2>{t("common.greet")} (IPC)</h2>
           </div>
@@ -146,7 +183,8 @@ function App() {
       </section>
 
       <footer className="app-footer">
-        <span>FileWorkbench Foundation - Phase 1.3 Dual-Key Non-UTF8 Verified</span>
+        <span className="footer-brand">Cuddle: File Workbench - Phase 1.4 Config & TOML Schema Verified</span>
+        <span className="footer-font-hint">Nerd Font: Pre-required (System Fallback)</span>
       </footer>
     </main>
   );

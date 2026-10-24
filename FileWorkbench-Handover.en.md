@@ -5,15 +5,18 @@
 </p>
 
 **Document Date:** 2026-10-24  
-**Status:** Phase 1.3 Completed, Ready for Phase 1.4  
+**Status:** Phase 1.4 Completed (Phase 1 Baseline Fully Finished), Ready for Phase 2.1  
 **Target Audience:** Development, Architecture, and QA Teams; Next Working Session Maintainers  
 
 ---
 
 ## 1. Project Overview
 
-* **Project Name:** FileWorkbench (Repository: `Cuddle`)
-* **Purpose:** A high-reliability file management, working environment, and search workbench for Linux with its own unique visual branding.
+* **Project Name:** Cuddle
+* **Description:** File Workbench
+* **Official Icon:** `Cuddle/images/Cuddle-Icon.svg`
+* **README Banner:** `Cuddle/images/Cuddle-Banner.jpeg`
+* **Purpose:** A high-reliability original-protection file management, working environment, and search workbench for Linux with its own unique visual branding.
 * **Core Principles & Mandatory Policies:**
   1. **Strict Protection of Original Files:** Originals are never modified in-place; all transformations and edits are performed strictly on independent working copies (`workspace-temp/`).
   2. **Complete Separation of Internal Processing and Origin Reflection:** Pipelines and bulk operations do not overwrite originals; changes are reflected back exclusively via independent user actions after deliverables are finalized.
@@ -51,6 +54,8 @@
 | **Working Copy Placement** | **Same-Volume Priority** | Volume-local workspace (e.g. `<origin-volume>/.fileworkbench-temp/`) prioritized to maximize atomic `rename(2)` and CoW Reflink. Mandatory 1.5x capacity pre-check |
 | **Non-UTF-8 Filenames** | **Dual-Key Architecture** | Rust core retains `PathBuf` (`[u8]`). IPC/JSON boundaries utilize Base64 (`raw_base64`) + display string (`display_name`) with immutable `item_id` |
 | **Bulk Operations** | **`RollbackAll` & Journaling** | Transactional `BatchPlan` / `BatchStatus` state machines. Automated passing of all B-01 through B-15 fault injection test cases |
+| **UI/UX Styling** | **Vanilla CSS + Glassmorphism** | "Simple yet Ultra-Rich" core concept with dark velvet palette, subtle 16px frosted-glass blur, 1px hairline borders, and pulsing security status indicators |
+| **Typography & Fonts** | **Pre-required (Zero Bundled Fonts)** | **Zero font bundling for Nerd Font**. UI uses `Inter` + Noto Sans CJK JP; Code uses `JetBrains Mono`; Glyphs dynamically fall back to system `Symbols Nerd Font` / `JetBrainsMono Nerd Font`. Core UI icons 100% guaranteed via built-in `lucide-react` SVG vectors |
 
 ---
 
@@ -77,7 +82,15 @@
   * Automated TypeScript bindings generation using `ts-rs` (`src/types/`)
   * Unit tests validating 100% byte fidelity on non-UTF-8 paths (raw bytes `\xFF\xFE`)
   * Tauri IPC command `get_demo_items` and UI verification displaying UTF-8 and non-UTF-8 items safely without panics
-* [ ] **Phase 1.4 (Configuration Management - TOML Schema & Sync): Awaiting start**
+* [x] **Phase 1.4 (Configuration Management - TOML Schema & Sync): Completed**
+  * Linux XDG Base Directory specification compliance `$XDG_CONFIG_HOME/Cuddle/config.toml` (`dirs` + `toml` 0.8)
+  * Mandatory safety guardrail enforcement (automatic denial of Landlock disablement and disk free multiplier clamped to safe 1.5x minimum)
+  * Automated corruption self-healing and `.bak` snapshot generation with safe default recreation
+  * Automated TypeScript bindings synchronization via `ts-rs` (`AppConfig.ts`, `AppSection.ts`, `WorkspaceSection.ts`, `SecuritySection.ts`)
+  * Tauri IPC commands `get_app_config` and `save_app_config` exposed
+  * UI configuration card implementation with full EN/JA bilingual parity
+  * Automated tests: 18 Cargo tests 100% pass, 5 Vitest tests 100% pass, Clippy zero warnings
+* [ ] **Phase 2.1 (High-speed Directory Scanner & Inode Tracking): Awaiting start**
 
 ---
 
@@ -100,41 +113,32 @@ All future development must strictly adhere to the following protocol:
 
 ---
 
-## 6. Next Session Startup Guide (Phase 1.4 Tasks)
+## 6. Next Session Startup Guide (Phase 2.1 Tasks)
 
-Agreed baseline policies and step-by-step implementation guide for Phase 1.4:
+Strategic architectural plan and implementation roadmap for Phase 2.1:
 
-### 6.1 Agreed Policies for Phase 1.4
-* **Config File Location:** Compliant with Linux XDG Base Directory specification:  
-  `$XDG_CONFIG_HOME/FileWorkbench/config.toml` (fallback to `~/.config/FileWorkbench/config.toml` if undefined)
-* **Parser & Crates:** `serde` + `toml` (v0.8) + `dirs` (v5)
-* **Configuration Schema:**
-  * `[app]`: `language = "auto"` (`"ja"`, `"en"`), `theme = "dark"`
-  * `[workspace]`: `temp_directory` (same-volume preferred temporary path), `min_free_space_multiplier = 1.5` (minimum disk space check before staging)
-  * `[security]`: `enforce_landlock = true`
-* **Mandatory Safety Guardrails & Auto-Sanitization:**
-  * If a user manually edits `config.toml` and attempts to disable safety invariants (such as setting `enforce_landlock = false` or allowing in-place edits), the loader validation must automatically override them back to secure defaults on startup.
-  * In case of syntax corruption or unreadable TOML, create a `.bak` copy and regenerate a clean, validated default `config.toml`.
+### 6.1 Phase 2.1 Architecture & Design Decisions
+* **Scanner Library Selection:** `jwalk` or `walkdir` combined with Rayon work-stealing threadpool for non-blocking traversal on COSMIC / Linux desktop trees.
+* **Physical File Identity (Inode & Device Tracking):**
+  * Leverage Linux `std::os::unix::fs::MetadataExt` to record `st_ino` (inode number) and `st_dev` (device ID) in `FileItem`.
+  * Track physical file identity across directory renames and external file modifications regardless of path alterations.
+* **Symlink Loop & Recursion Guard:**
+  * Track visited `(dev, ino)` pairs in a hash set to detect and safely skip recursive symlink loops.
 
 ### 6.2 Step-by-Step Implementation Guide
 1. **Add Dependencies (`src-tauri/Cargo.toml`):**
-   * `toml = "0.8"`
-   * `dirs = "5"`
-2. **Implement Config Module (`src-tauri/src/config.rs`):**
-   * Define `AppConfig`, `AppSection`, `WorkspaceSection`, and `SecuritySection` structs (`Serialize`, `Deserialize`, `TS`)
-   * Implement XDG path resolver (`get_config_path() -> PathBuf`)
-   * Implement load and sanitize function (`load_or_create_config() -> AppConfig`)
-   * Implement save function (`save_config(config: &AppConfig) -> Result<(), ConfigError>`)
-3. **Expose Tauri Commands (`src-tauri/src/lib.rs`):**
-   * `get_app_config() -> AppConfig`
-   * `save_app_config(config: AppConfig) -> Result<(), String>`
-4. **Automated Unit Testing & Verification (`src-tauri/src/config.rs`):**
-   * Default configuration creation and serialization roundtrip
-   * Safe fallback upon corrupted TOML input
-   * Automatic restoration of security guardrails when Landlock disablement is attempted
-5. **Validation Commands:**
+   * `walkdir = "2"`
+   * `rayon = "1.10"` (if parallel multi-tree scanning is selected)
+2. **Implement Scanner Module (`src-tauri/src/scanner.rs`):**
+   * `scan_directory(path: &Path) -> Result<Vec<FileItem>, ScanError>`
+   * Extend `FileItem` with `inode: u64` and `dev: u64` with `ts-rs` synchronization
+   * Symlink resolution and loop prevention guards
+3. **Expose Tauri IPC Commands & Tests:**
+   * `list_directory(path_base64: String) -> Result<Vec<FileItem>, String>`
+   * Test matrix covering deep directories, special characters, and cyclic symlinks
+4. **Validation Commands:**
    ```bash
-   cargo test --lib config::tests
+   cargo test --lib scanner::tests
    cargo clippy -- -D warnings
    pnpm test
    ```

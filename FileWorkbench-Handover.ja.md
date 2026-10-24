@@ -5,15 +5,18 @@
 </p>
 
 **文書作成日：** 2026-10-24  
-**ステータス：** Phase 1.3 完了、Phase 1.4 着手準備完了  
+**ステータス：** Phase 1.4 完了（Phase 1 基盤全完了）、Phase 2.1 着手準備完了  
 **対象：** 開発・設計・テスト担当者、次期作業セッション担当  
 
 ---
 
 ## 1. プロジェクト概要
 
-* **プロジェクト名：** FileWorkbench（リポジトリ: `Cuddle`）
-* **目的：** 独自のブランドとビジュアルを持つ、Linux 向けの高信頼ファイル管理・作業環境・検索アプリ。
+* **プロジェクト名：** Cuddle
+* **説明：** File Workbench
+* **公式アイコン：** `Cuddle/images/Cuddle-Icon.svg`
+* **README用バナー：** `Cuddle/images/Cuddle-Banner.jpeg`
+* **目的：** 独自のブランドとビジュアルを持つ、Linux 向けの高信頼原本保護型ファイル管理・作業環境・検索アプリ。
 * **基本方針・コア思想：**
   1. **原本保護の絶対性：** 原本を直接編集・変更せず、独立した作業コピー（`workspace-temp/`）に対してのみ操作・変換を行う。
   2. **確定操作と原本反映の完全分離：** パイプライン実行や一括リネームなどの内部で原本を書き換えず、成果物確定後にユーザーの独立した明示操作としてのみ原本へ反映する。
@@ -51,6 +54,8 @@
 | **作業コピー領域** | **同一ボリューム優先配置** | 原本と同一マウントポイント配下の作業領域（例: `<原本ルート>/.fileworkbench-temp/`）を優先利用し、原子的 `rename(2)` と Reflink (CoW) を最大化。原本サイズ × 1.5倍の空き容量事前チェックを義務化 |
 | **非 UTF-8 ファイル名** | **二重キー管理仕様** | Rust 内部は `PathBuf`（`[u8]`）を一貫保持。IPC / JSON 境界では Base64 文字列（`raw_base64`）と表示文字列（`display_name`）を併載し、固定 `item_id`（UUID/inode）で照合 |
 | **一括操作** | **`RollbackAll` & ジャーナル** | `BatchPlan` / `BatchStatus` によるトランザクション管理。故障注入テストマトリクス（B-01〜B-15）を自動テストで全件パス |
+| **UI/UX スタイリング** | **Vanilla CSS + グラスモーフィズム** | 「シンプルだけど超リッチな見た目」を基本コンセプトとし、深色ベルベット（Dark Velvet Slate）、微細半透明ブラー（16px）、1px極細ヘアライン、ソフト発光パルスアニメーションを採用 |
+| **タイポグラフィ & フォント** | **Pre-required（未同梱・システム前提）** | **Nerd Font は同梱しない（Zero Font Bundling）**。UI は `Inter` + Noto Sans CJK JP、コードは `JetBrains Mono`、グリフは `Symbols Nerd Font` 等をシステムフォントスタックから動的フォールバック参照。コアUIアイコンは `lucide-react` SVGベクターで100%描画保証 |
 
 ---
 
@@ -77,7 +82,15 @@
   * `ts-rs` による Rust 構造体から TypeScript 型定義（`src/types/`）の自動同期構築
   * 非 UTF-8 パス（不正バイト列 `\xFF\xFE`）の双方向変換ユニットテスト全件パス
   * Tauri コマンド `get_demo_items` および UI での非 UTF-8 ファイル耐性検証（文字化け置換文字 `` を安全表示、クラッシュゼロ）
-* [ ] **Phase 1.4（設定管理 TOML スキーマ・同期）：着手待ち**
+* [x] **Phase 1.4（設定管理 TOML スキーマ・同期）：完了**
+  * Linux XDG 仕様準拠 `$XDG_CONFIG_HOME/Cuddle/config.toml`（`dirs` + `toml` 0.8）
+  * 安全ガードレール強制（Landlock 無効化試行の自動遮断・安全値強制復元、原本保護空き容量倍率 1.5x 下限強制）
+  * 破損 TOML 検出時の `.bak` バックアップ自動退避および自己修復・安全既定値再生成
+  * `ts-rs` による TypeScript 型自動同期（`AppConfig.ts`, `AppSection.ts`, `WorkspaceSection.ts`, `SecuritySection.ts`）
+  * Tauri コマンド `get_app_config` / `save_app_config` 公開
+  * UI 設定カードの実装および日英完全バイリンガル辞書整備
+  * Cargo テスト 18 件 100% パス、Vitest 5 件 100% パス、Clippy 警告ゼロ
+* [ ] **Phase 2.1（高速ディレクトリスキャナ & inode 追跡）：着手待ち**
 
 ---
 
@@ -100,41 +113,32 @@
 
 ---
 
-## 6. 次期セッション着手手順（Phase 1.4 のタスク）
+## 6. 次期セッション着手手順（Phase 2.1 のタスク）
 
-Phase 1.4 における合意済み方針および実装手順：
+Phase 2.1 における方針および実装計画：
 
-### 6.1 Phase 1.4 で確定した方針
-* **設定ファイル配置場所：** Linux XDG 仕様準拠  
-  `$XDG_CONFIG_HOME/FileWorkbench/config.toml`（未定義時は `~/.config/FileWorkbench/config.toml`）
-* **パーサー & ライブラリ：** `serde` + `toml` (v0.8) + `dirs` (v5)
-* **設定スキーマ構成：**
-  * `[app]`: `language = "auto"`（`"ja"`, `"en"`）、`theme = "dark"`
-  * `[workspace]`: `temp_directory`（同一ボリューム優先一時領域）、`min_free_space_multiplier = 1.5`（原本サイズに対する必要空き容量倍率）
-  * `[security]`: `enforce_landlock = true`
-* **安全ガードレール強制バリデーション（必須仕様）：**
-  * ユーザーが外部エディタで `config.toml` を直接改変し、原本インプレース更新や Landlock 無効化（`enforce_landlock = false`）を試みた場合でも、読み込み時のバリデーションで自動的に安全値へ強制修正して安全に起動する。
-  * TOML 構文エラーや破損時はバックアップ（`.bak`）を作成の上、安全な既定値で自己修復・再生成する。
+### 6.1 Phase 2.1 の目的と設計方針
+* **高速走査ライブラリ選定：** `jwalk` または `walkdir` + 並列スレッドプール（Rayon）。COSMIC / Linux の大規模ツリー走査をノンブロッキングで実行。
+* **物理ファイル識別（inode / dev 追跡）：**
+  * Linux `std::os::unix::fs::MetadataExt` を活用し、`st_ino`（inode 番号）と `st_dev`（デバイス ID）を `FileItem` に組み込む。
+  * ファイルのリネーム、移動、原本競合検知において、パス文字列の変更に左右されない物理同一性追跡を実現。
+* **シンボリックリンク循環検知：**
+  * 訪問済み `(dev, ino)` の HashSet を保持し、無限ループ・再帰リンクを検知・安全スキップ。
 
 ### 6.2 実行する実装手順
 1. **依存クレート追加（`src-tauri/Cargo.toml`）：**
-   * `toml = "0.8"`
-   * `dirs = "5"`
-2. **設定管理モジュール作成（`src-tauri/src/config.rs`）：**
-   * `AppConfig`, `AppSection`, `WorkspaceSection`, `SecuritySection` の定義（`Serialize`, `Deserialize`, `TS`）
-   * XDG 設定ディレクトリ解決関数（`get_config_path() -> PathBuf`）
-   * 設定読み込み・バリデーション関数（`load_or_create_config()`）
-   * 設定保存関数（`save_config()`）
-3. **Tauri コマンドの公開（`src-tauri/src/lib.rs`）：**
-   * `get_app_config() -> AppConfig`
-   * `save_app_config(config: AppConfig) -> Result<(), String>`
-4. **自動テストの実装 & 検証（`src-tauri/src/config.rs` 内）：**
-   * 既定設定ファイルの初期生成とシリアライズテスト
-   * 破損 TOML 読み込み時の既定フォールバックテスト
-   * Landlock 無効化試行に対する安全ガードレール自動補正テスト
-5. **テスト実行コマンド：**
+   * `walkdir = "2"`
+   * `rayon = "1.10"`（必要に応じて）
+2. **スキャナモジュール作成（`src-tauri/src/scanner.rs`）：**
+   * `scan_directory(path: &Path) -> Result<Vec<FileItem>, ScanError>`
+   * `FileItem` への `inode: u64`, `dev: u64` フィールド拡張と `ts-rs` 同期
+   * シンボリックリンク解決・循環検出ガード
+3. **Tauri コマンド公開 & テスト：**
+   * `list_directory(path_base64: String) -> Result<Vec<FileItem>, String>`
+   * 大量ファイル・循環シンボリックリンクを含むテストマトリクス検証
+4. **テスト実行コマンド：**
    ```bash
-   cargo test --lib config::tests
+   cargo test --lib scanner::tests
    cargo clippy -- -D warnings
    pnpm test
    ```

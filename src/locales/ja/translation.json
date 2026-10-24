@@ -1,8 +1,8 @@
 {
   "app": {
-    "title": "FileWorkbench (Cuddle)",
-    "subtitle": "原本を保護し安全な作業領域を提供するLinux向けファイルワークベンチ",
-    "welcome": "FileWorkbench へようこそ"
+    "title": "Cuddle",
+    "subtitle": "File Workbench",
+    "welcome": "Cuddle へようこそ"
   },
   "common": {
     "switch_language": "言語切替",
@@ -48,5 +48,19 @@
     "landlock_active": "Linux Landlock LSM 有効（カーネル隔離保護中）",
     "landlock_abi": "ABI バージョン: {{abi}}",
     "landlock_unsupported": "このカーネルでは Landlock LSM は有効化されていません"
+  },
+  "config": {
+    "title": "設定管理 (TOML)",
+    "language_label": "表示言語",
+    "theme_label": "テーマ",
+    "theme_dark": "ダーク",
+    "theme_light": "ライト",
+    "theme_system": "システム連動",
+    "temp_dir_label": "作業領域ディレクトリ",
+    "temp_dir_default": "同一ボリューム優先配置（自動）",
+    "min_space_label": "必要空き容量倍率",
+    "landlock_enforced": "Landlock 強制（厳格保護）",
+    "config_saved": "設定を保存しました",
+    "guardrail_note": "安全ガードレールにより、Landlock の無効化や 1.5 倍未満への容量緩和は自動補正されます。"
   }
 }

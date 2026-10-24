@@ -1,8 +1,8 @@
 {
   "app": {
-    "title": "FileWorkbench (Cuddle)",
-    "subtitle": "Safe Linux file workbench that hugs your originals tight",
-    "welcome": "Welcome to FileWorkbench"
+    "title": "Cuddle",
+    "subtitle": "File Workbench",
+    "welcome": "Welcome to Cuddle"
   },
   "common": {
     "switch_language": "Language",
@@ -48,5 +48,19 @@
     "landlock_active": "Linux Landlock LSM Active (Kernel Protection)",
     "landlock_abi": "ABI Version: {{abi}}",
     "landlock_unsupported": "Landlock LSM is not enforced on this kernel"
+  },
+  "config": {
+    "title": "Configuration (TOML)",
+    "language_label": "Interface Language",
+    "theme_label": "Theme",
+    "theme_dark": "Dark",
+    "theme_light": "Light",
+    "theme_system": "System",
+    "temp_dir_label": "Temporary Workspace",
+    "temp_dir_default": "Same-Volume Preferred (Automatic)",
+    "min_space_label": "Disk Space Multiplier",
+    "landlock_enforced": "Enforce Landlock (Strict Protection)",
+    "config_saved": "Settings saved successfully",
+    "guardrail_note": "Safety guardrails prevent disabling Landlock or lowering disk multipliers below 1.5x."
   }
 }

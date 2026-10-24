@@ -39,6 +39,13 @@ vi.mock("@tauri-apps/api/core", () => ({
         },
       ]);
     }
+    if (cmd === "get_app_config") {
+      return Promise.resolve({
+        app: { language: "auto", theme: "dark" },
+        workspace: { temp_directory: null, min_free_space_multiplier: 1.5 },
+        security: { enforce_landlock: true },
+      });
+    }
     return Promise.resolve("");
   }),
 }));
@@ -52,8 +59,9 @@ describe("App component", () => {
     render(<App />);
 
     // In Japanese
-    expect(screen.getByText("FileWorkbench (Cuddle)")).toBeDefined();
+    expect(screen.getByText("Cuddle")).toBeDefined();
     expect(screen.getByText("二重キーファイルIPC（UTF-8 & 非UTF-8）")).toBeDefined();
+    expect(screen.getByText("設定管理 (TOML)")).toBeDefined();
     expect(screen.getByTitle("言語切替")).toBeDefined();
 
     // Toggle to English
@@ -63,8 +71,9 @@ describe("App component", () => {
     });
 
     // In English
-    expect(screen.getByText("FileWorkbench (Cuddle)")).toBeDefined();
+    expect(screen.getByText("Cuddle")).toBeDefined();
     expect(screen.getByText("Dual-Key File IPC (UTF-8 & Non-UTF-8)")).toBeDefined();
+    expect(screen.getByText("Configuration (TOML)")).toBeDefined();
     expect(screen.getByTitle("Language")).toBeDefined();
   });
 });

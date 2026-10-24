@@ -163,6 +163,17 @@ export function App() {
     }
   };
 
+  const handleResetStagedItem = async (stageId: string) => {
+    try {
+      const resetItem = await invoke<StagedItemDto>("reset_staged_file", { stageId });
+      setStagedItems((prev) => prev.map((s) => (s.stage_id === stageId ? resetItem : s)));
+      addHistory(`Reset "${resetItem.display_name}" in workspace-temp to original state`);
+      addLog(`Reset staged file "${resetItem.display_name}" back to original`);
+    } catch (err) {
+      addLog(`Failed to reset staged item ${stageId}: ${String(err)}`);
+    }
+  };
+
   const handleExtractText = async (item: FileItem) => {
     try {
       setExtractLoading(true);
@@ -311,6 +322,8 @@ export function App() {
                       appConfig={appConfig}
                       logs={logs}
                       history={history}
+                      stagedItems={stagedItems}
+                      onResetStagedItem={handleResetStagedItem}
                       onClose={() => setBottomVisible(false)}
                     />
                   </Panel>
@@ -341,7 +354,7 @@ export function App() {
         <div className="statusbar-left">
           <span className="status-label">Cuddle</span>
           <span className="status-sep">|</span>
-          <span>Phase 4.1 Working Copy Isolation &amp; Reflink Placement Active</span>
+          <span>Phase 4.2 Diff Comparison &amp; Safe Reset Active</span>
         </div>
         <div className="statusbar-right">
           <span>Staged: {stagedFiles.length} files</span>

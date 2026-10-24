@@ -154,7 +154,18 @@
   * `WorkspacePanel.tsx` および `VirtualFileList.tsx` での Reflink バッジ表示、作業解除、一括解除 UI 統合
   * 日英完全バイリンガル辞書（`workspace.*`, `errors.ERR_STAGE_*`）整備
   * Cargo テスト 61 件 100% パス、Vitest 10 件 100% パス、Clippy 警告ゼロ、Vite ビルド成功
-* [ ] **Phase 4.2（作業領域内高速スワップ・差分比較 & 原本保護下プレビュー）：着手準備完了**
+* [x] **Phase 4.2（作業領域内高速スワップ・差分比較 & 原本保護下プレビュー）：完了**
+  * `similar` (v2.6) クレートを用いた高速テキスト差分比較エンジン実装（`src-tauri/src/diff.rs`）
+  * 先頭バイト解析によるバイナリ自動検知および安全なバイナリ差分ハンドリング
+  * 構造化差分 DTO（`FileDiffResultDto`, `DiffLineDto`, `DiffChangeType`）の行番号（旧/新）追跡
+  * ワンクリック原本状態復元エンジン（`reset_staged_file`：作業コピー破棄＋スナップショット時点の原本からの再クローン・状態リセット）
+  * `ts-rs` による TypeScript 型自動同期（`DiffChangeType.ts`, `DiffLineDto.ts`, `FileDiffResultDto.ts`）
+  * Tauri IPC コマンド `get_file_diff`, `reset_staged_file` 公開
+  * `BottomTabPanel.tsx` プレビュータブでの原本 vs 作業コピー差分（追加: 緑, 削除: 赤, 変更なし: 通常色）リアルタイム表示
+  * プレビューヘッダーでの「原本状態へ復元 (リセット)」ボタン連携
+  * 日英完全バイリンガル辞書（`diff.*`, `errors.ERR_DIFF_FAILED`）整備
+  * Cargo テスト 69 件 100% パス、Vitest 12 件 100% パス、Clippy 警告ゼロ、Vite ビルド成功
+* [ ] **Phase 4.3（安全な原本反映トランザクション・競合遮断 & TOCTOU レース防御）：着手準備完了**
 
 ---
 

@@ -154,7 +154,18 @@
   * UI integration in `WorkspacePanel.tsx` and `VirtualFileList.tsx` with Reflink badges, per-item unstage, and clear-all actions
   * Full bilingual dictionary expansion (`workspace.*`, `errors.ERR_STAGE_*`)
   * Automated testing: 61 Cargo tests 100% pass, 10 Vitest tests 100% pass, Clippy zero warnings, Vite build success
-* [ ] **Phase 4.2 (In-Workspace Fast Swap, Diff Preview & Safe Original Recovery): Ready to start**
+* [x] **Phase 4.2 (In-Workspace Fast Swap, Diff Preview & Safe Original Recovery): Completed**
+  * Fast text diff computation engine implemented using `similar` (v2.6) crate (`src-tauri/src/diff.rs`)
+  * Leading bytes heuristic for binary file detection with safe non-text diff representation
+  * Structured diff output (`FileDiffResultDto`, `DiffLineDto`, `DiffChangeType`) tracking old and new line numbers
+  * One-click pristine original recovery engine (`reset_staged_file`: purges mutated staging copy, re-clones from original snapshot, resets status)
+  * Automated TypeScript bindings synchronization via `ts-rs` (`DiffChangeType.ts`, `DiffLineDto.ts`, `FileDiffResultDto.ts`)
+  * Tauri IPC commands `get_file_diff`, `reset_staged_file` exposed
+  * Integrated real-time Unified Diff preview in `BottomTabPanel.tsx` (Insert: green, Delete: red, Equal: muted)
+  * One-click "Reset to Original" button in preview header connected to live backend reset
+  * Full bilingual dictionary expansion (`diff.*`, `errors.ERR_DIFF_FAILED`)
+  * Automated testing: 69 Cargo tests 100% pass, 12 Vitest tests 100% pass, Clippy zero warnings, Vite build success
+* [ ] **Phase 4.3 (Safe Original Reflection Transaction, Conflict Guard & TOCTOU Race Defense): Ready to start**
 
 ---
 

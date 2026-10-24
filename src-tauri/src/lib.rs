@@ -1,4 +1,5 @@
 pub mod config;
+pub mod diff;
 pub mod extractor;
 pub mod models;
 pub mod policy;
@@ -204,6 +205,18 @@ fn clear_staged_items() -> Result<(), String> {
     mgr.clear_all().map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn get_file_diff(stage_id: String) -> Result<diff::FileDiffResultDto, String> {
+    let mgr = workspace::get_workspace_manager();
+    mgr.get_diff(&stage_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn reset_staged_file(stage_id: String) -> Result<workspace::StagedItemDto, String> {
+    let mgr = workspace::get_workspace_manager();
+    mgr.reset_staged_file(&stage_id).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -225,7 +238,9 @@ pub fn run() {
             stage_file,
             unstage_file,
             list_staged_items,
-            clear_staged_items
+            clear_staged_items,
+            get_file_diff,
+            reset_staged_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

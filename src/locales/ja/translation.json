@@ -59,7 +59,20 @@
     "ERR_INSUFFICIENT_SPACE": "容量不足：安全基準（1.5倍）を満たすディスク空き容量がありません。",
     "ERR_SYMLINK_ESCAPE": "シンボリックリンク脱出：リンク先が許可領域外を参照しています。",
     "ERR_STAGE_NOT_FOUND": "指定された作業コピーが見つかりません。",
-    "ERR_STAGING_DIR_UNAVAILABLE": "作業領域ディレクトリを作成または利用できません。"
+    "ERR_STAGING_DIR_UNAVAILABLE": "作業領域ディレクトリを作成または利用できません。",
+    "ERR_DIFF_FAILED": "差分の計算に失敗しました。"
+  },
+  "diff": {
+    "title": "差分プレビュー (原本 vs 作業コピー)",
+    "no_diff": "原本と作業コピーに差分はありません（同一）",
+    "binary_file": "バイナリファイルのためテキスト差分は表示できません",
+    "additions_deletions": "+{{additions}} 行 / -{{deletions}} 行",
+    "reset_to_original": "原本状態へ復元 (リセット)",
+    "confirm_reset": "作業コピーの変更を破棄し、原本状態に戻しますか？",
+    "reset_success": "原本状態へリセットしました",
+    "line_no": "行",
+    "original_badge": "原本 (読み取り専用保護)",
+    "staged_badge": "作業コピー (workspace-temp)"
   },
   "policy": {
     "title": "安全操作ポリシー (OperationPolicy)",

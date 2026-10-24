@@ -59,7 +59,20 @@
     "ERR_INSUFFICIENT_SPACE": "Insufficient Space: Free disk space does not meet the 1.5x safety multiplier.",
     "ERR_SYMLINK_ESCAPE": "Symlink Escape: Symlink targets an unauthorized path outside safe boundaries.",
     "ERR_STAGE_NOT_FOUND": "Specified staged file was not found.",
-    "ERR_STAGING_DIR_UNAVAILABLE": "Failed to create or access the staging directory."
+    "ERR_STAGING_DIR_UNAVAILABLE": "Failed to create or access the staging directory.",
+    "ERR_DIFF_FAILED": "Failed to compute file diff."
+  },
+  "diff": {
+    "title": "Diff Preview (Original vs Staging)",
+    "no_diff": "No changes between original and staging copy (Identical)",
+    "binary_file": "Binary file: Text diff is not available",
+    "additions_deletions": "+{{additions}} line(s) / -{{deletions}} line(s)",
+    "reset_to_original": "Reset to Original",
+    "confirm_reset": "Discard all changes in staging and reset to original state?",
+    "reset_success": "Reset to original state completed",
+    "line_no": "Line",
+    "original_badge": "Original (Read-Only Protected)",
+    "staged_badge": "Staged Copy (workspace-temp)"
   },
   "policy": {
     "title": "Operation Safety Policy (OperationPolicy)",

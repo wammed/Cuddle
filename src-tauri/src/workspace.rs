@@ -19,6 +19,8 @@ pub enum WorkspaceError {
     Model(#[from] ModelError),
     #[error("Policy error: {0}")]
     Policy(#[from] PolicyError),
+    #[error("Diff error: {0}")]
+    Diff(#[from] crate::diff::DiffError),
     #[error("Staged item not found: {0}")]
     NotFound(String),
     #[error("Failed to determine staging directory")]
@@ -36,6 +38,7 @@ impl WorkspaceError {
             WorkspaceError::InsufficientSpace => "ERR_INSUFFICIENT_SPACE",
             WorkspaceError::Io(_) => "ERR_IO",
             WorkspaceError::Model(_) => "ERR_INVALID_PATH",
+            WorkspaceError::Diff(_) => "ERR_DIFF_FAILED",
         }
     }
 }
@@ -224,6 +227,59 @@ impl WorkspaceManager {
         }
     }
 
+    /// Retrieves a single staged item by stage_id.
+    pub fn get_staged(&self, stage_id: &str) -> Result<StagedItemDto, WorkspaceError> {
+        let map = self.staged_items.lock().unwrap();
+        map.get(stage_id)
+            .cloned()
+            .ok_or_else(|| WorkspaceError::NotFound(stage_id.to_string()))
+    }
+
+    /// Resets a modified staged working copy back to pristine original state.
+    pub fn reset_staged_file(&self, stage_id: &str) -> Result<StagedItemDto, WorkspaceError> {
+        let mut map = self.staged_items.lock().unwrap();
+        let staged = map
+            .get_mut(stage_id)
+            .ok_or_else(|| WorkspaceError::NotFound(stage_id.to_string()))?;
+
+        let orig_path = decode_path_from_base64(&staged.raw_base64)?;
+        let staged_path = decode_path_from_base64(&staged.staged_raw_base64)?;
+
+        if !orig_path.exists() {
+            return Err(WorkspaceError::Policy(PolicyError::NotFound(
+                orig_path.to_string_lossy().to_string(),
+            )));
+        }
+
+        // Re-clone from pristine original
+        if staged_path.exists() {
+            let _ = fs::remove_file(&staged_path);
+        }
+        let method = clone_file(&orig_path, &staged_path)?;
+
+        staged.clone_method = method;
+        staged.status = StageStatus::Staged;
+
+        Ok(staged.clone())
+    }
+
+    /// Computes the diff between the original file and its staged working copy.
+    pub fn get_diff(&self, stage_id: &str) -> Result<crate::diff::FileDiffResultDto, WorkspaceError> {
+        let (raw_b64, staged_b64) = {
+            let map = self.staged_items.lock().unwrap();
+            let staged = map
+                .get(stage_id)
+                .ok_or_else(|| WorkspaceError::NotFound(stage_id.to_string()))?;
+            (staged.raw_base64.clone(), staged.staged_raw_base64.clone())
+        };
+
+        let orig_path = decode_path_from_base64(&raw_b64)?;
+        let staged_path = decode_path_from_base64(&staged_b64)?;
+
+        let diff_result = crate::diff::compute_file_diff(stage_id, &orig_path, &staged_path)?;
+        Ok(diff_result)
+    }
+
     /// Lists all currently active staged items.
     pub fn list_staged(&self) -> Vec<StagedItemDto> {
         let map = self.staged_items.lock().unwrap();
@@ -336,6 +392,37 @@ mod tests {
         mgr.clear_all().unwrap();
         assert_eq!(mgr.list_staged().len(), 0);
         assert!(non_utf8_file.exists(), "Original non-UTF8 file must remain intact");
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_workspace_manager_reset_to_original() {
+        let temp_dir = std::env::temp_dir().join(format!("cuddle_ws_reset_{}", Uuid::new_v4()));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let orig_file = temp_dir.join("code.rs");
+        fs::write(&orig_file, b"fn main() { println!(\"original\"); }").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+
+        // Mutate staged working copy
+        fs::write(&staged.staged_path, b"fn main() { println!(\"mutated\"); }").unwrap();
+        assert_eq!(fs::read(&staged.staged_path).unwrap(), b"fn main() { println!(\"mutated\"); }");
+
+        // Verify diff before reset
+        let diff = mgr.get_diff(&staged.stage_id).unwrap();
+        assert!(diff.has_changes);
+
+        // Reset staged copy to pristine original
+        let reset_item = mgr.reset_staged_file(&staged.stage_id).unwrap();
+        assert_eq!(reset_item.status, StageStatus::Staged);
+        assert_eq!(fs::read(&staged.staged_path).unwrap(), b"fn main() { println!(\"original\"); }");
+
+        // Diff after reset must be clean
+        let diff_after = mgr.get_diff(&staged.stage_id).unwrap();
+        assert!(!diff_after.has_changes);
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

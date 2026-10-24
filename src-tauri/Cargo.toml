@@ -36,6 +36,7 @@ encoding_rs = "0.8"
 chardetng = "0.1"
 libc = "0.2"
 sha2 = "0.10"
+similar = "2.6"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

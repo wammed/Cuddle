@@ -100,34 +100,44 @@ All future development must strictly adhere to the following protocol:
 
 ---
 
-## 6. Next Session Startup Guide (Phase 1.1 Tasks)
+## 6. Next Session Startup Guide (Phase 1.4 Tasks)
 
-Agreed baseline options and initialization commands for Phase 1.1:
+Agreed baseline policies and step-by-step implementation guide for Phase 1.4:
 
-### 6.1 Agreed Policies for Phase 1.1
-* **Package Manager:** `pnpm`
-* **Rust Edition:** `2021` (Prioritizing ecosystem stability)
-* **Directory Structure:**
-  * Backend: `/home/susie/git/wammed/Cuddle/src-tauri/`
-  * Frontend: `/home/susie/git/wammed/Cuddle/src/`
-  * Localization Catalogs: `/home/susie/git/wammed/Cuddle/src/locales/{en,ja}/`
+### 6.1 Agreed Policies for Phase 1.4
+* **Config File Location:** Compliant with Linux XDG Base Directory specification:  
+  `$XDG_CONFIG_HOME/FileWorkbench/config.toml` (fallback to `~/.config/FileWorkbench/config.toml` if undefined)
+* **Parser & Crates:** `serde` + `toml` (v0.8) + `dirs` (v5)
+* **Configuration Schema:**
+  * `[app]`: `language = "auto"` (`"ja"`, `"en"`), `theme = "dark"`
+  * `[workspace]`: `temp_directory` (same-volume preferred temporary path), `min_free_space_multiplier = 1.5` (minimum disk space check before staging)
+  * `[security]`: `enforce_landlock = true`
+* **Mandatory Safety Guardrails & Auto-Sanitization:**
+  * If a user manually edits `config.toml` and attempts to disable safety invariants (such as setting `enforce_landlock = false` or allowing in-place edits), the loader validation must automatically override them back to secure defaults on startup.
+  * In case of syntax corruption or unreadable TOML, create a `.bak` copy and regenerate a clean, validated default `config.toml`.
 
-### 6.2 Initialization Commands
-1. **Initialize Tauri 2 Project:**
+### 6.2 Step-by-Step Implementation Guide
+1. **Add Dependencies (`src-tauri/Cargo.toml`):**
+   * `toml = "0.8"`
+   * `dirs = "5"`
+2. **Implement Config Module (`src-tauri/src/config.rs`):**
+   * Define `AppConfig`, `AppSection`, `WorkspaceSection`, and `SecuritySection` structs (`Serialize`, `Deserialize`, `TS`)
+   * Implement XDG path resolver (`get_config_path() -> PathBuf`)
+   * Implement load and sanitize function (`load_or_create_config() -> AppConfig`)
+   * Implement save function (`save_config(config: &AppConfig) -> Result<(), ConfigError>`)
+3. **Expose Tauri Commands (`src-tauri/src/lib.rs`):**
+   * `get_app_config() -> AppConfig`
+   * `save_app_config(config: AppConfig) -> Result<(), String>`
+4. **Automated Unit Testing & Verification (`src-tauri/src/config.rs`):**
+   * Default configuration creation and serialization roundtrip
+   * Safe fallback upon corrupted TOML input
+   * Automatic restoration of security guardrails when Landlock disablement is attempted
+5. **Validation Commands:**
    ```bash
-   pnpm create tauri-app . --template react-ts --manager pnpm
+   cargo test --lib config::tests
+   cargo clippy -- -D warnings
+   pnpm test
    ```
-2. **Install Core Dependencies:**
-   * Rust: `serde`, `serde_json`, `tokio`, `thiserror`, `anyhow`
-   * Frontend: `i18next`, `react-i18next`, `@tanstack/react-virtual`, `lucide-react`
-3. **Configure i18n Baseline:**
-   * `src/i18n.ts`, `src/locales/en/translation.json`, `src/locales/ja/translation.json`
-4. **Setup Linting & Formatting:**
-   * `cargo clippy`, `cargo fmt`, `eslint`, `prettier`
-5. **Run Tests & Verify:**
-   * `cargo test`
-   * `pnpm test` (including missing translation key checker)
-   * Verify `pnpm tauri dev` starts cleanly on CachyOS with English/Japanese toggle functioning
 
 ---
 

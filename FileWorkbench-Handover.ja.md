@@ -100,34 +100,44 @@
 
 ---
 
-## 6. 次期セッション着手手順（Phase 1.1 のタスク）
+## 6. 次期セッション着手手順（Phase 1.4 のタスク）
 
-Phase 1.1 における推奨合意方針および初期コマンド手順：
+Phase 1.4 における合意済み方針および実装手順：
 
-### 6.1 Phase 1.1 で確定した方針
-* **パッケージマネージャー：** `pnpm`
-* **Rust Edition：** `2021`（安定性を優先）
-* **ディレクトリ構成：**
-  * バックエンド：`/home/susie/git/wammed/Cuddle/src-tauri/`
-  * フロントエンド：`/home/susie/git/wammed/Cuddle/src/`
-  * 多言語辞書：`/home/susie/git/wammed/Cuddle/src/locales/{en,ja}/`
+### 6.1 Phase 1.4 で確定した方針
+* **設定ファイル配置場所：** Linux XDG 仕様準拠  
+  `$XDG_CONFIG_HOME/FileWorkbench/config.toml`（未定義時は `~/.config/FileWorkbench/config.toml`）
+* **パーサー & ライブラリ：** `serde` + `toml` (v0.8) + `dirs` (v5)
+* **設定スキーマ構成：**
+  * `[app]`: `language = "auto"`（`"ja"`, `"en"`）、`theme = "dark"`
+  * `[workspace]`: `temp_directory`（同一ボリューム優先一時領域）、`min_free_space_multiplier = 1.5`（原本サイズに対する必要空き容量倍率）
+  * `[security]`: `enforce_landlock = true`
+* **安全ガードレール強制バリデーション（必須仕様）：**
+  * ユーザーが外部エディタで `config.toml` を直接改変し、原本インプレース更新や Landlock 無効化（`enforce_landlock = false`）を試みた場合でも、読み込み時のバリデーションで自動的に安全値へ強制修正して安全に起動する。
+  * TOML 構文エラーや破損時はバックアップ（`.bak`）を作成の上、安全な既定値で自己修復・再生成する。
 
-### 6.2 実行する初期化手順
-1. **Tauri 2 プロジェクト初期化：**
+### 6.2 実行する実装手順
+1. **依存クレート追加（`src-tauri/Cargo.toml`）：**
+   * `toml = "0.8"`
+   * `dirs = "5"`
+2. **設定管理モジュール作成（`src-tauri/src/config.rs`）：**
+   * `AppConfig`, `AppSection`, `WorkspaceSection`, `SecuritySection` の定義（`Serialize`, `Deserialize`, `TS`）
+   * XDG 設定ディレクトリ解決関数（`get_config_path() -> PathBuf`）
+   * 設定読み込み・バリデーション関数（`load_or_create_config()`）
+   * 設定保存関数（`save_config()`）
+3. **Tauri コマンドの公開（`src-tauri/src/lib.rs`）：**
+   * `get_app_config() -> AppConfig`
+   * `save_app_config(config: AppConfig) -> Result<(), String>`
+4. **自動テストの実装 & 検証（`src-tauri/src/config.rs` 内）：**
+   * 既定設定ファイルの初期生成とシリアライズテスト
+   * 破損 TOML 読み込み時の既定フォールバックテスト
+   * Landlock 無効化試行に対する安全ガードレール自動補正テスト
+5. **テスト実行コマンド：**
    ```bash
-   pnpm create tauri-app . --template react-ts --manager pnpm
+   cargo test --lib config::tests
+   cargo clippy -- -D warnings
+   pnpm test
    ```
-2. **依存クレート・パッケージの追加：**
-   * Rust: `serde`, `serde_json`, `tokio`, `thiserror`, `anyhow`
-   * Frontend: `i18next`, `react-i18next`, `@tanstack/react-virtual`, `lucide-react`
-3. **i18n 基盤整備：**
-   * `src/i18n.ts` 初期化設定、`src/locales/en/translation.json`, `src/locales/ja/translation.json`
-4. **リント・フォーマッタ整備：**
-   * `cargo clippy`, `cargo fmt`, `eslint`, `prettier`
-5. **テスト実行：**
-   * `cargo test`
-   * `pnpm test`（未翻訳キーチェック含む）
-   * CachyOS 上での `pnpm tauri dev` 起動および英語/日本語切替確認
 
 ---
 

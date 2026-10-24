@@ -156,28 +156,38 @@
 2. **完全バイリンガル実装の徹底：**  
    * 実装するすべての UI、メッセージ、エラーテキストは `locales/en/*.json` および `locales/ja/*.json` の両方に定義する。ハードコードされた単一言語テキストを一切残さない。
    * 作成・更新するすべてのドキュメント（README、設計書、タスクシート等）は同内容の日英両言語で作成する。
-3. **次フェーズ移行基準（Exit Criteria）：**  
-   フェーズ完了時は、以下をすべて満たすことを必須とする。
-   * 定義された**自動テスト（ユニットテスト・結合テスト）の 100% パス**（Cargo / Vitest）。
-   * 未翻訳キー（欠損キー）がゼロであることのバリデーションパス。
-   * 定義された**手動テスト項目（実機・CLI・UI・言語切替動作）の全チェック完了**。
-   * 未解決ブロッカーがゼロであること。
-   * テスト結果レポートをユーザーに提示し、次フェーズへの移行承認を得ること。
+4. **メジャーフェーズ移行時の手動テスト実施：**  
+   メジャーフェーズ（Phase 1 → 2、Phase 2 → 3、Phase 3 → 4 等）が切り替わる境界において、必ず実機 GUI / CLI 上での手動テストチェックリストをユーザーに提示し、動作検証ステップを実施・確認した上で次メジャーフェーズへ進む。
 
 ---
 
-## 6. 次期セッション着手手順（Phase 3.2 のタスク）
+## 6. 次期セッション着手手順（Phase 4.1 のタスク）
 
-Phase 3.2 における方針および実装計画：
+Phase 4.1 における方針および実装計画：
 
-### 6.1 Phase 3.2 の目的と設計方針
-* **安全操作ポリシー（`OperationPolicy`）エンジン構築（`src-tauri/src/policy.rs`）：**
-  * 原本変更反映の禁止領域判定：マウントポイント境界、外部ストレージ、ホームディレクトリ外のパスにある原本に対する直接変更反映の一律禁止
-  * ホームディレクトリ判定ルール（シンボリックリンク経由のホーム外脱出を実パス解決で完全阻止）
-  * 破壊的操作・原本競合検出（原本の SHA-256、サイズ、更新時刻 mtime を照合し、作業コピー作成後の外部変更を即時検知）
-  * ディスク空き容量事前検証（原本合計サイズ × 1.5 倍以上の空き容量確保を強制）
-  * TOCTOU 対策（操作実行直前での inode/mtime/dev 再検証）
-  * 構造化エラー・警告の多言語コード体系（`OperationErrorDto`）
+### 6.1 Phase 4.1 の目的と設計方針（作業コピー分離 & 同一ボリューム優先配置）
+* **作業コピー管理エンジン構築（`src-tauri/src/workspace.rs`）：**
+  * 原本保護の徹底：原本ファイルから安全な作業領域（Staging Area）へ作業コピーを作成。
+  * **同一ボリューム優先配置 & Reflink (CoW) 高速クローン：**
+    * 原本が存在する同一マウントポイント・ファイルシステム内の作業用隠しディレクトリ（同一ディレクトリ階層または直近の親ディレクトリ内の `.cuddle-temp/`）を最優先。
+    * Linux `ioctl(dest_fd, FICLONE, src_fd)` を発行し、Btrfs/XFS 等の CoW (Copy-on-Write) ファイルシステム上でストレージ消費ゼロ・ミリ秒単位の Reflink クローンを実行。
+    * Reflink 非対応（EXT4 等）または同一ボリュームへの書き込み権限がない場合は、`$XDG_CACHE_HOME/Cuddle/staging/` または設定で指定された作業ディレクトリへ安全にフォールバック（通常のバイトストリームコピー）。
+  * **ディスク容量ガードレールの事前チェック：**
+    * Phase 3.2 の `check_disk_space` を呼び出し、原本サイズの 1.5 倍以上の空き容量がない場合は `ERR_INSUFFICIENT_SPACE` でコピーを中断。
+  * **二重キー整合性と状態追跡（`StagedItemDto`）：**
+    * 原本 `item_id`, `raw_base64`, `display_name`
+    * ステージング先パス（`staged_raw_base64`, `staged_path`）
+    * コピー種別（`CloneMethod`: `Reflink` | `StandardCopy`）
+    * ステージング状態（`StageStatus`: `Staged` | `Modified` | `Reflected`）
+    * 原本スナップショット（`OriginalSnapshotDto`）の自動保持
+  * **Tauri IPC コマンド公開：**
+    * `stage_file(path_base64: String) -> Result<StagedItemDto, String>`
+    * `unstage_file(stage_id: String) -> Result<(), String>`
+    * `list_staged_items() -> Result<Vec<StagedItemDto>, String>`
+    * `clear_staged_items() -> Result<(), String>`
+  * **`ts-rs` による TypeScript 型同期 & UI 連携：**
+    * `StagedItemDto.ts`, `CloneMethod.ts`, `StageStatus.ts` の自動同期。
+    * `WorkspacePanel.tsx` と連携し、実際に作業コピーを作成・一覧表示・削除できる状態に統合。
 
 ---
 

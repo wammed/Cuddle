@@ -210,6 +210,71 @@ body {
   font-family: monospace;
 }
 
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.file-item-card {
+  background-color: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.file-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-item-name {
+  font-weight: 500;
+  color: #f8fafc;
+  font-family: monospace;
+  font-size: 0.9rem;
+}
+
+.file-item-size {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.utf8-icon {
+  color: #38bdf8;
+}
+
+.non-utf8-icon {
+  color: #f59e0b;
+}
+
+.file-item-b64 {
+  display: flex;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  align-items: center;
+}
+
+.b64-label {
+  font-size: 0.7rem;
+  color: #64748b;
+}
+
+.b64-value {
+  font-family: monospace;
+  background-color: #1e293b;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #cbd5e1;
+  word-break: break-all;
+}
+
 .app-footer {
   margin-top: auto;
   padding-top: 16px;

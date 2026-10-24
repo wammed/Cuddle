@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { changeLanguage, SupportedLanguage } from "./i18n";
-import { Globe, ShieldCheck, HardDrive, Terminal, Lock } from "lucide-react";
+import type { FileItem } from "./types/FileItem";
+import { Globe, ShieldCheck, HardDrive, Terminal, Lock, FileCode, Binary } from "lucide-react";
 import "./App.css";
 
 interface LandlockStatus {
@@ -15,6 +16,7 @@ function App() {
   const [greetMsg, setGreetMsg] = useState("");
   const [name, setName] = useState("");
   const [landlock, setLandlock] = useState<LandlockStatus | null>(null);
+  const [files, setFiles] = useState<FileItem[]>([]);
 
   const currentLang = (i18n.language.startsWith("ja") ? "ja" : "en") as SupportedLanguage;
 
@@ -27,6 +29,10 @@ function App() {
     invoke<LandlockStatus>("get_landlock_status")
       .then((status) => setLandlock(status))
       .catch((err) => console.error("Failed to query landlock status:", err));
+
+    invoke<FileItem[]>("get_demo_items")
+      .then((items) => setFiles(items))
+      .catch((err) => console.error("Failed to load demo files:", err));
   }, []);
 
   async function greet() {
@@ -89,11 +95,27 @@ function App() {
         <div className="card">
           <div className="card-header">
             <HardDrive size={18} />
-            <h2>{t("nav.workspace")}</h2>
+            <h2>{t("workspace.demo_items_title")}</h2>
           </div>
-          <p className="status-badge ready">{t("common.status_ready")}</p>
-          <p className="card-desc">{t("workspace.empty_state")}</p>
-          <p className="card-meta">{t("workspace.reflink_enabled")}</p>
+          <div className="file-list">
+            {files.map((file) => (
+              <div key={file.item_id} className="file-item-card">
+                <div className="file-item-header">
+                  {file.display_name.includes("\uFFFD") ? (
+                    <Binary size={16} className="non-utf8-icon" />
+                  ) : (
+                    <FileCode size={16} className="utf8-icon" />
+                  )}
+                  <span className="file-item-name">{file.display_name}</span>
+                  <span className="file-item-size">{file.size.toString()} B</span>
+                </div>
+                <div className="file-item-b64">
+                  <span className="b64-label">{t("workspace.raw_base64_label")}:</span>
+                  <code className="b64-value">{file.raw_base64}</code>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="card">
@@ -124,7 +146,7 @@ function App() {
       </section>
 
       <footer className="app-footer">
-        <span>FileWorkbench Security PoC - Landlock Kernel Isolation Active</span>
+        <span>FileWorkbench Foundation - Phase 1.3 Dual-Key Non-UTF8 Verified</span>
       </footer>
     </main>
   );

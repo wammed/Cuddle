@@ -5,7 +5,7 @@
 </p>
 
 **Document Date:** 2026-10-24  
-**Status:** Phase 1.2 Completed, Ready for Phase 1.3  
+**Status:** Phase 1.3 Completed, Ready for Phase 1.4  
 **Target Audience:** Development, Architecture, and QA Teams; Next Working Session Maintainers  
 
 ---
@@ -71,7 +71,13 @@
   * Automated testing verifying write prevention outside whitelist (`EACCES` enforced at kernel level)
   * Verified external CLI tool (`magick`) cannot tamper with protected original directory
   * Exposed `get_landlock_status` Tauri command with UI security status badge
-* [ ] **Phase 1.3 (IPC Type Definitions & Non-UTF-8 Dual-Key Infrastructure): Awaiting start**
+* [x] **Phase 1.3 (IPC Type Definitions & Non-UTF-8 Dual-Key Infrastructure): Completed**
+  * Implemented `FileItem` dual-key data model (`item_id` UUID + `raw_base64` raw bytes + `display_name` safe UTF-8)
+  * Linux `OsStrExt` byte-level lossless roundtrip path conversion utilities
+  * Automated TypeScript bindings generation using `ts-rs` (`src/types/`)
+  * Unit tests validating 100% byte fidelity on non-UTF-8 paths (raw bytes `\xFF\xFE`)
+  * Tauri IPC command `get_demo_items` and UI verification displaying UTF-8 and non-UTF-8 items safely without panics
+* [ ] **Phase 1.4 (Configuration Management - TOML Schema & Sync): Awaiting start**
 
 ---
 

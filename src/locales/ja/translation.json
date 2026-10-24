@@ -28,7 +28,12 @@
   "workspace": {
     "empty_state": "作業領域（workspace-temp）にファイルがありません",
     "original_protected": "原本ファイルは厳格に保護されています（読み取り専用）",
-    "reflink_enabled": "対応環境では Reflink (CoW) 高速コピーが有効です"
+    "reflink_enabled": "対応環境では Reflink (CoW) 高速コピーが有効です",
+    "demo_items_title": "二重キーファイルIPC（UTF-8 & 非UTF-8）",
+    "file_name": "名前",
+    "raw_base64_label": "実体 Base64 キー",
+    "file_size": "サイズ",
+    "load_demo_files": "デモファイル読込"
   },
   "warnings": {
     "external_storage": "対象ファイルは外部ストレージまたはホームディレクトリ外にあります。原本の直接変更は禁止されています。",

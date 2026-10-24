@@ -28,7 +28,12 @@
   "workspace": {
     "empty_state": "No files staged in workspace-temp",
     "original_protected": "Original files are strictly protected (read-only)",
-    "reflink_enabled": "Reflink (CoW) copy enabled when supported"
+    "reflink_enabled": "Reflink (CoW) copy enabled when supported",
+    "demo_items_title": "Dual-Key File IPC (UTF-8 & Non-UTF-8)",
+    "file_name": "Name",
+    "raw_base64_label": "Raw Base64 Key",
+    "file_size": "Size",
+    "load_demo_files": "Load Demo Files"
   },
   "warnings": {
     "external_storage": "Target file is on external storage or outside home directory. In-place changes are forbidden.",

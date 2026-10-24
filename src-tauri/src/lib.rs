@@ -89,11 +89,22 @@ fn save_app_config(config: config::AppConfig) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_system_paths() -> models::SystemPathsDto {
+    models::get_system_paths()
+}
+
+#[tauri::command]
+fn resolve_path(input: String) -> Result<models::ResolvedPathDto, String> {
+    models::resolve_path_str_or_b64(&input).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn scan_dir(
     path_base64: String,
     options: Option<scanner::ScanOptions>,
 ) -> Result<Vec<models::FileItem>, String> {
-    let path = models::decode_path_from_base64(&path_base64).map_err(|e| e.to_string())?;
+    let resolved = models::resolve_path_str_or_b64(&path_base64).map_err(|e| e.to_string())?;
+    let path = std::path::PathBuf::from(&resolved.path_str);
     let opts = options.unwrap_or_default();
     scanner::scan_directory(&path, &opts).map_err(|e| e.to_string())
 }
@@ -233,6 +244,8 @@ pub fn run() {
             get_demo_items,
             get_app_config,
             save_app_config,
+            get_system_paths,
+            resolve_path,
             scan_dir,
             search_files_by_name,
             search_fulltext,

@@ -158,12 +158,18 @@
     "col_inode": "inode",
     "empty_folder": "This directory is empty",
     "stage_to_workspace": "Stage to Workspace",
+    "stage_selected": "Stage Selected",
+    "stage_all": "Stage All Items",
+    "navigate_up": "Go Up (..)",
+    "path_placeholder": "Enter path to navigate...",
     "items_count": "{{count}} item(s)",
     "selected_count": "{{count}} selected"
   },
   "tree": {
-    "home": "Home",
+    "home": "Home (~)",
     "root": "Root (/)",
+    "current": "Current (.)",
+    "parent_dir": "Parent Dir (..)",
     "quick_access": "Quick Access"
   },
   "details": {

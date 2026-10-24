@@ -7,6 +7,8 @@ import type { FileItem } from "./types/FileItem";
 import type { AppConfig } from "./types/AppConfig";
 import type { ExtractedTextDto } from "./types/ExtractedTextDto";
 import type { StagedItemDto } from "./types/StagedItemDto";
+import type { SystemPathsDto } from "./types/SystemPathsDto";
+import type { ResolvedPathDto } from "./types/ResolvedPathDto";
 import { Header } from "./components/Header";
 import { SearchPanel } from "./components/SearchPanel";
 import { FolderTreePanel } from "./components/FolderTreePanel";
@@ -22,8 +24,11 @@ interface LandlockStatus {
 }
 
 export function App() {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [currentPath, setCurrentPath] = useState<string>(".");
+  const [parentPath, setParentPath] = useState<string | null>(null);
+  const [systemPaths, setSystemPaths] = useState<SystemPathsDto | null>(null);
+
   const [browserItems, setBrowserItems] = useState<FileItem[]>([]);
   const [stagedFiles, setStagedFiles] = useState<FileItem[]>([]);
   const [stagedItems, setStagedItems] = useState<StagedItemDto[]>([]);
@@ -64,13 +69,13 @@ export function App() {
 
   // Scans a directory via Tauri IPC
   const scanDirectory = useCallback(
-    async (pathStr: string) => {
+    async (target: string) => {
       setIsScanning(true);
       try {
-        // Encode path to Base64 (standard for Cuddle dual-key IPC)
-        const b64 = btoa(pathStr);
+        // Resolve target to canonical path, raw_base64 and parent
+        const resolved = await invoke<ResolvedPathDto>("resolve_path", { input: target });
         const items = await invoke<FileItem[]>("scan_dir", {
-          pathBase64: b64,
+          pathBase64: resolved.raw_base64,
           options: {
             max_depth: 1,
             include_hidden: false,
@@ -78,11 +83,11 @@ export function App() {
           },
         });
         setBrowserItems(items);
-        setCurrentPath(pathStr);
-        addLog(`Scanned directory "${pathStr}": found ${items.length} items`);
+        setCurrentPath(resolved.path_str);
+        setParentPath(resolved.parent_raw_base64 ?? resolved.parent_path_str ?? null);
+        addLog(`Scanned directory "${resolved.path_str}": found ${items.length} items`);
       } catch (err: unknown) {
-        addLog(`scan_dir failed for "${pathStr}", falling back to demo items: ${String(err)}`);
-        // Fallback to demo items
+        addLog(`scan_dir failed for "${target}", falling back: ${String(err)}`);
         try {
           const demo = await invoke<FileItem[]>("get_demo_items");
           setBrowserItems(demo);
@@ -96,6 +101,12 @@ export function App() {
     [addLog]
   );
 
+  const handleNavigateParent = useCallback(() => {
+    if (parentPath) {
+      scanDirectory(parentPath);
+    }
+  }, [parentPath, scanDirectory]);
+
   useEffect(() => {
     invoke<LandlockStatus>("get_landlock_status")
       .then((status) => {
@@ -108,8 +119,15 @@ export function App() {
       .then((cfg) => setAppConfig(cfg))
       .catch((err) => console.error(err));
 
-    // Initial scan
-    scanDirectory(".");
+    // Get system paths and start scanning from Home
+    invoke<SystemPathsDto>("get_system_paths")
+      .then((paths) => {
+        setSystemPaths(paths);
+        scanDirectory(paths.home_raw_base64 || paths.home_dir);
+      })
+      .catch(() => {
+        scanDirectory(".");
+      });
   }, [scanDirectory, addLog]);
 
   const handleStageFile = async (item: FileItem) => {
@@ -215,8 +233,21 @@ export function App() {
   };
 
   const quickDirs = [
-    { name: "Current (.)", path: ".", icon: "folder" as const },
-    { name: "Root (/)", path: "/", icon: "root" as const },
+    {
+      name: t("tree.home"),
+      path: systemPaths?.home_raw_base64 || systemPaths?.home_dir || "~",
+      icon: "home" as const,
+    },
+    {
+      name: t("tree.current"),
+      path: systemPaths?.current_raw_base64 || systemPaths?.current_dir || ".",
+      icon: "folder" as const,
+    },
+    {
+      name: t("tree.root"),
+      path: "/",
+      icon: "root" as const,
+    },
   ];
 
   const subdirs = browserItems.filter((i) => i.is_dir);
@@ -278,6 +309,8 @@ export function App() {
                 <FolderTreePanel
                   currentPath={currentPath}
                   onNavigatePath={(p) => scanDirectory(p)}
+                  onNavigateParent={handleNavigateParent}
+                  hasParent={!!parentPath}
                   quickDirs={quickDirs}
                   subdirs={subdirs}
                   isScanning={isScanning}
@@ -300,11 +333,14 @@ export function App() {
                     <FileBrowserPanel
                       currentPath={currentPath}
                       items={browserItems}
-                      selectedId={selectedItem?.item_id ?? null}
+                      selectedItem={selectedItem}
                       onSelect={(item) => setSelectedItem(item)}
-                      onOpenDir={(dir) => scanDirectory(dir.display_name)}
+                      onOpenDir={(dir) => scanDirectory(dir.raw_base64)}
                       onStage={handleStageFile}
                       onStageAll={handleStageAll}
+                      onNavigateParent={handleNavigateParent}
+                      onNavigatePath={(p) => scanDirectory(p)}
+                      hasParent={!!parentPath}
                       isScanning={isScanning}
                       onRefresh={() => scanDirectory(currentPath)}
                     />
@@ -356,6 +392,8 @@ export function App() {
                   item={selectedItem}
                   onClose={() => setSidebarVisible(false)}
                   onExtractText={handleExtractText}
+                  onStageFile={handleStageFile}
+                  isStaged={stagedItems.some((s) => s.original_item_id === selectedItem?.item_id)}
                   extractLoading={extractLoading}
                   extractedInfo={extractedInfo}
                 />

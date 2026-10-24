@@ -1,10 +1,12 @@
-import { Folder, HardDrive, Home, FolderTree, RefreshCw } from "lucide-react";
+import { Folder, HardDrive, Home, FolderTree, RefreshCw, ArrowUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
 
 interface FolderTreePanelProps {
   currentPath: string;
   onNavigatePath: (path: string) => void;
+  onNavigateParent?: () => void;
+  hasParent?: boolean;
   quickDirs: { name: string; path: string; icon: "home" | "root" | "folder" }[];
   subdirs: FileItem[];
   isScanning: boolean;
@@ -14,6 +16,8 @@ interface FolderTreePanelProps {
 export function FolderTreePanel({
   currentPath,
   onNavigatePath,
+  onNavigateParent,
+  hasParent = false,
   quickDirs,
   subdirs,
   isScanning,
@@ -63,13 +67,30 @@ export function FolderTreePanel({
       </div>
 
       <div className="tree-subdirs-section">
-        <span className="section-label">{currentPath}</span>
+        <div className="tree-subdirs-header">
+          <span className="section-label" title={currentPath}>
+            {currentPath}
+          </span>
+          {hasParent && onNavigateParent && (
+            <button
+              type="button"
+              className="tree-parent-btn"
+              onClick={onNavigateParent}
+              title={t("tree.parent_dir")}
+            >
+              <ArrowUp size={12} />
+              <span>{t("tree.parent_dir")}</span>
+            </button>
+          )}
+        </div>
+
         <div className="tree-subdirs-scroll">
           {subdirs.map((dir) => (
             <div
               key={dir.item_id}
               className="tree-node-item"
-              onClick={() => onNavigatePath(dir.display_name)}
+              onClick={() => onNavigatePath(dir.raw_base64)}
+              title={dir.display_name}
             >
               <Folder size={14} className="node-folder-icon" />
               <span className="node-name">{dir.display_name}</span>

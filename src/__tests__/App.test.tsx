@@ -20,6 +20,24 @@ vi.mock("@tauri-apps/api/core", () => ({
     if (cmd === "get_landlock_status") {
       return Promise.resolve({ supported: true, abi_version: "V5" });
     }
+    if (cmd === "get_system_paths") {
+      return Promise.resolve({
+        home_dir: "/home/susie",
+        home_raw_base64: "L2hvbWUvc3VzaWU=",
+        current_dir: "/home/susie/git/wammed/Cuddle",
+        current_raw_base64: "L2hvbWUvc3VzaWUvZ2l0L3dhbW1lZC9DdWRkbGU=",
+      });
+    }
+    if (cmd === "resolve_path") {
+      return Promise.resolve({
+        path_str: "/home/susie",
+        raw_base64: "L2hvbWUvc3VzaWU=",
+        exists: true,
+        is_dir: true,
+        parent_path_str: "/home",
+        parent_raw_base64: "L2hvbWU=",
+      });
+    }
     if (cmd === "get_demo_items") {
       return Promise.resolve([
         {

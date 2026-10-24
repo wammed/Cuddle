@@ -128,6 +128,85 @@ pub struct AppErrorDto {
     pub item_id: Option<String>,
 }
 
+/// System base paths (home, current working directory)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "../../src/types/")]
+pub struct SystemPathsDto {
+    pub home_dir: String,
+    pub home_raw_base64: String,
+    pub current_dir: String,
+    pub current_raw_base64: String,
+}
+
+/// Fully resolved and canonicalized path metadata
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "../../src/types/")]
+pub struct ResolvedPathDto {
+    pub path_str: String,
+    pub raw_base64: String,
+    pub exists: bool,
+    pub is_dir: bool,
+    pub parent_path_str: Option<String>,
+    pub parent_raw_base64: Option<String>,
+}
+
+pub fn resolve_path_str_or_b64(input: &str) -> Result<ResolvedPathDto, ModelError> {
+    let path = if let Ok(decoded) = decode_path_from_base64(input) {
+        if decoded.exists() || decoded.is_absolute() {
+            decoded
+        } else {
+            PathBuf::from(input)
+        }
+    } else {
+        PathBuf::from(input)
+    };
+
+    let canonical = path.canonicalize().unwrap_or(path.clone());
+    let path_str = canonical.to_string_lossy().to_string();
+    let raw_base64 = encode_path_to_base64(&canonical);
+    let exists = canonical.exists();
+    let is_dir = canonical.is_dir();
+
+    let (parent_path_str, parent_raw_base64) = if let Some(parent) = canonical.parent() {
+        (
+            Some(parent.to_string_lossy().to_string()),
+            Some(encode_path_to_base64(parent)),
+        )
+    } else {
+        (None, None)
+    };
+
+    Ok(ResolvedPathDto {
+        path_str,
+        raw_base64,
+        exists,
+        is_dir,
+        parent_path_str,
+        parent_raw_base64,
+    })
+}
+
+pub fn get_system_paths() -> SystemPathsDto {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let home_path = PathBuf::from(&home);
+    let home_canonical = home_path.canonicalize().unwrap_or(home_path);
+    let home_str = home_canonical.to_string_lossy().to_string();
+    let home_b64 = encode_path_to_base64(&home_canonical);
+
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let cwd_canonical = cwd.canonicalize().unwrap_or(cwd);
+    let cwd_str = cwd_canonical.to_string_lossy().to_string();
+    let cwd_b64 = encode_path_to_base64(&cwd_canonical);
+
+    SystemPathsDto {
+        home_dir: home_str,
+        home_raw_base64: home_b64,
+        current_dir: cwd_str,
+        current_raw_base64: cwd_b64,
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -193,5 +272,7 @@ mod tests {
         let cfg = ts_rs::Config::default();
         FileItem::export(&cfg).expect("Failed to export FileItem TypeScript binding");
         AppErrorDto::export(&cfg).expect("Failed to export AppErrorDto TypeScript binding");
+        SystemPathsDto::export(&cfg).expect("Failed to export SystemPathsDto TypeScript binding");
+        ResolvedPathDto::export(&cfg).expect("Failed to export ResolvedPathDto TypeScript binding");
     }
 }

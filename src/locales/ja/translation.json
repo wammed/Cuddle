@@ -158,12 +158,18 @@
     "col_inode": "inode",
     "empty_folder": "このフォルダは空です",
     "stage_to_workspace": "作業領域へコピー",
+    "stage_selected": "選択を作業領域へ",
+    "stage_all": "すべて作業領域へ",
+    "navigate_up": "親ディレクトリへ (..)",
+    "path_placeholder": "パスを入力して移動...",
     "items_count": "{{count}} 項目",
     "selected_count": "{{count}} 項目選択中"
   },
   "tree": {
-    "home": "ホーム",
+    "home": "ホーム (~)",
     "root": "ルート (/)",
+    "current": "カレント (.)",
+    "parent_dir": "親ディレクトリ (..)",
     "quick_access": "クイックアクセス"
   },
   "details": {

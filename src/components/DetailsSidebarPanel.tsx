@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Info, X, Shield, FileText, Binary, Layers, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react";
+import { Info, X, Shield, FileText, Binary, Layers, CheckCircle2, AlertTriangle, RefreshCw, CornerDownRight } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
@@ -12,6 +12,8 @@ interface DetailsSidebarPanelProps {
   item: FileItem | null;
   onClose: () => void;
   onExtractText: (item: FileItem) => void;
+  onStageFile?: (item: FileItem) => void;
+  isStaged?: boolean;
   extractLoading: boolean;
   extractedInfo: ExtractedTextDto | null;
 }
@@ -20,6 +22,8 @@ export function DetailsSidebarPanel({
   item,
   onClose,
   onExtractText,
+  onStageFile,
+  isStaged = false,
   extractLoading,
   extractedInfo,
 }: DetailsSidebarPanelProps) {
@@ -268,10 +272,26 @@ export function DetailsSidebarPanel({
         <div className="details-section">
           <span className="section-label">{t("details.actions")}</span>
           <div className="details-actions-list">
+            {!item.is_dir && onStageFile && (
+              <button
+                type="button"
+                className={`details-action-btn ${isStaged ? "secondary" : "primary"}`}
+                onClick={() => onStageFile(item)}
+                title={isStaged ? t("workspace.status_staged") : t("browser.stage_to_workspace")}
+              >
+                <CornerDownRight size={14} />
+                <span>
+                  {isStaged
+                    ? `${t("workspace.status_staged")} ✓`
+                    : t("browser.stage_to_workspace")}
+                </span>
+              </button>
+            )}
+
             {!item.is_dir && (
               <button
                 type="button"
-                className="details-action-btn primary"
+                className="details-action-btn secondary"
                 onClick={() => onExtractText(item)}
                 disabled={extractLoading}
               >

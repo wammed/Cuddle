@@ -5,7 +5,7 @@
 </p>
 
 **文書作成日：** 2026-10-24  
-**ステータス：** Phase 1.4 完了（Phase 1 基盤全完了）、Phase 2.1 着手準備完了  
+**ステータス：** Phase 2.1 完了、Phase 2.2 着手準備完了  
 **対象：** 開発・設計・テスト担当者、次期作業セッション担当  
 
 ---
@@ -90,7 +90,14 @@
   * Tauri コマンド `get_app_config` / `save_app_config` 公開
   * UI 設定カードの実装および日英完全バイリンガル辞書整備
   * Cargo テスト 18 件 100% パス、Vitest 5 件 100% パス、Clippy 警告ゼロ
-* [ ] **Phase 2.1（高速ディレクトリスキャナ & inode 追跡）：着手待ち**
+* [x] **Phase 2.1（高速ディレクトリスキャナ & inode 追跡）：完了**
+  * `walkdir` (v2) による深さ制限（`max_depth`）・隠しファイル制御可能なディレクトリスキャナ実装（`src-tauri/src/scanner.rs`）
+  * Linux `MetadataExt` を用いた物理識別情報（`inode: u64`, `dev: u64`）の `FileItem` 組み込みと `ts-rs` 型同期
+  * 訪問済み `(dev, ino)` ハッシュセットによる循環シンボリックリンク無限ループ検知・自動安全スキップ機構
+  * 非 UTF-8 不正バイト列（`\xFF\xFE`）ファイル名の安全走査・二重キー保持テスト全件パス
+  * Tauri IPC コマンド `scan_dir` 公開
+  * Cargo テスト 24 件 100% パス、Vitest 5 件 100% パス、Clippy 警告ゼロ
+* [ ] **Phase 2.2（plocate インデックス連携 & 高速ファイル名検索）：着手待ち**
 
 ---
 
@@ -113,32 +120,30 @@
 
 ---
 
-## 6. 次期セッション着手手順（Phase 2.1 のタスク）
+## 6. 次期セッション着手手順（Phase 2.2 のタスク）
 
-Phase 2.1 における方針および実装計画：
+Phase 2.2 における方針および実装計画：
 
-### 6.1 Phase 2.1 の目的と設計方針
-* **高速走査ライブラリ選定：** `jwalk` または `walkdir` + 並列スレッドプール（Rayon）。COSMIC / Linux の大規模ツリー走査をノンブロッキングで実行。
-* **物理ファイル識別（inode / dev 追跡）：**
-  * Linux `std::os::unix::fs::MetadataExt` を活用し、`st_ino`（inode 番号）と `st_dev`（デバイス ID）を `FileItem` に組み込む。
-  * ファイルのリネーム、移動、原本競合検知において、パス文字列の変更に左右されない物理同一性追跡を実現。
-* **シンボリックリンク循環検知：**
-  * 訪問済み `(dev, ino)` の HashSet を保持し、無限ループ・再帰リンクを検知・安全スキップ。
+### 6.1 Phase 2.2 の目的と設計方針
+* **plocate 連携 & 自動フォールバック仕様：**
+  * システムに `plocate` コマンドが存在する場合は `plocate --null <pattern>` を直接引数配列起動（シェル介在なし）で実行し、ミリ秒単位でファイル名検索。
+  * `plocate` 未インストール時または `updatedb` データベース不在・アクセス権限エラー時は、Phase 2.1 で構築した `walkdir` スキャナによる直接走査へ自動フォールバック。
+* **検索結果の `FileItem` 変換：**
+  * 検索ヒットした各パスから `symlink_metadata` を取得し、二重キー `FileItem`（Base64 + display_name + inode + dev）へバッチ変換。
+* **検索スコープ制限：**
+  * ホームディレクトリ（`$HOME`）配下または指定ディレクトリ配下に検索スコープを限定可能とし、原本保護境界を遵守。
 
 ### 6.2 実行する実装手順
-1. **依存クレート追加（`src-tauri/Cargo.toml`）：**
-   * `walkdir = "2"`
-   * `rayon = "1.10"`（必要に応じて）
-2. **スキャナモジュール作成（`src-tauri/src/scanner.rs`）：**
-   * `scan_directory(path: &Path) -> Result<Vec<FileItem>, ScanError>`
-   * `FileItem` への `inode: u64`, `dev: u64` フィールド拡張と `ts-rs` 同期
-   * シンボリックリンク解決・循環検出ガード
-3. **Tauri コマンド公開 & テスト：**
-   * `list_directory(path_base64: String) -> Result<Vec<FileItem>, String>`
-   * 大量ファイル・循環シンボリックリンクを含むテストマトリクス検証
-4. **テスト実行コマンド：**
+1. **検索モジュール作成（`src-tauri/src/search_filename.rs`）：**
+   * `search_filename(pattern: &str, scope: Option<&Path>) -> Result<Vec<FileItem>, SearchError>`
+   * `plocate` 存在判定機構（`which plocate` / 直接実行プローブ）
+   * 直接走査フォールバック機構
+2. **Tauri コマンド公開 & テスト：**
+   * `search_files_by_name(pattern: String, scope_base64: Option<String>) -> Result<Vec<FileItem>, String>`
+   * 正常検索・ワイルドカード検索・存在しないファイル・フォールバック動作の自動テスト
+3. **テスト実行コマンド：**
    ```bash
-   cargo test --lib scanner::tests
+   cargo test --lib search_filename::tests
    cargo clippy -- -D warnings
    pnpm test
    ```

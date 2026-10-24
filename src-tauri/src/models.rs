@@ -2,6 +2,7 @@ use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 use ts_rs::TS;
@@ -17,7 +18,8 @@ pub enum ModelError {
     InvalidPath,
 }
 
-/// Core File Item representation supporting non-UTF-8 paths via dual-key (Base64 + display string).
+/// Core File Item representation supporting non-UTF-8 paths via dual-key (Base64 + display string)
+/// and physical file identity tracking via inode and device ID.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[ts(export, export_to = "../../src/types/")]
 pub struct FileItem {
@@ -39,6 +41,10 @@ pub struct FileItem {
     pub mtime_ms: i64,
     /// True if file is read-only (POSIX permissions check)
     pub readonly: bool,
+    /// Physical inode number on the filesystem (Linux st_ino)
+    pub inode: u64,
+    /// Filesystem device ID hosting the file (Linux st_dev)
+    pub dev: u64,
 }
 
 impl FileItem {
@@ -75,6 +81,8 @@ impl FileItem {
             .unwrap_or(0);
 
         let readonly = meta.permissions().readonly();
+        let inode = meta.ino();
+        let dev = meta.dev();
 
         Ok(Self {
             item_id,
@@ -86,6 +94,8 @@ impl FileItem {
             size,
             mtime_ms,
             readonly,
+            inode,
+            dev,
         })
     }
 
@@ -162,6 +172,7 @@ mod tests {
         assert_eq!(item.display_name, "cuddle_test_item.txt");
         assert_eq!(item.size, 14);
         assert!(!item.is_dir);
+        assert!(item.inode > 0, "Inode must be non-zero");
 
         // Roundtrip path
         let recovered_path = item.to_path().unwrap();

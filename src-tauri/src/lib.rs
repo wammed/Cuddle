@@ -1,6 +1,7 @@
 pub mod config;
 pub mod models;
 pub mod sandbox;
+pub mod scanner;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct LandlockStatusInfo {
@@ -46,6 +47,8 @@ fn get_demo_items() -> Vec<models::FileItem> {
         size: 2048,
         mtime_ms: 1729750000000,
         readonly: false,
+        inode: 12345678,
+        dev: 66305,
     };
 
     // Non-UTF-8 path with 0xFF, 0xFE bytes
@@ -62,6 +65,8 @@ fn get_demo_items() -> Vec<models::FileItem> {
         size: 1048576,
         mtime_ms: 1729750000000,
         readonly: false,
+        inode: 87654321,
+        dev: 66305,
     };
 
     vec![normal_item, non_utf8_item]
@@ -77,6 +82,16 @@ fn save_app_config(config: config::AppConfig) -> Result<(), String> {
     config::save_config(&config).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn scan_dir(
+    path_base64: String,
+    options: Option<scanner::ScanOptions>,
+) -> Result<Vec<models::FileItem>, String> {
+    let path = models::decode_path_from_base64(&path_base64).map_err(|e| e.to_string())?;
+    let opts = options.unwrap_or_default();
+    scanner::scan_directory(&path, &opts).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -86,7 +101,8 @@ pub fn run() {
             get_landlock_status,
             get_demo_items,
             get_app_config,
-            save_app_config
+            save_app_config,
+            scan_dir
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

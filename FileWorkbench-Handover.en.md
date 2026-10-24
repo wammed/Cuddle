@@ -5,7 +5,7 @@
 </p>
 
 **Document Date:** 2026-10-24  
-**Status:** Phase 1.4 Completed (Phase 1 Baseline Fully Finished), Ready for Phase 2.1  
+**Status:** Phase 2.1 Completed, Ready for Phase 2.2  
 **Target Audience:** Development, Architecture, and QA Teams; Next Working Session Maintainers  
 
 ---
@@ -90,7 +90,14 @@
   * Tauri IPC commands `get_app_config` and `save_app_config` exposed
   * UI configuration card implementation with full EN/JA bilingual parity
   * Automated tests: 18 Cargo tests 100% pass, 5 Vitest tests 100% pass, Clippy zero warnings
-* [ ] **Phase 2.1 (High-speed Directory Scanner & Inode Tracking): Awaiting start**
+* [x] **Phase 2.1 (High-speed Directory Scanner & Inode Tracking): Completed**
+  * `walkdir` (v2) directory scanner module supporting depth bounds (`max_depth`) and hidden file filtering (`src-tauri/src/scanner.rs`)
+  * Physical file identity tracking (`inode: u64`, `dev: u64`) via Linux `MetadataExt` embedded in `FileItem` with `ts-rs` type synchronization
+  * Cyclic symlink recursion prevention guard utilizing `(dev, ino)` hash set to safely detect and skip infinite loops
+  * Non-UTF-8 path testing (`\xFF\xFE`) verifying lossless dual-key traversal and representation
+  * Tauri IPC command `scan_dir` exposed
+  * Automated testing: 24 Cargo tests 100% pass, 5 Vitest tests 100% pass, Clippy zero warnings
+* [ ] **Phase 2.2 (plocate Index Integration & Fast Filename Search): Awaiting start**
 
 ---
 
@@ -113,32 +120,30 @@ All future development must strictly adhere to the following protocol:
 
 ---
 
-## 6. Next Session Startup Guide (Phase 2.1 Tasks)
+## 6. Next Session Startup Guide (Phase 2.2 Tasks)
 
-Strategic architectural plan and implementation roadmap for Phase 2.1:
+Strategic architectural plan and implementation roadmap for Phase 2.2:
 
-### 6.1 Phase 2.1 Architecture & Design Decisions
-* **Scanner Library Selection:** `jwalk` or `walkdir` combined with Rayon work-stealing threadpool for non-blocking traversal on COSMIC / Linux desktop trees.
-* **Physical File Identity (Inode & Device Tracking):**
-  * Leverage Linux `std::os::unix::fs::MetadataExt` to record `st_ino` (inode number) and `st_dev` (device ID) in `FileItem`.
-  * Track physical file identity across directory renames and external file modifications regardless of path alterations.
-* **Symlink Loop & Recursion Guard:**
-  * Track visited `(dev, ino)` pairs in a hash set to detect and safely skip recursive symlink loops.
+### 6.1 Phase 2.2 Architecture & Design Decisions
+* **plocate Integration & Automatic Fallback:**
+  * When `plocate` binary is available on the system, invoke `plocate --null <pattern>` directly via argument array execution (no shell interpolation) for millisecond filename search.
+  * When `plocate` is unavailable or index is unreadable, automatically fall back to direct directory traversal via `walkdir` engine (built in Phase 2.1).
+* **Batch Conversion to `FileItem`:**
+  * Convert each matching path to dual-key `FileItem` with physical `inode` and `dev` metadata.
+* **Search Scope Confinement:**
+  * Support confining search queries to `$HOME` or specified subdirectories to maintain safety and original protection boundaries.
 
 ### 6.2 Step-by-Step Implementation Guide
-1. **Add Dependencies (`src-tauri/Cargo.toml`):**
-   * `walkdir = "2"`
-   * `rayon = "1.10"` (if parallel multi-tree scanning is selected)
-2. **Implement Scanner Module (`src-tauri/src/scanner.rs`):**
-   * `scan_directory(path: &Path) -> Result<Vec<FileItem>, ScanError>`
-   * Extend `FileItem` with `inode: u64` and `dev: u64` with `ts-rs` synchronization
-   * Symlink resolution and loop prevention guards
-3. **Expose Tauri IPC Commands & Tests:**
-   * `list_directory(path_base64: String) -> Result<Vec<FileItem>, String>`
-   * Test matrix covering deep directories, special characters, and cyclic symlinks
-4. **Validation Commands:**
+1. **Implement Filename Search Module (`src-tauri/src/search_filename.rs`):**
+   * `search_filename(pattern: &str, scope: Option<&Path>) -> Result<Vec<FileItem>, SearchError>`
+   * `plocate` probe and direct execution
+   * Automatic fallback to `walkdir` scanner
+2. **Expose Tauri IPC Commands & Tests:**
+   * `search_files_by_name(pattern: String, scope_base64: Option<String>) -> Result<Vec<FileItem>, String>`
+   * Test matrix covering normal matches, wildcard patterns, non-existent files, and fallback execution
+3. **Validation Commands:**
    ```bash
-   cargo test --lib scanner::tests
+   cargo test --lib search_filename::tests
    cargo clippy -- -D warnings
    pnpm test
    ```

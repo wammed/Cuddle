@@ -25,6 +25,8 @@ vi.mock("@tauri-apps/api/core", () => ({
           size: 2048n,
           mtime_ms: 1729750000000n,
           readonly: false,
+          inode: 12345678n,
+          dev: 66305n,
         },
         {
           item_id: "00000000-0000-0000-0000-000000000002",
@@ -36,8 +38,13 @@ vi.mock("@tauri-apps/api/core", () => ({
           size: 1048576n,
           mtime_ms: 1729750000000n,
           readonly: false,
+          inode: 87654321n,
+          dev: 66305n,
         },
       ]);
+    }
+    if (cmd === "scan_dir") {
+      return Promise.resolve([]);
     }
     if (cmd === "get_app_config") {
       return Promise.resolve({

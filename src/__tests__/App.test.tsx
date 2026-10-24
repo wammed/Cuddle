@@ -60,6 +60,9 @@ vi.mock("@tauri-apps/api/core", () => ({
         total_matches: 0,
       });
     }
+    if (cmd === "search_fulltext") {
+      return Promise.resolve([]);
+    }
     return Promise.resolve("");
   }),
 }));

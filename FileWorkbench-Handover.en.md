@@ -104,7 +104,15 @@
   * Automated TypeScript bindings synchronization via `ts-rs` (`SearchFilenameOptions.ts`, `SearchResultDto.ts`)
   * Tauri IPC command `search_files_by_name` exposed
   * Automated testing: 30 Cargo tests 100% pass, 5 Vitest tests 100% pass, Clippy zero warnings
-* [ ] **Phase 2.3 (Tantivy + lindera-tantivy Japanese Full-text Search Engine): Awaiting start**
+* [x] **Phase 2.3 (Tantivy + lindera-tantivy Japanese Full-text Search Engine): Completed**
+  * Tantivy 0.26 and Lindera 5 (`embed-ipadic` morphological tokenizer) Japanese full-text search engine implemented (`src-tauri/src/search_fulltext.rs`)
+  * Linux XDG Base Directory specification compliance `$XDG_DATA_HOME/Cuddle/index/` persistent index directory and in-memory (`new_in_ram`) ephemeral engine
+  * Safe incremental updates based on `item_id` (deduplication `delete_term` + `add_document`) and explicit document deletion
+  * Highlighted preview snippet extraction for search hits via `SnippetGenerator`
+  * Automated TypeScript bindings synchronization via `ts-rs` (`FulltextHitDto.ts`, `FulltextSearchOptions.ts`)
+  * Tauri IPC command `search_fulltext` exposed and registered in `invoke_handler`
+  * Automated tests: 35 Cargo tests 100% pass, 5 Vitest tests 100% pass, Clippy zero warnings
+* [ ] **Phase 2.4 (Text Extraction Isolated Worker: Plaintext/MD Direct + Memory-Bounded Isolated Process): Ready to start**
 
 ---
 

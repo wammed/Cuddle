@@ -29,6 +29,9 @@ uuid = { version = "1", features = ["v4", "serde"] }
 toml = "0.8"
 dirs = "5"
 walkdir = "2"
+tantivy = "0.26"
+lindera = { version = "5", features = ["embed-ipadic"] }
+lindera-tantivy = { version = "5", features = ["embed-ipadic"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

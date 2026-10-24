@@ -62,5 +62,15 @@
     "landlock_enforced": "Enforce Landlock (Strict Protection)",
     "config_saved": "Settings saved successfully",
     "guardrail_note": "Safety guardrails prevent disabling Landlock or lowering disk multipliers below 1.5x."
+  },
+  "search": {
+    "title": "Fast Search & Full-text Search",
+    "filename_tab": "Filename Search (plocate / walkdir)",
+    "fulltext_tab": "Japanese Full-text Search (Tantivy + Lindera)",
+    "placeholder_filename": "Search by filename...",
+    "placeholder_fulltext": "Search inside documents...",
+    "search_button": "Search",
+    "hits_count": "{{count}} hit(s)",
+    "snippet_label": "Content Snippet"
   }
 }

@@ -183,7 +183,7 @@ function App() {
       </section>
 
       <footer className="app-footer">
-        <span className="footer-brand">Cuddle: File Workbench - Phase 1.4 Config & TOML Schema Verified</span>
+        <span className="footer-brand">Cuddle: File Workbench - Phase 2.3 Search Engines (plocate + Tantivy + Lindera) Verified</span>
         <span className="footer-font-hint">Nerd Font: Pre-required (System Fallback)</span>
       </footer>
     </main>

@@ -3,6 +3,7 @@ pub mod models;
 pub mod sandbox;
 pub mod scanner;
 pub mod search_filename;
+pub mod search_fulltext;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct LandlockStatusInfo {
@@ -102,6 +103,16 @@ fn search_files_by_name(
     search_filename::search_filename(&pattern, &opts).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn search_fulltext(
+    query: String,
+    options: Option<search_fulltext::FulltextSearchOptions>,
+) -> Result<Vec<search_fulltext::FulltextHitDto>, String> {
+    let engine = search_fulltext::get_or_init_engine().map_err(|e| e.to_string())?;
+    let opts = options.unwrap_or_default();
+    engine.search(&query, &opts).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -113,7 +124,8 @@ pub fn run() {
             get_app_config,
             save_app_config,
             scan_dir,
-            search_files_by_name
+            search_files_by_name,
+            search_fulltext
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

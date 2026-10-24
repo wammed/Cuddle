@@ -62,5 +62,15 @@
     "landlock_enforced": "Landlock 強制（厳格保護）",
     "config_saved": "設定を保存しました",
     "guardrail_note": "安全ガードレールにより、Landlock の無効化や 1.5 倍未満への容量緩和は自動補正されます。"
+  },
+  "search": {
+    "title": "高速検索 & 全文検索",
+    "filename_tab": "ファイル名検索 (plocate / walkdir)",
+    "fulltext_tab": "日本語全文検索 (Tantivy + Lindera)",
+    "placeholder_filename": "ファイル名を入力...",
+    "placeholder_fulltext": "本文のキーワードを入力...",
+    "search_button": "検索",
+    "hits_count": "{{count}} 件ヒット",
+    "snippet_label": "本文スニペット"
   }
 }

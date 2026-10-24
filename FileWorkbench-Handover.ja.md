@@ -104,7 +104,15 @@
   * `ts-rs` による TypeScript 型自動同期（`SearchFilenameOptions.ts`, `SearchResultDto.ts`）
   * Tauri IPC コマンド `search_files_by_name` 公開
   * Cargo テスト 30 件 100% パス、Vitest 5 件 100% パス、Clippy 警告ゼロ
-* [ ] **Phase 2.3（Tantivy + lindera-tantivy 日本語全文検索エンジン）：着手待ち**
+* [x] **Phase 2.3（Tantivy + lindera-tantivy 日本語全文検索エンジン）：完了**
+  * Tantivy 0.26 および Lindera 5（`embed-ipadic` 形態素解析トークナイザー内蔵）による日本語全文検索エンジン実装（`src-tauri/src/search_fulltext.rs`）
+  * Linux XDG 仕様準拠 `$XDG_DATA_HOME/Cuddle/index/` 永続インデックスおよびテスト用インメモリ（`new_in_ram`）エンジン
+  * `item_id` に基づく安全な差分ドキュメント更新（重複排除 `delete_term` + `add_document`）および明示的削除機能
+  * `SnippetGenerator` による検索マッチ箇所のハイライトプレビュー要約スニペット自動抽出
+  * `ts-rs` による TypeScript 型自動同期（`FulltextHitDto.ts`, `FulltextSearchOptions.ts`）
+  * Tauri IPC コマンド `search_fulltext` 公開と `invoke_handler` 登録
+  * Cargo テスト 35 件 100% パス、Vitest 5 件 100% パス、Clippy 警告ゼロ
+* [ ] **Phase 2.4（テキスト抽出分離ワーカー：プレーンテキスト/MD直接抽出 + メモリ制限付き分離プロセス）：着手準備完了**
 
 ---
 

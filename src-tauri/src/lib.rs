@@ -5,6 +5,7 @@ pub mod diff;
 pub mod extractor;
 pub mod history;
 pub mod models;
+pub mod pipeline;
 pub mod policy;
 pub mod sandbox;
 pub mod scanner;
@@ -294,6 +295,109 @@ fn has_unreflected_staged_items() -> bool {
     staged.iter().any(|item| item.status != workspace::StageStatus::Reflected)
 }
 
+#[tauri::command]
+fn probe_external_tools() -> Vec<pipeline::ExternalToolStatusDto> {
+    pipeline::ToolDetector::probe_all()
+}
+
+#[tauri::command]
+fn execute_sandboxed_command(
+    executable: String,
+    args: Vec<String>,
+    options: Option<pipeline::CommandExecutionOptionsDto>,
+) -> Result<pipeline::CommandExecutionResultDto, models::AppErrorDto> {
+    let opts = options.unwrap_or_default();
+    pipeline::SandboxedExecutor::execute(&executable, &args, &opts)
+}
+
+#[tauri::command]
+fn run_builtin_text_transform(
+    transform_id: String,
+    input_text: String,
+    offset_param: Option<i64>,
+) -> Result<pipeline::BuiltinTransformResultDto, models::AppErrorDto> {
+    match transform_id.as_str() {
+        "mask_secrets" => {
+            let (out, count) = pipeline::BuiltinPipelineEngine::mask_log_secrets(&input_text);
+            Ok(pipeline::BuiltinTransformResultDto {
+                success: true,
+                output_text: out,
+                items_processed: count,
+                error_message: None,
+            })
+        }
+        "clean_csv" => {
+            match pipeline::BuiltinPipelineEngine::clean_csv(input_text.as_bytes()) {
+                Ok((out, rows)) => Ok(pipeline::BuiltinTransformResultDto {
+                    success: true,
+                    output_text: out,
+                    items_processed: rows,
+                    error_message: None,
+                }),
+                Err(e) => Err(models::AppErrorDto::new("ERR_CLEAN_CSV_FAILED", e)),
+            }
+        }
+        "minify_json" => {
+            match pipeline::BuiltinPipelineEngine::minify_json(&input_text) {
+                Ok((out, count)) => Ok(pipeline::BuiltinTransformResultDto {
+                    success: true,
+                    output_text: out,
+                    items_processed: count,
+                    error_message: None,
+                }),
+                Err(e) => Err(models::AppErrorDto::new("ERR_MINIFY_JSON_FAILED", e)),
+            }
+        }
+        "tsv_to_csv" => {
+            match pipeline::BuiltinPipelineEngine::convert_tsv_csv(&input_text, true) {
+                Ok((out, rows)) => Ok(pipeline::BuiltinTransformResultDto {
+                    success: true,
+                    output_text: out,
+                    items_processed: rows,
+                    error_message: None,
+                }),
+                Err(e) => Err(models::AppErrorDto::new("ERR_CONVERT_TSV_CSV_FAILED", e)),
+            }
+        }
+        "csv_to_tsv" => {
+            match pipeline::BuiltinPipelineEngine::convert_tsv_csv(&input_text, false) {
+                Ok((out, rows)) => Ok(pipeline::BuiltinTransformResultDto {
+                    success: true,
+                    output_text: out,
+                    items_processed: rows,
+                    error_message: None,
+                }),
+                Err(e) => Err(models::AppErrorDto::new("ERR_CONVERT_CSV_TSV_FAILED", e)),
+            }
+        }
+        "minify_sql" => {
+            let (out, count) = pipeline::BuiltinPipelineEngine::minify_sql_dump(&input_text);
+            Ok(pipeline::BuiltinTransformResultDto {
+                success: true,
+                output_text: out,
+                items_processed: count,
+                error_message: None,
+            })
+        }
+        "shift_srt" => {
+            let offset = offset_param.unwrap_or(1000);
+            match pipeline::BuiltinPipelineEngine::shift_srt_timecodes(&input_text, offset) {
+                Ok((out, count)) => Ok(pipeline::BuiltinTransformResultDto {
+                    success: true,
+                    output_text: out,
+                    items_processed: count,
+                    error_message: None,
+                }),
+                Err(e) => Err(models::AppErrorDto::new("ERR_SHIFT_SRT_FAILED", e)),
+            }
+        }
+        _ => Err(models::AppErrorDto::new(
+            "ERR_UNKNOWN_TRANSFORM",
+            format!("Unknown builtin transform: {}", transform_id),
+        )),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -330,7 +434,10 @@ pub fn run() {
             clear_operation_history,
             get_default_backup_path,
             create_workspace_backup,
-            has_unreflected_staged_items
+            has_unreflected_staged_items,
+            probe_external_tools,
+            execute_sandboxed_command,
+            run_builtin_text_transform
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

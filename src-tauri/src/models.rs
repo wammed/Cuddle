@@ -128,6 +128,21 @@ pub struct AppErrorDto {
     pub item_id: Option<String>,
 }
 
+impl AppErrorDto {
+    pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            message: message.into(),
+            item_id: None,
+        }
+    }
+
+    pub fn with_item_id(mut self, item_id: impl Into<String>) -> Self {
+        self.item_id = Some(item_id.into());
+        self
+    }
+}
+
 /// System base paths (home, current working directory)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[ts(export, export_to = "../../src/types/")]

@@ -89,6 +89,26 @@ vi.mock("@tauri-apps/api/core", () => ({
         },
       });
     }
+    if (cmd === "probe_external_tools") {
+      return Promise.resolve([
+        {
+          tool_id: "imagemagick",
+          display_name: "ImageMagick",
+          is_available: true,
+          executable_path: "/usr/bin/magick",
+          version: "7.1.1",
+          error_message: null,
+        },
+        {
+          tool_id: "ffmpeg",
+          display_name: "FFmpeg",
+          is_available: false,
+          executable_path: null,
+          version: null,
+          error_message: "not found",
+        },
+      ]);
+    }
     return Promise.resolve("");
   }),
 }));
@@ -482,6 +502,36 @@ describe("BottomTabPanel & Diff Operations (Phase 4.2)", () => {
     expect(screen.getByText("readme.txt")).toBeDefined();
     expect(screen.getByText("42 chars")).toBeDefined();
     expect(screen.queryByText("差分プレビュー (原本 vs 作業コピー)")).toBeNull();
+  });
+
+  it("renders external tools status in security & settings tab (Phase 7.1)", async () => {
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    render(
+      <BottomTabPanel
+        selectedItem={null}
+        extractedInfo={null}
+        appConfig={null}
+        logs={[]}
+        history={[]}
+        onClose={vi.fn()}
+      />
+    );
+
+    const securityTabBtn = screen.getByText("セキュリティ & 設定");
+    await act(async () => {
+      fireEvent.click(securityTabBtn);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("外部ツール連携環境 (Phase 7.1)")).toBeDefined();
+      expect(screen.getByText("ImageMagick")).toBeDefined();
+      expect(screen.getByText("FFmpeg")).toBeDefined();
+      expect(screen.getByText("利用可能")).toBeDefined();
+      expect(screen.getByText("未インストール")).toBeDefined();
+    });
   });
 });
 

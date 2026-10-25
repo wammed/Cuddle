@@ -1302,10 +1302,23 @@ body {
   color: var(--accent-brand);
 }
 
+.tab-security-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px 12px;
+  height: 100%;
+  overflow-y: auto;
+}
+
 .security-summary-card {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 10px 12px;
 }
 
 .security-summary-card h4 {
@@ -1322,6 +1335,7 @@ body {
   display: flex;
   gap: 20px;
   margin-top: 6px;
+  flex-wrap: wrap;
 }
 
 .config-row {
@@ -1333,6 +1347,145 @@ body {
 
 .config-row .font-mono.secure {
   color: #34d399;
+}
+
+/* Phase 7.1: External Tools Ecosystem Card */
+.tools-ecosystem-card {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+}
+
+.tools-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tools-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tools-title-group h4 {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: #38bdf8;
+  margin: 0;
+}
+
+.rescan-tools-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.rescan-tools-btn:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+}
+
+.rescan-tools-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tools-desc-text {
+  font-size: 11px;
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.tools-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.tool-status-item {
+  background: rgba(10, 16, 28, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color 0.15s ease;
+}
+
+.tool-status-item.available {
+  border-left: 3px solid #34d399;
+}
+
+.tool-status-item.missing {
+  border-left: 3px solid rgba(148, 163, 184, 0.3);
+  opacity: 0.75;
+}
+
+.tool-status-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tool-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.tool-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.badge-available {
+  background: rgba(52, 211, 153, 0.12);
+  color: #34d399;
+  border: 1px solid rgba(52, 211, 153, 0.25);
+}
+
+.badge-missing {
+  background: rgba(148, 163, 184, 0.1);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.tool-details-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.tool-meta-line {
+  font-size: 10.5px;
+  word-break: break-all;
+}
+
+.tool-meta-line .meta-key {
+  color: #64748b;
+}
+
+.tool-missing-note {
+  font-size: 10.5px;
+  margin-top: 2px;
+  color: #64748b;
 }
 
 /* Status Bar */

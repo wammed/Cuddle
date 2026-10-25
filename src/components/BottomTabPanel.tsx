@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Eye, History, Shield, Terminal, X, RotateCcw, GitCompare, AlertCircle, CheckCircle2, Upload, AlertTriangle, Trash2, Database } from "lucide-react";
+import { Eye, History, Shield, Terminal, X, RotateCcw, GitCompare, AlertCircle, CheckCircle2, Upload, AlertTriangle, Trash2, Database, Wrench, Check, MinusCircle, RefreshCw } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
@@ -8,6 +8,7 @@ import type { AppConfig } from "../types/AppConfig";
 import type { StagedItemDto } from "../types/StagedItemDto";
 import type { FileDiffResultDto } from "../types/FileDiffResultDto";
 import type { OperationHistoryDto } from "../types/OperationHistoryDto";
+import type { ExternalToolStatusDto } from "../types/ExternalToolStatusDto";
 
 interface BottomTabPanelProps {
   selectedItem: FileItem | null;
@@ -44,6 +45,26 @@ export function BottomTabPanel({
   const [isReflecting, setIsReflecting] = useState(false);
   const [reflectError, setReflectError] = useState<string | null>(null);
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
+  const [externalTools, setExternalTools] = useState<ExternalToolStatusDto[]>([]);
+  const [isToolsLoading, setIsToolsLoading] = useState(false);
+
+  const loadTools = useCallback(async () => {
+    try {
+      setIsToolsLoading(true);
+      const tools = await invoke<ExternalToolStatusDto[]>("probe_external_tools");
+      setExternalTools(tools);
+    } catch (err) {
+      console.error("Failed to probe external tools:", err);
+    } finally {
+      setIsToolsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "security") {
+      loadTools();
+    }
+  }, [activeTab, loadTools]);
 
   const matchedStaged = useMemo(() => {
     // 1. If explicit selectedStageId exists in current stagedItems
@@ -621,6 +642,68 @@ export function BottomTabPanel({
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* Phase 7.1: External Tools Ecosystem Status */}
+            <div className="security-summary-card tools-ecosystem-card">
+              <div className="tools-card-header">
+                <div className="tools-title-group">
+                  <Wrench size={15} className="text-cyan-400" />
+                  <h4>{t("pipeline.tools_title")}</h4>
+                </div>
+                <button
+                  type="button"
+                  className="rescan-tools-btn"
+                  onClick={loadTools}
+                  disabled={isToolsLoading}
+                  title={t("pipeline.refresh_tools")}
+                >
+                  <RefreshCw size={11} className={isToolsLoading ? "animate-spin" : ""} />
+                  <span>{t("pipeline.refresh_tools")}</span>
+                </button>
+              </div>
+              <p className="tools-desc-text text-muted">{t("pipeline.tools_desc")}</p>
+
+              <div className="tools-status-grid">
+                {externalTools.map((tool) => (
+                  <div key={tool.tool_id} className={`tool-status-item ${tool.is_available ? "available" : "missing"}`}>
+                    <div className="tool-status-top">
+                      <span className="tool-name">{tool.display_name}</span>
+                      <span className={`tool-badge ${tool.is_available ? "badge-available" : "badge-missing"}`}>
+                        {tool.is_available ? (
+                          <>
+                            <Check size={10} />
+                            <span>{t("pipeline.tool_available")}</span>
+                          </>
+                        ) : (
+                          <>
+                            <MinusCircle size={10} />
+                            <span>{t("pipeline.tool_missing")}</span>
+                          </>
+                        )}
+                      </span>
+                    </div>
+                    {tool.is_available ? (
+                      <div className="tool-details-meta">
+                        {tool.version && (
+                          <div className="tool-meta-line font-mono">
+                            <span className="meta-key">{t("pipeline.version_label")}:</span> {tool.version}
+                          </div>
+                        )}
+                        {tool.executable_path && (
+                          <div className="tool-meta-line font-mono text-muted">
+                            <span className="meta-key">{t("pipeline.path_label")}:</span> {tool.executable_path}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="tool-missing-note text-muted font-mono">
+                        {tool.tool_id}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}

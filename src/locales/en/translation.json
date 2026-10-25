@@ -289,5 +289,15 @@
     "backup_success": "Saved backup archive: {{path}} ({{count}} files, {{size}})",
     "backup_failed": "Failed to create backup",
     "action_open_modal": "Backup / Exit"
+  },
+  "pipeline": {
+    "tools_title": "External Tool Ecosystem (Phase 7.1)",
+    "tools_desc": "Status of external CLI tools required for the 30 pipeline presets. Pure-Rust presets work immediately even if some external tools are not installed.",
+    "tool_available": "Available",
+    "tool_missing": "Not Installed",
+    "pure_rust_badge": "Pure Rust Built-in (No Dependencies)",
+    "refresh_tools": "Rescan Tools",
+    "version_label": "Version",
+    "path_label": "Path"
   }
 }

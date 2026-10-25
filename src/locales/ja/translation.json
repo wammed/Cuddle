@@ -289,5 +289,15 @@
     "backup_success": "バックアップを保存しました: {{path}} ({{count}} 件, {{size}})",
     "backup_failed": "バックアップの作成に失敗しました",
     "action_open_modal": "バックアップ / 終了"
+  },
+  "pipeline": {
+    "tools_title": "外部ツール連携環境 (Phase 7.1)",
+    "tools_desc": "30種のパイプラインプリセット実行に必要な外部ツールの可用性状況です。未インストールのツールがあっても純Rustプリセットは即時利用可能です。",
+    "tool_available": "利用可能",
+    "tool_missing": "未インストール",
+    "pure_rust_badge": "純Rust内蔵 (外部依存なし)",
+    "refresh_tools": "ツール再スキャン",
+    "version_label": "バージョン",
+    "path_label": "パス"
   }
 }

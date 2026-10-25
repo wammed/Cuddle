@@ -204,6 +204,14 @@
   * 履歴消去ボタンと即時 UI 同期、グローバルステータスバーでの記録件数表示
   * 日英完全バイリンガル辞書（`history.*`）整備
   * Cargo テスト 100 件 100% パス、Vitest 22 件 100% パス、Clippy 警告ゼロ、Vite ビルド成功
+* [x] **Phase 6.2（セッション復元エンジン & TOCTOU 競合検知）：完了**
+  * SQLite WAL `session_items` テーブルによるステージング状態の永続マニフェスト化（ステージング・アンステージ・リネーム・アンドゥ・リセット・反映・クリア時に自動同期）
+  * アプリ起動時の自動セッション復元エンジン（`restore_workspace_session`）実装
+  * 復元時のディスク実在確認および原本ファイルに対する厳格な TOCTOU 競合検査（SHA-256・mtime・サイズ）
+  * 外部変更検知時の安全な `StageStatus::Conflict` 遷移と警告バッジ（`conflict-pill-sm`）表示
+  * `ts-rs` による TypeScript 型自動同期（`StageStatus.ts` に `"Conflict"` 追加）
+  * 日英完全バイリンガル辞書（`workspace.status_conflict`, `workspace.restored_session`, `workspace.conflict_alert`）整備
+  * Cargo テスト 102 件 100% パス、Vitest 23 件 100% パス、Clippy 警告ゼロ、Vite ビルド成功
 
 ---
 

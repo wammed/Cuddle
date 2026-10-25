@@ -204,6 +204,14 @@
   * History clearing action with immediate UI synchronization and global status bar record count integration
   * Complete bilingual dictionary sync (`history.*`) in English and Japanese
   * Automated testing: 100 Cargo tests 100% pass, 22 Vitest tests 100% pass, Clippy zero warnings, Vite build success
+* [x] **Phase 6.2 (Session Restoration Engine & TOCTOU Conflict Detection): Completed**
+  * Persistent session manifest via SQLite WAL `session_items` table (synchronized automatically on stage, unstage, rename, undo, reset, reflect, and clear)
+  * Automated session restoration engine (`restore_workspace_session`) executing on application boot
+  * Staging file verification on disk and strict TOCTOU conflict checking against original files (SHA-256 hash, mtime, file size)
+  * Safe transition to `StageStatus::Conflict` and warning badge (`conflict-pill-sm`) when external modifications are detected
+  * `ts-rs` automated TypeScript type synchronization (`StageStatus.ts` updated with `"Conflict"`)
+  * Full bilingual dictionary expansion (`workspace.status_conflict`, `workspace.restored_session`, `workspace.conflict_alert`)
+  * Automated testing: 102 Cargo tests 100% pass, 23 Vitest tests 100% pass, Clippy zero warnings, Vite build success
 
 ---
 

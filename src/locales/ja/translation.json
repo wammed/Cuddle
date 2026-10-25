@@ -39,6 +39,7 @@
     "status_staged": "作業コピー作成済",
     "status_modified": "作業中変更あり",
     "status_reflected": "原本反映済",
+    "status_conflict": "原本競合検出",
     "staged_files_count": "{{count}} 個の作業コピー",
     "unstage_btn": "作業解除",
     "clear_all_btn": "すべて解除",
@@ -48,7 +49,9 @@
     "bulk_rename_btn": "一括リネーム",
     "undo_rename_btn": "直前のリネームを元に戻す",
     "undo_success": "直前のリネームを元に戻しました（{{count}} 件のファイル名を復元）",
-    "undo_failed": "リネームの取り消しに失敗しました"
+    "undo_failed": "リネームの取り消しに失敗しました",
+    "restored_session": "前回の作業セッションを復元しました（{{count}} 件）",
+    "conflict_alert": "{{count}} 件のファイルで原本の外部更新（競合）が検出されました"
   },
   "warnings": {
     "external_storage": "対象ファイルは外部ストレージまたはホームディレクトリ外にあります。原本の直接変更は禁止されています。",

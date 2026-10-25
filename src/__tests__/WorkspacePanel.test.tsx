@@ -188,5 +188,30 @@ describe("WorkspacePanel & Staging Operations (Phase 4.1)", () => {
     fireEvent.click(undoBtn);
     expect(handleUndo).toHaveBeenCalledTimes(1);
   });
+
+  it("displays conflict badge when staged item has Conflict status (Phase 6.2)", async () => {
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    const conflictStaged: StagedItemDto = {
+      ...sampleStagedItems[0],
+      stage_id: "stage-conflict-1",
+      status: "Conflict",
+    };
+
+    render(
+      <WorkspacePanel
+        stagedFiles={[sampleStagedFiles[0]]}
+        stagedItems={[conflictStaged]}
+        selectedId={null}
+        canUndo={false}
+        onSelect={vi.fn()}
+        onClearWorkspace={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("原本競合検出")).toBeDefined();
+  });
 });
 

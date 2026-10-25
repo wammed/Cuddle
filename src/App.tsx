@@ -166,6 +166,38 @@ export function App() {
     checkCanUndo();
     loadHistory();
 
+    // Restore previous session if working copies were staged
+    invoke<StagedItemDto[]>("restore_workspace_session")
+      .then((items) => {
+        if (items && items.length > 0) {
+          setStagedItems(items);
+          const files: FileItem[] = items.map((s) => ({
+            item_id: s.stage_id,
+            raw_base64: s.staged_raw_base64,
+            display_name: s.display_name,
+            parent_raw_base64: null,
+            is_dir: false,
+            is_symlink: false,
+            size: BigInt(s.size),
+            mtime_ms: BigInt(s.staged_at_ms),
+            readonly: false,
+            inode: BigInt(s.original_snapshot.inode),
+            dev: BigInt(s.original_snapshot.dev),
+          }));
+          setStagedFiles(files);
+          setSelectedItem(files[files.length - 1]);
+          const conflictCount = items.filter((i) => i.status === "Conflict").length;
+          if (conflictCount > 0) {
+            showToast(`⚠️ ${t("workspace.conflict_alert", { count: conflictCount })}`);
+            addLog(`⚠️ Session restored with ${conflictCount} conflicted files`);
+          } else {
+            showToast(t("workspace.restored_session", { count: items.length }));
+            addLog(`Restored previous session: ${items.length} items from SQLite WAL`);
+          }
+        }
+      })
+      .catch((err) => console.error("Session restore error:", err));
+
     // Get system paths and start scanning from Home
     invoke<SystemPathsDto>("get_system_paths")
       .then((paths) => {
@@ -175,7 +207,7 @@ export function App() {
       .catch(() => {
         scanDirectory(".");
       });
-  }, [scanDirectory, addLog, checkCanUndo, loadHistory]);
+  }, [scanDirectory, addLog, checkCanUndo, loadHistory, showToast, t]);
 
   const handleStageFile = async (item: FileItem) => {
     try {

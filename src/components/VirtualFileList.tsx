@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { FileItem } from "../types/FileItem";
 import { formatBytes, formatTimestamp } from "../utils/format";
-import { Folder, FileText, Binary, Shield, CornerDownRight, Trash2 } from "lucide-react";
+import { Folder, FileText, Binary, Shield, CornerDownRight, Trash2, AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 interface VirtualFileListProps {
@@ -13,6 +13,7 @@ interface VirtualFileListProps {
   onStage?: (item: FileItem) => void;
   onUnstage?: (item: FileItem) => void;
   cloneMethodMap?: Record<string, "Reflink" | "StandardCopy">;
+  statusMap?: Record<string, string>;
   emptyMessage?: string;
   isWorkspace?: boolean;
 }
@@ -27,6 +28,7 @@ export function VirtualFileList({
   onStage,
   onUnstage,
   cloneMethodMap,
+  statusMap,
   emptyMessage,
   isWorkspace = false,
 }: VirtualFileListProps) {
@@ -97,6 +99,15 @@ export function VirtualFileList({
               <div className="row-col-name" title={item.display_name}>
                 <span className="file-name-text">{item.display_name}</span>
                 {isNonUtf8 && <span className="warning-pill-sm">Non-UTF-8</span>}
+                {isWorkspace && statusMap?.[item.item_id] === "Conflict" && (
+                  <span
+                    className="conflict-pill-sm"
+                    title={t("workspace.status_conflict")}
+                  >
+                    <AlertTriangle size={10} />
+                    <span>{t("workspace.status_conflict")}</span>
+                  </span>
+                )}
                 {isWorkspace && (
                   <span
                     className={`reflink-pill-sm ${cloneMethodMap?.[item.item_id] === "Reflink" ? "is-reflink" : ""}`}

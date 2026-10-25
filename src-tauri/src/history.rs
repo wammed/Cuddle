@@ -5,6 +5,8 @@ use std::time::SystemTime;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+use crate::policy::OriginalSnapshotDto;
+use crate::workspace::{CloneMethod, StageStatus, StagedItemDto};
 
 /// Operation History DTO exposed to TypeScript UI
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -106,9 +108,28 @@ impl HistoryManager {
                 details TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_history_timestamp ON operation_history(timestamp_ms DESC);
-            CREATE INDEX IF NOT EXISTS idx_history_op_id ON operation_history(operation_id);",
+            CREATE INDEX IF NOT EXISTS idx_history_op_id ON operation_history(operation_id);
+
+            CREATE TABLE IF NOT EXISTS session_items (
+                stage_id TEXT PRIMARY KEY,
+                original_item_id TEXT NOT NULL,
+                raw_base64 TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                staged_raw_base64 TEXT NOT NULL,
+                staged_path TEXT NOT NULL,
+                size INTEGER NOT NULL,
+                clone_method TEXT NOT NULL,
+                status TEXT NOT NULL,
+                staged_at_ms INTEGER NOT NULL,
+                canonical_path TEXT NOT NULL,
+                inode INTEGER NOT NULL,
+                dev INTEGER NOT NULL,
+                orig_size INTEGER NOT NULL,
+                mtime_ms INTEGER NOT NULL,
+                sha256 TEXT NOT NULL
+            );",
         )
-        .map_err(|e| format!("Failed to initialize operation_history schema: {}", e))?;
+        .map_err(|e| format!("Failed to initialize SQLite schemas: {}", e))?;
 
         Ok(())
     }
@@ -220,6 +241,157 @@ impl HistoryManager {
             .map_err(|e| format!("Failed to clear operation history: {}", e))?;
         Ok(())
     }
+
+    /// Saves or updates a staged item in the persistent session table
+    pub fn save_session_item(&self, item: &StagedItemDto) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        let clone_method_str = match item.clone_method {
+            CloneMethod::Reflink => "Reflink",
+            CloneMethod::StandardCopy => "StandardCopy",
+        };
+        let status_str = match item.status {
+            StageStatus::Staged => "Staged",
+            StageStatus::Modified => "Modified",
+            StageStatus::Reflected => "Reflected",
+            StageStatus::Conflict => "Conflict",
+        };
+
+        conn.execute(
+            "INSERT INTO session_items (
+                stage_id, original_item_id, raw_base64, display_name,
+                staged_raw_base64, staged_path, size, clone_method, status,
+                staged_at_ms, canonical_path, inode, dev, orig_size, mtime_ms, sha256
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+            ON CONFLICT(stage_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                staged_raw_base64 = excluded.staged_raw_base64,
+                staged_path = excluded.staged_path,
+                size = excluded.size,
+                clone_method = excluded.clone_method,
+                status = excluded.status,
+                canonical_path = excluded.canonical_path,
+                inode = excluded.inode,
+                dev = excluded.dev,
+                orig_size = excluded.orig_size,
+                mtime_ms = excluded.mtime_ms,
+                sha256 = excluded.sha256;",
+            params![
+                item.stage_id,
+                item.original_item_id,
+                item.raw_base64,
+                item.display_name,
+                item.staged_raw_base64,
+                item.staged_path,
+                item.size as i64,
+                clone_method_str,
+                status_str,
+                item.staged_at_ms,
+                item.original_snapshot.canonical_path,
+                item.original_snapshot.inode as i64,
+                item.original_snapshot.dev as i64,
+                item.original_snapshot.size as i64,
+                item.original_snapshot.mtime_ms,
+                item.original_snapshot.sha256,
+            ],
+        )
+        .map_err(|e| format!("Failed to save session item {}: {}", item.stage_id, e))?;
+
+        Ok(())
+    }
+
+    /// Removes a staged item from the session table
+    pub fn remove_session_item(&self, stage_id: &str) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM session_items WHERE stage_id = ?1;", params![stage_id])
+            .map_err(|e| format!("Failed to remove session item {}: {}", stage_id, e))?;
+        Ok(())
+    }
+
+    /// Clears all session items
+    pub fn clear_session_items(&self) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM session_items;", [])
+            .map_err(|e| format!("Failed to clear session items: {}", e))?;
+        Ok(())
+    }
+
+    /// Loads all saved session items
+    pub fn load_all_session_items(&self) -> Result<Vec<StagedItemDto>, String> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT stage_id, original_item_id, raw_base64, display_name,
+                        staged_raw_base64, staged_path, size, clone_method, status,
+                        staged_at_ms, canonical_path, inode, dev, orig_size, mtime_ms, sha256
+                 FROM session_items;",
+            )
+            .map_err(|e| format!("Failed to prepare load_all_session_items: {}", e))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let stage_id: String = row.get(0)?;
+                let original_item_id: String = row.get(1)?;
+                let raw_base64: String = row.get(2)?;
+                let display_name: String = row.get(3)?;
+                let staged_raw_base64: String = row.get(4)?;
+                let staged_path: String = row.get(5)?;
+                let size_i64: i64 = row.get(6)?;
+                let clone_method_str: String = row.get(7)?;
+                let status_str: String = row.get(8)?;
+                let staged_at_ms: i64 = row.get(9)?;
+                let canonical_path: String = row.get(10)?;
+                let inode_i64: i64 = row.get(11)?;
+                let dev_i64: i64 = row.get(12)?;
+                let orig_size_i64: i64 = row.get(13)?;
+                let mtime_ms: i64 = row.get(14)?;
+                let sha256: Option<String> = row.get(15)?;
+
+                let clone_method = match clone_method_str.as_str() {
+                    "Reflink" => CloneMethod::Reflink,
+                    _ => CloneMethod::StandardCopy,
+                };
+                let status = match status_str.as_str() {
+                    "Modified" => StageStatus::Modified,
+                    "Reflected" => StageStatus::Reflected,
+                    "Conflict" => StageStatus::Conflict,
+                    _ => StageStatus::Staged,
+                };
+
+                let original_snapshot = OriginalSnapshotDto {
+                    item_id: original_item_id.clone(),
+                    raw_base64: raw_base64.clone(),
+                    display_name: display_name.clone(),
+                    canonical_path,
+                    inode: inode_i64 as u64,
+                    dev: dev_i64 as u64,
+                    size: orig_size_i64 as u64,
+                    mtime_ms,
+                    sha256,
+                };
+
+                Ok(StagedItemDto {
+                    stage_id,
+                    original_item_id,
+                    raw_base64,
+                    display_name,
+                    staged_raw_base64,
+                    staged_path,
+                    size: size_i64 as u64,
+                    clone_method,
+                    status,
+                    staged_at_ms,
+                    original_snapshot,
+                })
+            })
+            .map_err(|e| format!("Failed to query session items: {}", e))?;
+
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r.map_err(|e| format!("Failed to read session row: {}", e))?);
+        }
+
+        Ok(list)
+    }
 }
 
 pub fn get_history_manager() -> &'static HistoryManager {
@@ -294,6 +466,55 @@ mod tests {
         // Must be capped at exactly 50
         let list = mgr.list_history(100).unwrap();
         assert_eq!(list.len(), 50);
+    }
+
+    #[test]
+    fn test_session_items_persistence_roundtrip() {
+        let mgr = HistoryManager::new_in_memory().unwrap();
+
+        let item = StagedItemDto {
+            stage_id: "stage-persist-1".to_string(),
+            original_item_id: "orig-1".to_string(),
+            raw_base64: "L3BhdGg=".to_string(),
+            display_name: "test.txt".to_string(),
+            staged_raw_base64: "L3N0YWdlZA==".to_string(),
+            staged_path: "/tmp/staged_test.txt".to_string(),
+            size: 1024,
+            clone_method: CloneMethod::Reflink,
+            status: StageStatus::Staged,
+            staged_at_ms: 1729750000000,
+            original_snapshot: OriginalSnapshotDto {
+                item_id: "orig-1".to_string(),
+                raw_base64: "L3BhdGg=".to_string(),
+                display_name: "test.txt".to_string(),
+                canonical_path: "/home/susie/test.txt".to_string(),
+                inode: 9999,
+                dev: 66305,
+                size: 1024,
+                mtime_ms: 1729750000000,
+                sha256: Some("hash9999".to_string()),
+            },
+        };
+
+        // 1. Save item
+        mgr.save_session_item(&item).unwrap();
+        let list = mgr.load_all_session_items().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].stage_id, "stage-persist-1");
+        assert_eq!(list[0].display_name, "test.txt");
+        assert_eq!(list[0].status, StageStatus::Staged);
+
+        // 2. Update status to Conflict
+        let mut updated_item = item.clone();
+        updated_item.status = StageStatus::Conflict;
+        mgr.save_session_item(&updated_item).unwrap();
+        let list2 = mgr.load_all_session_items().unwrap();
+        assert_eq!(list2.len(), 1);
+        assert_eq!(list2[0].status, StageStatus::Conflict);
+
+        // 3. Remove item
+        mgr.remove_session_item("stage-persist-1").unwrap();
+        assert_eq!(mgr.load_all_session_items().unwrap().len(), 0);
     }
 
     #[test]

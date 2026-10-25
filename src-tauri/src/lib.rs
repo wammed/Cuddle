@@ -219,6 +219,12 @@ fn clear_staged_items() -> Result<(), String> {
 }
 
 #[tauri::command]
+fn restore_workspace_session() -> Result<Vec<workspace::StagedItemDto>, String> {
+    let mgr = workspace::get_workspace_manager();
+    mgr.restore_session().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_file_diff(stage_id: String) -> Result<diff::FileDiffResultDto, String> {
     let mgr = workspace::get_workspace_manager();
     mgr.get_diff(&stage_id).map_err(|e| e.to_string())
@@ -292,6 +298,7 @@ pub fn run() {
             unstage_file,
             list_staged_items,
             clear_staged_items,
+            restore_workspace_session,
             get_file_diff,
             reset_staged_file,
             reflect_staged_file,

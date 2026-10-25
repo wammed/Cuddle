@@ -42,6 +42,18 @@ export function WorkspacePanel({
     return map;
   }, [stagedItems]);
 
+  // Map item identifiers to current stage status (Staged, Modified, Reflected, Conflict)
+  const statusMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const s of stagedItems) {
+      map[s.stage_id] = s.status;
+      map[s.original_item_id] = s.status;
+      map[s.raw_base64] = s.status;
+      map[s.staged_raw_base64] = s.status;
+    }
+    return map;
+  }, [stagedItems]);
+
   const handleUnstage = (item: FileItem) => {
     if (!onUnstageItem) return;
     const match = stagedItems.find(
@@ -131,6 +143,7 @@ export function WorkspacePanel({
           onSelect={onSelect}
           onUnstage={handleUnstage}
           cloneMethodMap={cloneMethodMap}
+          statusMap={statusMap}
           isWorkspace
           emptyMessage={t("workspace.empty_state")}
         />

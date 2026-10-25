@@ -39,6 +39,7 @@
     "status_staged": "Staged",
     "status_modified": "Modified",
     "status_reflected": "Reflected",
+    "status_conflict": "Original Conflict Detected",
     "staged_files_count": "{{count}} staged copy(ies)",
     "unstage_btn": "Unstage",
     "clear_all_btn": "Clear All",
@@ -48,7 +49,9 @@
     "bulk_rename_btn": "Bulk Rename",
     "undo_rename_btn": "Undo Last Rename",
     "undo_success": "Undid bulk rename: restored {{count}} files",
-    "undo_failed": "Failed to undo rename"
+    "undo_failed": "Failed to undo rename",
+    "restored_session": "Restored previous session ({{count}} files)",
+    "conflict_alert": "Detected external conflict for {{count}} file(s)"
   },
   "warnings": {
     "external_storage": "Target file is on external storage or outside home directory. In-place changes are forbidden.",

@@ -858,6 +858,18 @@ body {
   border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
+.conflict-pill-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
 .row-col-size {
   width: 80px;
   text-align: right;

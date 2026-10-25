@@ -63,6 +63,8 @@ pub enum StageStatus {
     Modified,
     /// Changes have been safely reflected back to the original
     Reflected,
+    /// Original file was modified externally after staging (Conflict detected on session restore)
+    Conflict,
 }
 
 /// DTO representing an isolated staged file in the workbench.
@@ -210,7 +212,7 @@ impl WorkspaceManager {
         let mut map = self.staged_items.lock().unwrap();
         map.insert(stage_id.clone(), staged_dto.clone());
 
-        // 7. Record operation in SQLite persistent history
+        // 7. Record operation in SQLite persistent history & save session
         let hist_mgr = crate::history::get_history_manager();
         let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
             operation_id: stage_id,
@@ -223,6 +225,7 @@ impl WorkspaceManager {
             can_undo: true,
             details: Some(format!("Cloned via {:?}", staged_dto.clone_method)),
         });
+        let _ = hist_mgr.save_session_item(&staged_dto);
 
         Ok(staged_dto)
     }
@@ -254,6 +257,7 @@ impl WorkspaceManager {
             }
 
             let hist_mgr = crate::history::get_history_manager();
+            let _ = hist_mgr.remove_session_item(&staged.stage_id);
             let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
                 operation_id: uuid::Uuid::new_v4().to_string(),
                 operation_type: "Unstage".to_string(),
@@ -310,7 +314,10 @@ impl WorkspaceManager {
                 item.staged_raw_base64 = encode_path_to_base64(new_path);
                 item.display_name = new_display_name.to_string();
                 item.status = StageStatus::Modified;
-                return Ok(item.clone());
+                let cloned = item.clone();
+                let hist_mgr = crate::history::get_history_manager();
+                let _ = hist_mgr.save_session_item(&cloned);
+                return Ok(cloned);
             }
         }
         Err(WorkspaceError::NotFound(identifier.to_string()))
@@ -342,6 +349,7 @@ impl WorkspaceManager {
         staged.status = StageStatus::Staged;
 
         let hist_mgr = crate::history::get_history_manager();
+        let _ = hist_mgr.save_session_item(staged);
         let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
             operation_id: uuid::Uuid::new_v4().to_string(),
             operation_type: "Reset".to_string(),
@@ -422,6 +430,7 @@ impl WorkspaceManager {
         staged.status = StageStatus::Reflected;
 
         let hist_mgr = crate::history::get_history_manager();
+        let _ = hist_mgr.save_session_item(staged);
         let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
             operation_id: uuid::Uuid::new_v4().to_string(),
             operation_type: "Reflect".to_string(),
@@ -443,6 +452,45 @@ impl WorkspaceManager {
         map.values().cloned().collect()
     }
 
+    /// Restores previous staged session from SQLite persistent session table.
+    /// Performs TOCTOU conflict verification against original files.
+    pub fn restore_session(&self) -> Result<Vec<StagedItemDto>, WorkspaceError> {
+        let hist_mgr = crate::history::get_history_manager();
+        let saved_items = hist_mgr
+            .load_all_session_items()
+            .map_err(|e| WorkspaceError::Io(std::io::Error::other(e)))?;
+
+        let mut restored = Vec::new();
+        let mut map = self.staged_items.lock().unwrap();
+
+        for mut item in saved_items {
+            let staged_path = Path::new(&item.staged_path);
+            if !staged_path.exists() {
+                // Staged working copy was removed from disk, purge from session
+                let _ = hist_mgr.remove_session_item(&item.stage_id);
+                continue;
+            }
+
+            // Verify original file and detect conflict
+            let orig_path = Path::new(&item.original_snapshot.canonical_path);
+            if !orig_path.exists() {
+                item.status = StageStatus::Conflict;
+                let _ = hist_mgr.save_session_item(&item);
+            } else if let Err(PolicyError::ConflictDetected(_)) =
+                OperationPolicy::verify_conflict(&item.original_snapshot, true)
+            {
+                // External modification detected! Mark as Conflict per user decision
+                item.status = StageStatus::Conflict;
+                let _ = hist_mgr.save_session_item(&item);
+            }
+
+            map.insert(item.stage_id.clone(), item.clone());
+            restored.push(item);
+        }
+
+        Ok(restored)
+    }
+
     /// Clears all staged files from the staging area.
     pub fn clear_all(&self) -> Result<(), WorkspaceError> {
         let mut map = self.staged_items.lock().unwrap();
@@ -455,6 +503,7 @@ impl WorkspaceManager {
         }
 
         let hist_mgr = crate::history::get_history_manager();
+        let _ = hist_mgr.clear_session_items();
         let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
             operation_id: uuid::Uuid::new_v4().to_string(),
             operation_type: "ClearWorkspace".to_string(),
@@ -647,6 +696,41 @@ mod tests {
         // Original content must not be overwritten by staged content
         assert_eq!(fs::read(&orig_file).unwrap(), b"External rogue mutation");
 
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_workspace_session_restore_and_conflict_detection() {
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_session_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("session_test.txt");
+        fs::write(&orig_file, b"Session original content").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+
+        // 1. Restore on a new WorkspaceManager instance
+        let new_mgr = WorkspaceManager::new();
+        let restored_list = new_mgr.restore_session().unwrap();
+        assert!(restored_list.iter().any(|item| item.stage_id == staged.stage_id));
+
+        let restored_item = restored_list.into_iter().find(|i| i.stage_id == staged.stage_id).unwrap();
+        assert_eq!(restored_item.status, StageStatus::Staged);
+
+        // 2. Simulate external modification of the original file
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        fs::write(&orig_file, b"External modified session content").unwrap();
+
+        // 3. Restore again: external modification must be detected as Conflict!
+        let third_mgr = WorkspaceManager::new();
+        let restored_list_2 = third_mgr.restore_session().unwrap();
+        let conflict_item = restored_list_2.into_iter().find(|i| i.stage_id == staged.stage_id).unwrap();
+        assert_eq!(conflict_item.status, StageStatus::Conflict);
+
+        // Clean up
+        let _ = mgr.unstage_file(&staged.stage_id);
         let _ = fs::remove_dir_all(&test_dir);
     }
 

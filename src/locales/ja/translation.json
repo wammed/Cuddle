@@ -400,5 +400,43 @@
       "dev_encrypted_backup_name": "機密ファイルの暗号化バックアップ",
       "dev_encrypted_backup_desc": "作業コピーをアーカイブ化 → AES-256暗号化適用 → .enc出力"
     }
+  },
+  "settings": {
+    "dialog_title": "環境設定 & 外観",
+    "dialog_subtitle": "カラーテーマ・言語・セキュリティ・作業領域の設定",
+    "tab_appearance": "外観 & テーマ (30種)",
+    "tab_general": "一般 & 言語",
+    "tab_workspace": "作業領域 & セキュリティ",
+    "tab_shortcuts": "ショートカット",
+    "theme_cat_cyber": "Cyber / SF (8)",
+    "theme_cat_neon": "Neon (8)",
+    "theme_cat_modern": "Modern (8)",
+    "theme_cat_classic": "Classic (6)",
+    "active_theme_label": "現在の適用テーマ",
+    "lang_label": "UI 表示言語",
+    "lang_auto": "システム言語に連動 (自動)",
+    "lang_ja": "日本語 (Japanese)",
+    "lang_en": "English (英語)",
+    "workspace_dir_label": "作業コピー配置先",
+    "workspace_auto_desc": "原本と同一ファイルシステム上に一時領域を自動優先配置（原子的 rename と Reflink CoW を最大活用）",
+    "disk_guardrail_label": "ディスク空き容量ガードレール",
+    "disk_guardrail_desc": "原本ファイル合計サイズの 1.5倍以上の空き容量がない場合、作業コピー作成を安全にブロック（下限強制）",
+    "landlock_label": "Linux Landlock LSM プロセス隔離",
+    "landlock_active_desc": "外部プロセス実行時、カーネルレベルで原本ディレクトリおよびホーム外への書き込みを物理的に遮断（常時有効）",
+    "config_file_label": "設定ファイル（TOML）パス",
+    "config_file_hint": "直接編集可能。破損時は自動バックアップ作成＆安全自己修復が作動します"
+  },
+  "start": {
+    "hero_title": "安全第一の原本保護型ファイル作業環境",
+    "hero_subtitle": "原本を決して直接触らない。独立した作業コピーで一括リネーム、変換パイプライン、全文検索を高速・安心に実行。",
+    "btn_open_folder": "フォルダを開く",
+    "btn_open_home": "ホームディレクトリ",
+    "btn_pipeline": "30種パイプライン",
+    "btn_bulk_rename": "一括リネーム",
+    "btn_settings": "アプリ設定",
+    "switch_workbench": "ワークベンチへ移動",
+    "recent_locations": "クイックアクセス",
+    "features_title": "主要機能・ワークフロー",
+    "status_title": "セキュリティ＆システム稼働状態"
   }
 }

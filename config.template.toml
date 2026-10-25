@@ -1,0 +1,77 @@
+# ==============================================================================
+# Cuddle (File Workbench) - Configuration File Template
+# ==============================================================================
+# Linux Standard Config Path:
+#   $XDG_CONFIG_HOME/Cuddle/config.toml (or ~/.config/Cuddle/config.toml)
+#
+# Note:
+#   Even if this file is missing or corrupted, Cuddle will self-heal by creating
+#   a backup (.bak) and restoring safe default values automatically.
+# ==============================================================================
+
+[app]
+# UI Language: "auto" (system locale), "ja" (Japanese), or "en" (English)
+# Can be switched dynamically inside the app without restarting.
+language = "auto"
+
+# Color Theme Preset:
+# Choose from 30 rich dark presets across 4 categories (No white backgrounds!).
+#
+# Available Theme Keys:
+# [Cyber Series]
+#   - "cyber-midnight-teal" : Midnight Teal (Default - Deep ocean & neon mint)
+#   - "cyber-matrix"        : Matrix Terminal (Phosphorescent emerald green)
+#   - "cyber-abyss"         : Quantum Abyss (Cerulean deep & electric cyan)
+#   - "cyber-circuit"       : Circuit Amber (Gold-plated motherboard amber)
+#   - "cyber-void"          : Void Singularity (Event-horizon violet & graviton)
+#   - "cyber-biohazard"     : Biohazard Orange (High-viz hazard orange)
+#   - "cyber-glitch"        : Glitch Crimson (Overclocked laser crimson)
+#   - "cyber-subzero"       : Subzero Frost (Cryogenic frost cyan)
+#
+# [Neon Series]
+#   - "neon-synthwave"      : Synthwave '84 (Pulsing magenta & neon cyan)
+#   - "neon-cyberpunk"      : Night City 2077 (High-voltage yellow & turquoise)
+#   - "neon-hotline"        : Hotline Miami (Vivid hot pink & toxic mint)
+#   - "neon-laser-pink"     : Laser Pink (Blinding optical flare neon rose)
+#   - "neon-acid-lime"      : Acid Lime (Radioactive ultra-saturated lime)
+#   - "neon-electric-blue"  : Electric Cobalt (High-voltage crisp cobalt blue)
+#   - "neon-ultraviolet"    : Ultra Violet (Deep blacklight ultraviolet)
+#   - "neon-solar-flare"    : Solar Flare (Coronal flame orange & gold)
+#
+# [Modern Series]
+#   - "modern-tokyo-night"  : Tokyo Night (Downtown Shinjuku dusk & slate blue)
+#   - "modern-nord"         : Nord Frost (Arctic atmospheric tranquility)
+#   - "modern-dracula"      : Dracula Dark (Legendary gothic pastel dark)
+#   - "modern-catppuccin"   : Catppuccin Mocha (Soothing warm mocha & lavender)
+#   - "modern-one-dark"     : One Dark Pro (Iconic editor azure & sage green)
+#   - "modern-gruvbox"      : Gruvbox Dark (Warm retro groove & earthy gold)
+#   - "modern-monokai"      : Monokai Pro (High-contrast ochre & lime)
+#   - "modern-rose-pine"    : Rosé Pine (Minimalist dusk dusty rose & pine)
+#
+# [Classic Series]
+#   - "classic-dark-charcoal": Dark Charcoal (Pure neutral monochrome dark)
+#   - "classic-midnight-blue": Midnight Navy (Executive navy blue & steel blue)
+#   - "classic-obsidian"    : Obsidian Black (Volcanic pitch-black & titanium)
+#   - "classic-slate"       : Industrial Slate (Heavy precision stone & steel)
+#   - "classic-espresso"    : Dark Espresso (Dark roasted coffee & amber leather)
+#   - "classic-emerald-night": Emerald Night (Regal deep emerald forest night)
+theme = "cyber-midnight-teal"
+
+[workspace]
+# Temporary staging directory:
+#   - null (or omit) : Automatically preferred on the same volume/filesystem
+#                      as the original files to maximize atomic rename(2) & Reflink (CoW).
+#   - "/path/to/dir" : Specify a dedicated custom directory.
+temp_directory = null
+
+# Minimum disk free space required relative to original files (Multiplier):
+#   - Default: 1.5 (Must have at least 1.5x free space of original file size)
+#   - Mandatory Guardrail: Values below 1.5 are strictly rejected to prevent out-of-disk crashes.
+min_free_space_multiplier = 1.5
+
+[security]
+# Enforce Linux Landlock LSM kernel-level process isolation:
+#   - true (Default & Enforced)
+#   - Mandatory Guardrail: Even if edited to false in this file, Cuddle will
+#     automatically sanitize it to true upon loading to guarantee original protection.
+enforce_landlock = true

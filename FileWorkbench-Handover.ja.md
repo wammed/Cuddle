@@ -353,8 +353,24 @@
   * `Ctrl+P` / `Cmd+P`: パイプラインモーダルを開く（ワークスペースにファイルがある場合）。
   * `Ctrl+Z` / `Cmd+Z`: 直前のリネーム操作を取り消す（Undo 履歴がある場合。テキストエリア内ではネイティブ Undo を優先）。
   * `Escape`: 開いているモーダルを安全に閉じる。
+* **FHDウィンドウサイズ（1920x1080）:**
+  * `src-tauri/tauri.conf.json` の既定ウィンドウサイズを `width: 1920, height: 1080`（最小 1024x700）に固定。
+* **ヘッダーバーの2行構成化（表示崩れ防止）：**
+  * `Header.tsx` を2行構成に刷新。1行目にブランドロゴ・タイトル、モード切替タブ（スタート ↔ ワークベンチ）、Landlockセキュリティバッジ、設定ボタン（⚙️）、言語切替を配置。2行目に現在パス表示とパネル切替ボタンを配置。日本語ラベルでも絶対に圧縮・改行崩れしないレイアウトを確立。
+* **設定メニューモーダル（`SettingsModal.tsx`）の実装:**
+  * ヘッダーのギアアイコン（⚙️）から開く設定モーダルを新設。30色テーマのライブ切り替え、言語切替、ワークスペースパス、1.5x 空き容量ガードレール、Landlock 隔離状態、ショートカット一覧、`config.toml` パスを完全網羅。
+* **30種類のカラーテーマプリセット（`themePresets.ts`）：**
+  * `Cyber`（8種: Midnight Teal, Matrix, Quantum Abyss, Circuit, Void, Biohazard, Glitch, Subzero）
+  * `Neon`（8種: Synthwave, Cyberpunk 2077, Hotline Miami, Laser Pink, Acid Lime, Electric Blue, Ultra Violet, Solar Flare）
+  * `Modern`（8種: Tokyo Night, Nord Frost, Dracula, Catppuccin, One Dark Pro, Gruvbox Dark, Monokai Pro, Rosé Pine）
+  * `Classic`（6種: Dark Charcoal, Midnight Navy, Obsidian Black, Industrial Slate, Dark Espresso, Emerald Night）
+  * すべてダークモード前提（白背景禁止）で設計。CSS変数による即時切り替えと `localStorage` 永続化を実装。
+* **設定ファイルテンプレート（`config.template.toml`）の作成:**
+  * プロジェクトルートに詳細なコメント付きテンプレートを配置。30種テーマキー一覧やガードレール仕様を完全記載。
+* **スタートページ（`StartPage.tsx`）の設計・実装:**
+  * ホーム/ワークベンチ切替式の洗練されたウェルカムダッシュボード。3大機能カード（ブラウザ走査、30種パイプライン、一括リネーム）、クイックロケーション、Landlock & 空き容量のリアルタイムシステム監視を統合。
 * **テスト検証：**
-  * Vitest 39 件全件 100% パス、Cargo test 130 件全件 100% パス、Clippy 警告ゼロ、TypeScript/Vite ビルド成功。
+  * Vitest 41 件全件 100% パス、Cargo test 130 件全件 100% パス、Clippy 警告ゼロ、TypeScript/Vite ビルド成功。
 
 ---
 

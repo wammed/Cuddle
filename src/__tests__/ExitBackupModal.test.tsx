@@ -91,7 +91,10 @@ describe("ExitBackupModal (Phase 6.3)", () => {
     const input = (await screen.findByLabelText(
       "保存先アーカイブパス (tar.gz)"
     )) as HTMLInputElement;
-    expect(input.value).toBe(mockDefaultPath);
+
+    await waitFor(() => {
+      expect(input.value).toBe(mockDefaultPath);
+    });
 
     // Edit path
     await act(async () => {

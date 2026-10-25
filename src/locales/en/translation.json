@@ -400,5 +400,43 @@
       "dev_encrypted_backup_name": "Encrypted Confidential Backup",
       "dev_encrypted_backup_desc": "Archive staged files → apply AES-256 encryption → export .enc package"
     }
+  },
+  "settings": {
+    "dialog_title": "Preferences & Appearance",
+    "dialog_subtitle": "Configure color themes, language, security, and workspace",
+    "tab_appearance": "Appearance & Themes (30 Presets)",
+    "tab_general": "General & Language",
+    "tab_workspace": "Workspace & Security",
+    "tab_shortcuts": "Shortcuts",
+    "theme_cat_cyber": "Cyber / Sci-Fi (8)",
+    "theme_cat_neon": "Neon (8)",
+    "theme_cat_modern": "Modern (8)",
+    "theme_cat_classic": "Classic (6)",
+    "active_theme_label": "Active Theme",
+    "lang_label": "UI Display Language",
+    "lang_auto": "Follow System Locale (Auto)",
+    "lang_ja": "日本語 (Japanese)",
+    "lang_en": "English",
+    "workspace_dir_label": "Temporary Workspace Staging Location",
+    "workspace_auto_desc": "Automatically prioritized on the same filesystem as originals to maximize atomic rename(2) & Reflink (CoW)",
+    "disk_guardrail_label": "Free Disk Space Safety Guardrail",
+    "disk_guardrail_desc": "Staging is safely blocked unless available disk space is at least 1.5x the original file size (Mandatory Guardrail)",
+    "landlock_label": "Linux Landlock LSM Kernel Isolation",
+    "landlock_active_desc": "Kernel physically restricts child processes from writing outside the workspace directory or into $HOME",
+    "config_file_label": "Configuration File (TOML) Path",
+    "config_file_hint": "Editable directly. Self-heals with automatic .bak fallback if corrupted"
+  },
+  "start": {
+    "hero_title": "Safety-First Original Protection File Workbench",
+    "hero_subtitle": "Never touch original files in-place. Execute bulk renames, conversion pipelines, and full-text searches with confidence.",
+    "btn_open_folder": "Open Folder",
+    "btn_open_home": "Home Directory",
+    "btn_pipeline": "30 Pipelines",
+    "btn_bulk_rename": "Bulk Rename",
+    "btn_settings": "Preferences",
+    "switch_workbench": "Go to Workbench",
+    "recent_locations": "Quick Access",
+    "features_title": "Key Features & Workflows",
+    "status_title": "Security & System Health"
   }
 }

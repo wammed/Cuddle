@@ -154,8 +154,8 @@ describe("App component (6-Region Main Shell)", () => {
     expect(screen.getByText("検索結果")).toBeDefined();
     expect(screen.getByText("ディレクトリツリー")).toBeDefined();
     expect(screen.getByText("ファイルブラウザー")).toBeDefined();
-    expect(screen.getByText("作業ワークスペース")).toBeDefined();
-    expect(screen.getByText("アイテム詳細")).toBeDefined();
+    expect(screen.getAllByText("作業ワークスペース").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("アイテム詳細").length).toBeGreaterThan(0);
     expect(screen.getByTitle("言語切替")).toBeDefined();
 
     // Toggle to English
@@ -169,8 +169,8 @@ describe("App component (6-Region Main Shell)", () => {
     expect(screen.getByText("Search Results")).toBeDefined();
     expect(screen.getByText("Directory Tree")).toBeDefined();
     expect(screen.getByText("File Browser")).toBeDefined();
-    expect(screen.getByText("Workbench")).toBeDefined();
-    expect(screen.getByText("Item Details")).toBeDefined();
+    expect(screen.getAllByText("Workbench").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Item Details").length).toBeGreaterThan(0);
     expect(screen.getByTitle("Language")).toBeDefined();
   });
 
@@ -187,13 +187,14 @@ describe("App component (6-Region Main Shell)", () => {
       fireEvent.click(sidebarToggleBtn);
     });
 
-    expect(screen.queryByText("アイテム詳細")).toBeNull();
+    // The heading inside the sidebar panel should be unmounted
+    expect(screen.queryByRole("heading", { name: "アイテム詳細" })).toBeNull();
 
     // Toggle sidebar back on
     await act(async () => {
       fireEvent.click(sidebarToggleBtn);
     });
-    expect(screen.getByText("アイテム詳細")).toBeDefined();
+    expect(screen.getByRole("heading", { name: "アイテム詳細" })).toBeDefined();
   });
 
   it("focuses search input on Ctrl+F keyboard shortcut (Phase 8.4)", async () => {
@@ -209,5 +210,39 @@ describe("App component (6-Region Main Shell)", () => {
     // Fire Ctrl+F
     fireEvent.keyDown(window, { key: "f", ctrlKey: true });
     expect(document.activeElement).toBe(searchInput);
+  });
+
+  it("opens settings modal when clicking settings button in header", async () => {
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    render(<App />);
+
+    const settingsBtn = screen.getByTitle("環境設定 & 外観");
+    expect(settingsBtn).toBeDefined();
+
+    await act(async () => {
+      fireEvent.click(settingsBtn);
+    });
+
+    expect(screen.getByText("環境設定 & 外観")).toBeDefined();
+    expect(screen.getByText("外観 & テーマ (30種)")).toBeDefined();
+  });
+
+  it("toggles between workbench and start page", async () => {
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    render(<App />);
+
+    const startTabBtn = screen.getByTitle("Start Dashboard");
+    await act(async () => {
+      fireEvent.click(startTabBtn);
+    });
+
+    expect(screen.getByText("安全第一の原本保護型ファイル作業環境")).toBeDefined();
+    expect(screen.getByText("主要機能・ワークフロー")).toBeDefined();
   });
 });

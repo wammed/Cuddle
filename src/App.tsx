@@ -24,6 +24,9 @@ import { BottomTabPanel } from "./components/BottomTabPanel";
 import { BulkRenameModal } from "./components/BulkRenameModal";
 import { ExitBackupModal } from "./components/ExitBackupModal";
 import { PipelineModal } from "./components/PipelineModal";
+import { SettingsModal } from "./components/SettingsModal";
+import { StartPage } from "./components/StartPage";
+import { applyTheme, getSavedThemeId } from "./utils/themePresets";
 import "./App.css";
 
 interface LandlockStatus {
@@ -44,6 +47,8 @@ export function App() {
   const [bulkRenameOpen, setBulkRenameOpen] = useState(false);
   const [exitBackupOpen, setExitBackupOpen] = useState(false);
   const [pipelineModalOpen, setPipelineModalOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [currentView, setCurrentView] = useState<"start" | "workbench">("workbench");
   const [canUndo, setCanUndo] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -400,11 +405,21 @@ export function App() {
     }
   };
 
+  // Initialize theme from saved preferences (Phase 8.2)
+  useEffect(() => {
+    const saved = getSavedThemeId();
+    applyTheme(saved);
+  }, []);
+
   // Global Keyboard Shortcuts (Phase 8.4)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Escape: Close any active modal
       if (e.key === "Escape") {
+        if (settingsOpen) {
+          setSettingsOpen(false);
+          return;
+        }
         if (bulkRenameOpen) {
           setBulkRenameOpen(false);
           return;
@@ -591,9 +606,37 @@ export function App() {
         onToggleSidebar={() => setSidebarVisible((v) => !v)}
         onToggleBottom={() => setBottomVisible((v) => !v)}
         onResetLayout={handleResetLayout}
+        onOpenSettings={() => setSettingsOpen(true)}
+        activeView={currentView}
+        onToggleView={() => setCurrentView((v) => (v === "start" ? "workbench" : "start"))}
+        currentPath={currentPath}
+        stagedCount={stagedItems.length}
       />
 
-      <main className="workbench-workspace-layout">
+      {currentView === "start" ? (
+        <StartPage
+          onOpenFolder={() => setCurrentView("workbench")}
+          onNavigatePath={(p) => {
+            scanDirectory(p);
+            setCurrentView("workbench");
+          }}
+          onOpenPipeline={() => {
+            setCurrentView("workbench");
+            setPipelineModalOpen(true);
+          }}
+          onOpenBulkRename={() => {
+            setCurrentView("workbench");
+            setBulkRenameOpen(true);
+          }}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onSwitchToWorkbench={() => setCurrentView("workbench")}
+          systemPaths={systemPaths}
+          landlockSupported={landlock?.supported ?? false}
+          landlockAbi={landlock?.abi_version ?? null}
+          stagedCount={stagedItems.length}
+        />
+      ) : (
+        <main className="workbench-workspace-layout">
         <Group
           key={layoutKey}
           orientation="horizontal"
@@ -736,6 +779,18 @@ export function App() {
           )}
         </Group>
       </main>
+      )}
+
+      {/* Preferences & Theme Modal (Phase 8.2) */}
+      <SettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        currentLang={currentLang}
+        onToggleLang={toggleLanguage}
+        landlockSupported={landlock?.supported ?? false}
+        landlockAbi={landlock?.abi_version ?? null}
+        configPath="~/.config/Cuddle/config.toml"
+      />
 
       {/* Bulk Rename & Normalization Modal (Phase 5.1 & 5.2) */}
       <BulkRenameModal

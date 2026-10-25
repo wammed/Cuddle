@@ -353,8 +353,24 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
   * `Ctrl+P` / `Cmd+P`: Open Pipeline modal (when staged files exist).
   * `Ctrl+Z` / `Cmd+Z`: Undo last bulk rename operation (when undo history exists; native text undo is preserved in textareas/inputs).
   * `Escape`: Safely close active modal dialogs.
+* **FHD Window Geometry (1920x1080):**
+  * Configured default window size in `src-tauri/tauri.conf.json` to `width: 1920, height: 1080` (minWidth 1024, minHeight 700).
+* **Two-Row Responsive Header Architecture:**
+  * Redesigned `Header.tsx` into a 2-row layout. Row 1 hosts branding, navigation mode switcher (Start ↔ Workbench), Landlock status badge, Settings button (⚙️), and language switch. Row 2 hosts the active directory path chip and panel layout controls, completely eliminating button wrapping and label truncation even under long Japanese text.
+* **Settings & Preferences Modal (`SettingsModal.tsx`):**
+  * Integrated dedicated Settings modal accessible via the header gear icon (⚙️). Covers 30-theme live switcher, language toggle, workspace staging info, 1.5x disk guardrail status, Landlock LSM kernel isolation monitor, keyboard shortcuts cheat sheet, and `config.toml` path information.
+* **30-Theme Curated Dark Palette Presets (`themePresets.ts`):**
+  * `Cyber` (8: Midnight Teal, Matrix, Quantum Abyss, Circuit, Void, Biohazard, Glitch, Subzero)
+  * `Neon` (8: Synthwave, Cyberpunk 2077, Hotline Miami, Laser Pink, Acid Lime, Electric Blue, Ultra Violet, Solar Flare)
+  * `Modern` (8: Tokyo Night, Nord Frost, Dracula, Catppuccin, One Dark Pro, Gruvbox Dark, Monokai Pro, Rosé Pine)
+  * `Classic` (6: Dark Charcoal, Midnight Navy, Obsidian Black, Industrial Slate, Dark Espresso, Emerald Night)
+  * Strictly adhering to dark mode (zero white backgrounds). Instant CSS variables live switching and `localStorage` persistence.
+* **Configuration File Template (`config.template.toml`):**
+  * Created clean, extensively commented template in repository root documenting all config fields, guardrail enforcement, and available theme keys.
+* **Start Page Launchpad (`StartPage.tsx`):**
+  * Built a rich welcome dashboard featuring 3 key action cards (Folder Explorer, 30-Pipeline Runner, Bulk Renamer), quick jump locations, and real-time security & system health indicators.
 * **Verification & Testing:**
-  * 39 Vitest unit/component tests passing (100%), 130 Cargo integration tests passing (100%), zero Clippy warnings, TypeScript/Vite production build passing cleanly.
+  * 41 Vitest unit/component tests passing (100%), 130 Cargo integration tests passing (100%), zero Clippy warnings, TypeScript/Vite production build passing cleanly.
 
 ---
 

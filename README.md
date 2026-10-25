@@ -78,9 +78,14 @@ pnpm install
 
 # Run in development mode (launches Tauri 2 desktop shell)
 pnpm run tauri dev
+
+# Build production binary & install desktop launcher (with icons and .desktop registration)
+pnpm run tauri build
+./scripts/install-cosmic.sh   # CachyOS + COSMIC DE (Recommended)
+# or ./scripts/install.sh     # GNOME / KDE / XFCE auto-detection
 ```
 
-For complete compilation instructions, Linux system prerequisites, external CLI recommendations, and production binary packaging steps, see **[BUILD.md](BUILD.md)** (or **[BUILD.ja.md](BUILD.ja.md)**).
+For complete compilation instructions, Linux system prerequisites, external CLI recommendations, and desktop environment installation options, see **[BUILD.md](BUILD.md)** (or **[BUILD.ja.md](BUILD.ja.md)**).
 
 ---
 

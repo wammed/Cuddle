@@ -78,9 +78,14 @@ pnpm install
 
 # 開発モードでの起動（Tauri 2 デスクトップシェルが起動します）
 pnpm run tauri dev
+
+# 本番バイナリのビルド & デスクトップランチャー登録（アイコン・.desktop自動配備）
+pnpm run tauri build
+./scripts/install-cosmic.sh   # CachyOS + COSMIC DE（推奨）
+# または ./scripts/install.sh  # GNOME / KDE / XFCE 汎用自動検知
 ```
 
-詳細な Linux 前提環境、システムパッケージ、推奨外部ツール、および本番バイナリのビルド手順については、**[BUILD.ja.md](BUILD.ja.md)**（または英語版 **[BUILD.md](BUILD.md)**）を参照してください。
+詳細な Linux 前提環境、システムパッケージ、推奨外部ツール、デスクトップ環境別のインストール設定については、**[BUILD.ja.md](BUILD.ja.md)**（または英語版 **[BUILD.md](BUILD.md)**）を参照してください。
 
 ---
 

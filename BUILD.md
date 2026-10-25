@@ -140,12 +140,12 @@ sudo dnf install -y ImageMagick ffmpeg qpdf poppler-utils perl-Image-ExifTool pl
 
 ## 6. Running Test Suites
 
-### Backend Rust Unit & Integration Tests (167 tests)
+### Backend Rust Unit & Integration Tests (174 tests)
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-### Frontend Vitest & TypeScript Tests (65 tests)
+### Frontend Vitest & TypeScript Tests (67 tests)
 ```bash
 pnpm test -- --run
 ```
@@ -177,7 +177,61 @@ You can run the binary directly:
 
 ---
 
-## 8. Troubleshooting & FAQ
+## 8. Desktop Launcher & System Integration (.desktop & Icons)
+
+Cuddle provides automated installation scripts that deploy the binary, register standard FreeDesktop `.desktop` launchers, install icons across all standard resolutions (32/64/128/512px + scalable SVG), and trigger desktop database/icon cache reloads.
+
+### 8.1 CachyOS + COSMIC DE (Wayland) Dedicated Preset (Recommended)
+
+Dedicated preset tuned for CachyOS and the System76 COSMIC Desktop Environment (`cosmic-comp`, `cosmic-app-library`, `cosmic-launcher`). Guarantees Wayland `app_id` (`com.wammed.cuddle`) matching, dock pinning, and application search indexing:
+
+```bash
+# User-level installation (Recommended: ~/.local, no root required)
+./scripts/install-cosmic.sh
+
+# System-wide installation (/usr/local, requires sudo)
+sudo ./scripts/install-cosmic.sh --system
+```
+
+* **Verification:** Press `Super` to open COSMIC App Library, search for `Cuddle`, or right-click the icon to select "Pin to Dock".
+
+### 8.2 Presets for Major Desktop Environments
+
+Tailored scripts are provided for various desktop environments:
+
+* **GNOME (Wayland / X11):**
+  ```bash
+  ./scripts/install-gnome.sh
+  ```
+  Configures `StartupWMClass=com.wammed.cuddle` for window grouping and updates GNOME Shell application caches.
+
+* **KDE Plasma 5 / 6 (Wayland / X11):**
+  ```bash
+  ./scripts/install-kde.sh
+  ```
+  Runs `kbuildsycoca6` / `kbuildsycoca5` to rebuild system configuration and Kickoff / KRunner menu caches.
+
+* **Universal Auto-Detect Installer (XFCE, Cinnamon, MATE, etc.):**
+  ```bash
+  ./scripts/install.sh
+  ```
+  Automatically detects current `$XDG_CURRENT_DESKTOP` and `$XDG_SESSION_TYPE`, applying the optimal configuration.
+
+### 8.3 Uninstallation
+
+To cleanly remove all registered launchers, multi-resolution icons, and binaries:
+
+```bash
+# Remove from user directory (~/.local)
+./scripts/uninstall.sh
+
+# Remove from system directory (/usr/local)
+sudo ./scripts/uninstall.sh --system
+```
+
+---
+
+## 9. Troubleshooting & FAQ
 
 ### Landlock ABI Warning
 * **Symptom:** UI displays "Landlock LSM is not supported by current kernel".
@@ -190,3 +244,4 @@ You can run the binary directly:
 * Cuddle does not bundle heavyweight font files. If icons appear broken, ensure a standard Nerd Font or system symbol font is installed:
   * Arch: `sudo pacman -S ttf-nerd-fonts-symbols noto-fonts-cjk`
   * Ubuntu: `sudo apt install fonts-noto-cjk fonts-font-awesome`
+

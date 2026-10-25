@@ -575,6 +575,27 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
   * 174 Cargo unit tests passing (100%, added `test_workspace_manager_reflect_mode_b_backup_origin`, `test_selective_undo_by_batch_id`, `test_undo_history_chmod_and_touch`).
   * TypeScript type check and Vite production bundle passing cleanly.
 
+### 9.7 Implementation Details (Phase 9.6: Desktop Launcher Automation & Multi-DE Installers/Uninstaller): Completed
+* **Multi-Desktop Environment (DE) Installation Scripts (`scripts/`):**
+  * **CachyOS + COSMIC DE (Wayland) Dedicated Preset (`scripts/install-cosmic.sh`):**
+    * Tailored for CachyOS / Arch Linux and the System76 COSMIC Desktop Environment (`cosmic-comp`, `cosmic-app-library`, `cosmic-launcher`).
+    * Configures Wayland `app_id` (`com.wammed.cuddle`), `StartupWMClass=com.wammed.cuddle`, and `X-CosmicAppId=com.wammed.cuddle` to ensure flawless COSMIC App Library recognition, search indexing, and Dock pinning.
+  * **GNOME Dedicated Preset (`scripts/install-gnome.sh`):**
+    * Tailored for GNOME 40-47 (Wayland/X11) with window grouping via `StartupWMClass` and GNOME Shell search cache refreshing.
+  * **KDE Plasma Dedicated Preset (`scripts/install-kde.sh`):**
+    * Tailored for KDE Plasma 5/6, running `kbuildsycoca6` / `kbuildsycoca5` to rebuild system configuration and Kickoff / KRunner menu caches.
+  * **Universal Auto-Detect Installer (`scripts/install.sh`):**
+    * Automatically analyzes `$XDG_CURRENT_DESKTOP`, `$XDG_SESSION_TYPE`, and binary paths.
+    * Supports both `--user` (default: `~/.local/`, rootless) and `--system` (`/usr/local/`, requires sudo).
+    * Deploys icons across all standard resolutions (32x32, 64x64, 128x128, 512x512 PNG) and scalable vector SVG (`images/Cuddle-Icon.svg`) to the `hicolor` tree and `pixmaps`.
+    * Generates FreeDesktop-compliant desktop entries (`com.wammed.cuddle.desktop` and symlink `cuddle.desktop`), verified cleanly via `desktop-file-validate`.
+    * Invokes `update-desktop-database` and `gtk-update-icon-cache` for instant desktop launcher updates.
+  * **Comprehensive Uninstaller (`scripts/uninstall.sh`):**
+    * Cleanly purges deployed binaries, symlinks, `.desktop` files, multi-resolution icons, and pixmaps, followed by cache rebuilds.
+* **Documentation Synchronization:**
+  * `BUILD.ja.md` / `BUILD.md`: Added Section 8 "Desktop Launcher & System Integration (.desktop & Icons)".
+  * `README.ja.md` / `README.md`: Added one-liner installation commands to the Quick Start section.
+
 ---
 
 ## 7. Development Guardrails

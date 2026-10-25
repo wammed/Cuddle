@@ -574,6 +574,27 @@
   * Cargo test 174 件全件 100% パス（`test_workspace_manager_reflect_mode_b_backup_origin`, `test_selective_undo_by_batch_id`, `test_undo_history_chmod_and_touch` を追加）。
   * TypeScript 型チェック / Vite 本番ビルド完全成功。
 
+### 9.7 実装内容（Phase 9.6: デスクトップランチャー自動登録 & DE別インストーラー・アンインストーラー）：完了
+* **マルチデスクトップ環境（DE）対応インストーラー（`scripts/`）：**
+  * **CachyOS + COSMIC DE（Wayland）特化版（`scripts/install-cosmic.sh`）：**
+    * CachyOS / Arch Linux および System76 COSMIC Desktop Environment（`cosmic-comp`, `cosmic-app-library`, `cosmic-launcher`）に最適化。
+    * Wayland の `app_id` (`com.wammed.cuddle`) 照合、`StartupWMClass=com.wammed.cuddle`、`X-CosmicAppId=com.wammed.cuddle` を定義し、COSMIC App Library でのアイコン即時認識、検索インデックス化、ドックへのピン留めを完全保証。
+  * **GNOME 特化版（`scripts/install-gnome.sh`）：**
+    * GNOME 40〜47 (Wayland/X11) 向け。`StartupWMClass` によるウィンドウ集約と GNOME Shell 検索キャッシュの即時更新。
+  * **KDE Plasma 特化版（`scripts/install-kde.sh`）：**
+    * KDE Plasma 5/6 向け。`kbuildsycoca6` / `kbuildsycoca5` による Kickoff / KRunner / システム設定メニューキャッシュの再構築を実行。
+  * **汎用自動検知インストーラー（`scripts/install.sh`）：**
+    * `$XDG_CURRENT_DESKTOP`、`$XDG_SESSION_TYPE`、インストール先パスを自動判別。
+    * `--user`（デフォルト：`~/.local/` 配下、root 不要）および `--system`（`/usr/local/` 配下、sudo 対応）をサポート。
+    * 各解像度アイコン（32x32, 64x64, 128x128, 512x512 PNG）およびベクター SVG（`images/Cuddle-Icon.svg`）を `hicolor` アイコンツリーおよび `pixmaps` に自動配備。
+    * FreeDesktop 規格準拠の `.desktop` ファイル（`com.wammed.cuddle.desktop` および互換 symlink `cuddle.desktop`）を生成・検証（`desktop-file-validate` 適合）。
+    * `update-desktop-database` および `gtk-update-icon-cache` によるキャッシュ自動リフレッシュ。
+  * **完全アンインストーラー（`scripts/uninstall.sh`）：**
+    * 配備されたバイナリ、symlink、.desktop ファイル、全サイズアイコン、pixmaps をクリーンに除去し、キャッシュを再構築。
+* **ドキュメント整備（日英完全同期）：**
+  * `BUILD.ja.md` / `BUILD.md`: 第 8 項「デスクトップ環境へのインストール（ランチャー・アイコン登録）」を新設。
+  * `README.ja.md` / `README.md`: クイックスタート内にワンライナーインストールコマンドを追記。
+
 ---
 
 ## 7. 開発上の重要制約（Guardrails）

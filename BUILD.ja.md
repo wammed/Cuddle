@@ -139,12 +139,12 @@ sudo dnf install -y ImageMagick ffmpeg qpdf poppler-utils perl-Image-ExifTool pl
 
 ## 6. テストスイートの実行
 
-### バックエンド Rust 単体・統合テスト（167件）
+### バックエンド Rust 単体・統合テスト（174件）
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-### フロントエンド Vitest 単体テスト（65件）
+### フロントエンド Vitest 単体テスト（67件）
 ```bash
 pnpm test -- --run
 ```
@@ -176,7 +176,61 @@ src-tauri/target/release/fileworkbench
 
 ---
 
-## 8. トラブルシューティング & FAQ
+## 8. デスクトップ環境へのインストール（ランチャー・アイコン登録）
+
+Cuddle には、ビルド済みバイナリの配備、FreeDesktop 規格準拠の `.desktop` ランチャー登録、各解像度（32/64/128/512px + SVG）アイコンのインストール、およびデスクトップキャッシュ更新を自動化するスクリプトが用意されています。
+
+### 8.1 CachyOS + COSMIC DE（Wayland）向け最適化インストール（推奨）
+
+CachyOS および System76 COSMIC Desktop Environment（`cosmic-comp`, `cosmic-app-library`, `cosmic-launcher`）に特化したプリセットです。Wayland の `app_id` (`com.wammed.cuddle`) 照合、ドックへのピン留め、および検索インデックスの即時更新を保証します：
+
+```bash
+# ユーザーローカルインストール（推奨：~/.local 配下、root 不要）
+./scripts/install-cosmic.sh
+
+# システム全体インストール（/usr/local 配下、要 sudo）
+sudo ./scripts/install-cosmic.sh --system
+```
+
+* **反映確認:** `Super` キーを押して COSMIC App Library を開き、`Cuddle` を検索または右クリックで「Pin to Dock」できます。
+
+### 8.2 代表的なデスクトップ環境向けプリセット
+
+お使いの DE に応じた専用スクリプトも用意されています：
+
+* **GNOME (Wayland / X11):**
+  ```bash
+  ./scripts/install-gnome.sh
+  ```
+  `StartupWMClass=com.wammed.cuddle` によるウィンドウ集約と GNOME Shell 検索インデックスの即時反映を行います。
+
+* **KDE Plasma 5 / 6 (Wayland / X11):**
+  ```bash
+  ./scripts/install-kde.sh
+  ```
+  `kbuildsycoca6` / `kbuildsycoca5` によるシステム設定・Kickoff / KRunner メニューキャッシュの再構築を実行します。
+
+* **汎用自動検知インストーラー (XFCE, Cinnamon, MATE, その他):**
+  ```bash
+  ./scripts/install.sh
+  ```
+  実行中の `$XDG_CURRENT_DESKTOP` や `$XDG_SESSION_TYPE` を自動解析し、最適なパラメータでインストールします。
+
+### 8.3 アンインストール手順
+
+登録されたランチャー、全解像度アイコン、バイナリを完全に削除し、キャッシュを更新します：
+
+```bash
+# ユーザーローカル環境から削除
+./scripts/uninstall.sh
+
+# システム全体から削除
+sudo ./scripts/uninstall.sh --system
+```
+
+---
+
+## 9. トラブルシューティング & FAQ
 
 ### Landlock ABI 警告が表示される場合
 * **症状：** UI のセキュリティ状態に「お使いのカーネルでは Landlock LSM がサポートされていません」と表示される。
@@ -189,3 +243,4 @@ src-tauri/target/release/fileworkbench
 * Cuddle は肥大化を避けるためフォントファイルをバイナリに同梱していません。アイコンやグリフが文字化けする場合は、OS に標準的なフォントを導入してください：
   * Arch: `sudo pacman -S ttf-nerd-fonts-symbols noto-fonts-cjk`
   * Ubuntu: `sudo apt install fonts-noto-cjk fonts-font-awesome`
+

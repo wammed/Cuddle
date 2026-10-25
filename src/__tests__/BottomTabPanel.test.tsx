@@ -271,7 +271,125 @@ describe("BottomTabPanel & Diff Operations (Phase 4.2)", () => {
       fireEvent.click(confirmBtn);
     });
 
-    expect(handleReflect).toHaveBeenCalledWith("stage-1");
+    expect(handleReflect).toHaveBeenCalledWith("stage-1", "BackupOrigin");
+  });
+
+  it("supports switching reflection mode to Mode A (Atomic Overwrite) (Design 5.2)", async () => {
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    const handleReflect = vi.fn().mockResolvedValue(undefined);
+    render(
+      <BottomTabPanel
+        selectedItem={sampleItem}
+        extractedInfo={null}
+        appConfig={null}
+        logs={[]}
+        history={[]}
+        stagedItems={[sampleStaged]}
+        onReflectStagedItem={handleReflect}
+        onClose={vi.fn()}
+      />
+    );
+
+    const diffTab = screen.getByText("差分表示");
+    await act(async () => {
+      fireEvent.click(diffTab);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("原本へ変更を反映")).toBeDefined();
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText("原本へ変更を反映"));
+    });
+
+    // Check mode options exist
+    expect(screen.getByText(/方式 B: 原本を \.origin として退避保存/)).toBeDefined();
+    expect(screen.getByText(/方式 A: 原本を直接上書き/)).toBeDefined();
+
+    // Select Mode A
+    await act(async () => {
+      fireEvent.click(screen.getByText(/方式 A: 原本を直接上書き/));
+    });
+
+    // Confirm reflect
+    const confirmBtn = screen.getByText("原本への反映を実行");
+    await act(async () => {
+      fireEvent.click(confirmBtn);
+    });
+
+    expect(handleReflect).toHaveBeenCalledWith("stage-1", "Overwrite");
+  });
+
+  it("renders selective undo button on undoable history items and invokes callback (Design 6.2)", async () => {
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    const handleUndo = vi.fn();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    const undoableHistory: OperationHistoryDto[] = [
+      {
+        id: 1n,
+        operation_id: "op-rename-batch-101",
+        timestamp_ms: 1729750000000n,
+        operation_type: "BulkRename",
+        display_name: "10 files renamed",
+        original_path: null,
+        staged_path: null,
+        inode: null,
+        status: "Success",
+        can_undo: true,
+        details: "Batch ID: batch-101",
+      },
+      {
+        id: 2n,
+        operation_id: "op-chmod-202",
+        timestamp_ms: 1729750005000n,
+        operation_type: "chmod",
+        display_name: "script.sh",
+        original_path: "/home/susie/script.sh",
+        staged_path: "/home/susie/script.sh",
+        inode: null,
+        status: "Success",
+        can_undo: true,
+        details: "Mode changed: 0644 (-rw-r--r--) -> 0755 (-rwxr-xr-x)",
+      },
+    ];
+
+    render(
+      <BottomTabPanel
+        selectedItem={null}
+        extractedInfo={null}
+        appConfig={null}
+        logs={[]}
+        history={[]}
+        historyItems={undoableHistory}
+        onUndoHistoryItem={handleUndo}
+        onClose={vi.fn()}
+      />
+    );
+
+    const historyTab = screen.getByText(/操作履歴/);
+    await act(async () => {
+      fireEvent.click(historyTab);
+    });
+
+    // Verify UNDO buttons are rendered for can_undo == true
+    const undoButtons = screen.getAllByText("元に戻す (UNDO)");
+    expect(undoButtons.length).toBe(2);
+
+    // Click the first UNDO button
+    await act(async () => {
+      fireEvent.click(undoButtons[0]);
+    });
+
+    expect(window.confirm).toHaveBeenCalled();
+    expect(handleUndo).toHaveBeenCalledWith("op-rename-batch-101");
   });
 
   it("displays identical content message without reflect button when no changes exist (Test 2)", async () => {

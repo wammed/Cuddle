@@ -543,19 +543,36 @@
     * `FileBrowserPanel.tsx`: 右クリックコンテキストメニューから個別・一括日時変更を起動可能。
 * **多言語同期（`ja/translation.json`, `en/translation.json`）：**
   * `timestamp` および `tar_export` セクションの全キー（タイトル、タブ、説明、プレースホルダー、ステータス、ボタン等）を日英完全同期。
+### 9.6 実装内容（Phase 9.5: 原本への反映方式（方式 A / 方式 B）& 選択的 UNDO（Selective Undo））：完了
+* **原本への反映方式（設計書 5.2 独立操作の徹底）：**
+  * **2つの反映モード（`workspace::ReflectionMode`）：**
+    * **方式 A（`Overwrite`）：** 原本と同一親ディレクトリ内に一時ファイル（`.cuddle_reflect_<uuid>.tmp`）を作成・コピー検証後、POSIX 原子的 `fs::rename(2)` により原本を安全に置換。
+    * **方式 B（`BackupOrigin` / 推奨）：** 原本をタイムスタンプ付き `.origin`（例: `report_YYYYMMDD_HHMMSS.origin.pdf`、同名衝突時は連番サフィックス付与）へリネーム退避した上で作業成果物を配置。成果物配置に失敗した場合は退避先から自動ロールバックし原本の消失を物理的に防止。
+  * **退避先パスのリアルタイムプレビュー：**
+    * バックエンド IPC `get_origin_backup_preview` により、原本パスに応じた退避先予定パスを即時計算・返却。
+  * **モーダル UI 統合（`BottomTabPanel.tsx`, `App.css`）：**
+    * 原本反映確認モーダル内に方式 A / 方式 B のサイバーダーク調ラジオカード選択 UI を配備。
+    * 方式 B 選択時に、退避先バックアップファイル名予定プレビュー（ネオンティール色）を明示。
+    * 反映完了時、`ReflectExecutionResultDto`（更新後 `StagedItemDto`、バックアップパス `backup_path`、実行モード `mode`）を返却し、トースト通知とログ記録を同期。
+* **選択的 UNDO（Selective Undo / 設計書 6.2）：**
+  * **SQLite WAL 操作履歴との完全連携（`history.rs`, `batch.rs`, `lib.rs`）：**
+    * 操作履歴テーブル `operation_history` から、`can_undo == true` の特定操作をピンポイントに取り消す統合 IPC コマンド `undo_history_operation(operation_id)` を実装。
+    * **3大操作の個別逆変換ディスパッチ：**
+      1. **一括リネーム（`BulkRename`）：** `batch::get_journal_manager().undo_batch_by_id(&operation_id)` により、対象バッチの変更操作を反転実行。
+      2. **属性変更（`chmod`）：** `details` に記録された変更前モード（8進数）をパースし、`fs::set_permissions` で元のパーミッションへ即時復元。
+      3. **タイムスタンプ変更（`touch_mtime`）：** `details` に記録された変更前ミリ秒タイムスタンプ（`[orig_ms:...]`）をパースし、`filetime::set_file_mtime` で元の更新日時へ高精度復元。
+    * 取り消し完了後、SQLite WAL の該当レコードを `status = 'Undone'`, `can_undo = false` に更新し、取り消し履歴（`UndoBulkRename`, `UndoChmod`, `UndoTouchMtime`）を新たに記録。
+  * **UI 統合（「操作履歴」タブ）：**
+    * 履歴テーブルに「操作」カラム（`.th-actions`）を新設。
+    * `can_undo == true` の各行に「元に戻す (UNDO)」（`RotateCcw` アイコン、ティール系）ボタンを配置。
+    * クリック時に確認プロンプト（対象ファイル名表示）を経て、ローディングスピナーとともに非同期実行。
+    * 実行完了後にファイル一覧・操作履歴を自動再走査・再取得。
+* **多言語同期（`ja/translation.json`, `en/translation.json`）：**
+  * `reflection.mode_*`, `reflection.backup_preview_label`, `history.col_actions`, `history.undo_*`, `history.type_undo_*` を日英完全同期。
 * **テスト検証：**
-  * Vitest 65 件全件 100% パス（`TimestampModal.test.tsx`, `TarExportModal.test.tsx` 追加）、Cargo test 167 件全件 100% パス、TypeScript 型チェック / Vite ビルド完全成功。
-
-### 9.5 実装内容（Phase 9.4: ソース公開配布体制の整備 & CI 自動検証）：完了
-* **ライセンス選定 & LICENSE 作成：**
-  * ユーザー意思決定ゲートに基づき、最も汎用性が高く標準的な **MIT License** を採用（`LICENSE` 作成完了）。
-* **バイリンガル README ドキュメント（`README.md`, `README.ja.md`）：**
-  * プロジェクト概要、公式バナー（`images/Cuddle-Banner.jpeg`）、8大コア方針、全機能マトリクス、クイックスタート、各ドキュメントへのリンクを日英完全同期で整備。
-* **ビルド & 開発環境構築ガイド（`BUILD.md`, `BUILD.ja.md`）：**
-  * 対象 Linux 環境（CachyOS, Arch, Ubuntu, Fedora, Debian）、カーネル Landlock 要件、Tauri 2 システムライブラリ依存関係、パイプライン用外部 CLI パッケージ、開発起動コマンド、全テストスイート実行コマンド、本番リリースバイナリビルド手順、FAQ・トラブルシューティングを日英完全同期で作成。
-* **GitHub Actions CI 自動検証ワークフロー（`.github/workflows/ci.yml`）：**
-  * `main` ブランチへの Push および Pull Request をトリガーとし、Ubuntu ランナー上で Rust ツールチェーン、Tauri 2 Linux ネイティブ依存関係、Node.js 20、pnpm をセットアップ。
-  * `cargo test`（全 167 テスト）、`pnpm test`（全 65 テスト）、`pnpm run build`（TypeScript 型チェック ＋ Vite 本番バンドル）を自動実行・検証する CI パイプラインを構築。
+  * Vitest 67 件全件 100% パス（原本反映方式 B / 方式 A 切り替えテスト、選択的 UNDO テストを追加）。
+  * Cargo test 174 件全件 100% パス（`test_workspace_manager_reflect_mode_b_backup_origin`, `test_selective_undo_by_batch_id`, `test_undo_history_chmod_and_touch` を追加）。
+  * TypeScript 型チェック / Vite 本番ビルド完全成功。
 
 ---
 

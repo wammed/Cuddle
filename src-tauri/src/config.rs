@@ -185,7 +185,10 @@ pub fn load_or_create_config() -> AppConfig {
     match get_config_path() {
         Ok(path) => load_or_create_config_from_path(&path),
         Err(err) => {
-            eprintln!("[Cuddle Config] Failed to resolve config path: {}. Using defaults.", err);
+            eprintln!(
+                "[Cuddle Config] Failed to resolve config path: {}. Using defaults.",
+                err
+            );
             AppConfig::default()
         }
     }
@@ -197,7 +200,10 @@ pub fn load_or_create_config_from_path(path: &Path) -> AppConfig {
     if !path.exists() {
         let default_config = AppConfig::default();
         if let Err(e) = save_config_to_path(path, &default_config) {
-            eprintln!("[Cuddle Config] Could not save default config to {:?}: {}", path, e);
+            eprintln!(
+                "[Cuddle Config] Could not save default config to {:?}: {}",
+                path, e
+            );
         }
         return default_config;
     }
@@ -331,10 +337,12 @@ enforce_landlock = false
         // Verify safety guardrails intervened
         assert_eq!(loaded.app.language, "en");
         assert_eq!(loaded.app.theme, "light");
-        assert!(loaded.security.enforce_landlock, "Landlock must be forced to true!");
+        assert!(
+            loaded.security.enforce_landlock,
+            "Landlock must be forced to true!"
+        );
         assert_eq!(
-            loaded.workspace.min_free_space_multiplier,
-            DEFAULT_MIN_FREE_SPACE_MULTIPLIER,
+            loaded.workspace.min_free_space_multiplier, DEFAULT_MIN_FREE_SPACE_MULTIPLIER,
             "Multiplier must be forced to safe default!"
         );
 

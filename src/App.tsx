@@ -13,6 +13,9 @@ import type { ResolvedPathDto } from "./types/ResolvedPathDto";
 import type { BatchExecutionResultDto } from "./types/BatchExecutionResultDto";
 import type { OperationHistoryDto } from "./types/OperationHistoryDto";
 import type { BackupResultDto } from "./types/BackupResultDto";
+import type { ReflectionMode } from "./types/ReflectionMode";
+import type { ReflectExecutionResultDto } from "./types/ReflectExecutionResultDto";
+import type { UndoHistoryResultDto } from "./types/UndoHistoryResultDto";
 import { formatBytes } from "./utils/format";
 import { Header } from "./components/Header";
 import { SearchPanel } from "./components/SearchPanel";
@@ -338,17 +341,41 @@ export function App() {
     }
   };
 
-  const handleReflectStagedItem = async (stageId: string) => {
+  const handleReflectStagedItem = async (stageId: string, mode?: ReflectionMode) => {
     try {
-      const updated = await invoke<StagedItemDto>("reflect_staged_file", { stageId });
+      const res = await invoke<ReflectExecutionResultDto>("reflect_staged_file", {
+        stageId,
+        mode: mode ?? "Overwrite",
+      });
+      const updated = res.staged_item;
       setStagedItems((prev) => prev.map((s) => (s.stage_id === stageId ? updated : s)));
-      addHistory(`Reflected changes of "${updated.display_name}" back to original safely`);
+      const modeDesc = res.mode === "BackupOrigin" ? " (Backup .origin)" : " (Overwrite)";
+      addHistory(`Reflected changes of "${updated.display_name}" back to original safely${modeDesc}`);
       addLog(`Reflected staged item "${updated.display_name}" to original: ${updated.original_snapshot.canonical_path}`);
+      if (res.backup_path) {
+        addLog(`Origin backed up safely to: ${res.backup_path}`);
+      }
       // Refresh browser items to update size/mtime
       await scanDirectory(currentPath);
       await loadHistory();
     } catch (err) {
       addLog(`Failed to reflect staged item ${stageId}: ${String(err)}`);
+      throw err;
+    }
+  };
+
+  const handleUndoHistoryItem = async (operationId: string) => {
+    try {
+      const res = await invoke<UndoHistoryResultDto>("undo_history_operation", { operationId });
+      addHistory(`Undid operation: ${res.message}`);
+      addLog(`Selective Undo succeeded: ${res.message}`);
+      await scanDirectory(currentPath);
+      await loadHistory();
+      const updatedList = await invoke<StagedItemDto[]>("list_staged_items");
+      setStagedItems(updatedList);
+    } catch (err) {
+      const errStr = typeof err === "string" ? err : String(err);
+      addLog(`Selective Undo failed: ${errStr}`);
       throw err;
     }
   };
@@ -865,6 +892,7 @@ export function App() {
                       stagedItems={stagedItems}
                       onResetStagedItem={handleResetStagedItem}
                       onReflectStagedItem={handleReflectStagedItem}
+                      onUndoHistoryItem={handleUndoHistoryItem}
                       onClose={() => setBottomVisible(false)}
                       currentPath={currentPath}
                       activeTab={bottomTab}

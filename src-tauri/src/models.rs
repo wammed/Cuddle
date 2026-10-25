@@ -56,7 +56,10 @@ impl FileItem {
     }
 
     /// Creates a FileItem from Path and pre-fetched metadata.
-    pub fn from_path_and_metadata(path: &Path, meta: &std::fs::Metadata) -> Result<Self, ModelError> {
+    pub fn from_path_and_metadata(
+        path: &Path,
+        meta: &std::fs::Metadata,
+    ) -> Result<Self, ModelError> {
         let item_id = Uuid::new_v4().to_string();
         let raw_bytes = path.as_os_str().as_bytes();
         let raw_base64 = BASE64_STANDARD.encode(raw_bytes);
@@ -65,9 +68,9 @@ impl FileItem {
         let file_name_os = path.file_name().unwrap_or(path.as_os_str());
         let display_name = file_name_os.to_string_lossy().to_string();
 
-        let parent_raw_base64 = path.parent().map(|parent| {
-            BASE64_STANDARD.encode(parent.as_os_str().as_bytes())
-        });
+        let parent_raw_base64 = path
+            .parent()
+            .map(|parent| BASE64_STANDARD.encode(parent.as_os_str().as_bytes()));
 
         let is_symlink = meta.file_type().is_symlink();
         let is_dir = meta.is_dir();
@@ -221,7 +224,6 @@ pub fn get_system_paths() -> SystemPathsDto {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,7 +254,11 @@ mod tests {
         assert_eq!(decoded_path.as_os_str().as_bytes(), invalid_bytes);
 
         // 3. Display name should not panic and should contain replacement characters
-        let display_lossy = original_path.file_name().unwrap().to_string_lossy().to_string();
+        let display_lossy = original_path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
         assert!(display_lossy.contains('\u{FFFD}'));
     }
 

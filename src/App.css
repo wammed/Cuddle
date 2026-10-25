@@ -2243,6 +2243,106 @@ body {
   white-space: nowrap;
 }
 
+/* Reflection Mode Selection (Design 5.2) */
+.dialog-mode-selection {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dialog-mode-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dialog-mode-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dialog-mode-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--trans-fast);
+}
+
+.dialog-mode-card:hover {
+  background: rgba(15, 23, 42, 0.9);
+  border-color: rgba(45, 212, 191, 0.4);
+}
+
+.dialog-mode-card.selected {
+  background: rgba(13, 148, 136, 0.12);
+  border-color: rgba(45, 212, 191, 0.6);
+  box-shadow: 0 0 10px rgba(45, 212, 191, 0.1);
+}
+
+.mode-card-radio {
+  margin-top: 2px;
+}
+
+.custom-radio {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--border-subtle);
+  background: transparent;
+  position: relative;
+  transition: all var(--trans-fast);
+}
+
+.custom-radio.checked {
+  border-color: #2dd4bf;
+}
+
+.custom-radio.checked::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #2dd4bf;
+}
+
+.mode-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mode-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mode-card-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.backup-preview-row {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(45, 212, 191, 0.25);
+}
+
 /* Universal Modal Fixed Action Bar & Footer */
 .dialog-footer,
 .dialog-actions-bar,
@@ -3355,6 +3455,56 @@ body {
   background: rgba(244, 63, 94, 0.15);
   color: #fb7185;
   border: 1px solid rgba(244, 63, 94, 0.3);
+}
+
+.badge-chmod {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.badge-time {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.th-actions {
+  width: 120px;
+  text-align: right;
+}
+
+.history-col-actions {
+  width: 120px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.history-undo-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: var(--radius-xs);
+  background: rgba(45, 212, 191, 0.12);
+  border: 1px solid rgba(45, 212, 191, 0.35);
+  color: #2dd4bf;
+  font-size: 10.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--trans-fast);
+}
+
+.history-undo-btn:hover:not(:disabled) {
+  background: rgba(45, 212, 191, 0.24);
+  border-color: #2dd4bf;
+  box-shadow: 0 0 8px rgba(45, 212, 191, 0.25);
+  transform: translateY(-0.5px);
+}
+
+.history-undo-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Status Badges */

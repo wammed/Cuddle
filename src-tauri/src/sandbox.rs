@@ -1,10 +1,10 @@
-use std::os::unix::process::CommandExt;
-use std::path::{Path, PathBuf};
-use std::process::Command;
 use landlock::{
     Access, AccessFs, PathBeneath, PathFd, RestrictionStatus, Ruleset, RulesetAttr,
     RulesetCreatedAttr, RulesetError, RulesetStatus, ABI,
 };
+use std::os::unix::process::CommandExt;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -78,7 +78,15 @@ impl LandlockSandbox {
     /// Automatically include system directories required to run standard binaries.
     pub fn add_system_defaults(self) -> Self {
         let mut s = self;
-        for path in &["/usr", "/lib", "/lib64", "/etc", "/bin", "/dev/null", "/dev/urandom"] {
+        for path in &[
+            "/usr",
+            "/lib",
+            "/lib64",
+            "/etc",
+            "/bin",
+            "/dev/null",
+            "/dev/urandom",
+        ] {
             if Path::new(path).exists() {
                 s = s.allow_read(path);
             }
@@ -102,7 +110,8 @@ impl LandlockSandbox {
         for p in &self.read_paths {
             if p.exists() {
                 if let Ok(fd) = PathFd::new(p) {
-                    ruleset = ruleset.add_rule(PathBeneath::new(fd, access_read))
+                    ruleset = ruleset
+                        .add_rule(PathBeneath::new(fd, access_read))
                         .map_err(SandboxError::Ruleset)?;
                 }
             }
@@ -112,7 +121,8 @@ impl LandlockSandbox {
         for p in &self.write_paths {
             if p.exists() {
                 if let Ok(fd) = PathFd::new(p) {
-                    ruleset = ruleset.add_rule(PathBeneath::new(fd, access_all))
+                    ruleset = ruleset
+                        .add_rule(PathBeneath::new(fd, access_all))
                         .map_err(SandboxError::Ruleset)?;
                 }
             }
@@ -186,7 +196,8 @@ mod tests {
 
     #[test]
     fn test_landlock_child_isolation() {
-        let base_dir = std::env::temp_dir().join(format!("cuddle_landlock_test_{}", std::process::id()));
+        let base_dir =
+            std::env::temp_dir().join(format!("cuddle_landlock_test_{}", std::process::id()));
         let allowed_workspace = base_dir.join("workspace_temp");
         let forbidden_original = base_dir.join("original_protected");
 
@@ -200,22 +211,37 @@ mod tests {
         // 1. Test writing to allowed workspace -> MUST SUCCEED
         let allowed_file = allowed_workspace.join("output.txt");
         let mut cmd_success = Command::new("sh");
-        cmd_success.args(["-c", &format!("echo 'hello' > '{}'", allowed_file.display())]);
+        cmd_success.args([
+            "-c",
+            &format!("echo 'hello' > '{}'", allowed_file.display()),
+        ]);
         sandbox.configure_command(&mut cmd_success, &allowed_workspace);
 
         let status_success = cmd_success.status().expect("Failed to spawn success test");
-        assert!(status_success.success(), "Writing to allowed workspace must succeed");
+        assert!(
+            status_success.success(),
+            "Writing to allowed workspace must succeed"
+        );
         assert!(allowed_file.exists(), "Output file must exist");
 
         // 2. Test writing to forbidden original directory -> MUST BE BLOCKED BY LANDLOCK
         let forbidden_file = forbidden_original.join("tampered.txt");
         let mut cmd_fail = Command::new("sh");
-        cmd_fail.args(["-c", &format!("echo 'bad' > '{}'", forbidden_file.display())]);
+        cmd_fail.args([
+            "-c",
+            &format!("echo 'bad' > '{}'", forbidden_file.display()),
+        ]);
         sandbox.configure_command(&mut cmd_fail, &allowed_workspace);
 
         let output_fail = cmd_fail.output().expect("Failed to spawn fail test");
-        assert!(!output_fail.status.success(), "Writing to unlisted directory must fail");
-        assert!(!forbidden_file.exists(), "Forbidden file must NOT be created");
+        assert!(
+            !output_fail.status.success(),
+            "Writing to unlisted directory must fail"
+        );
+        assert!(
+            !forbidden_file.exists(),
+            "Forbidden file must NOT be created"
+        );
 
         // Cleanup
         let _ = fs::remove_dir_all(&base_dir);
@@ -233,7 +259,8 @@ mod tests {
             return;
         };
 
-        let base_dir = std::env::temp_dir().join(format!("cuddle_magick_test_{}", std::process::id()));
+        let base_dir =
+            std::env::temp_dir().join(format!("cuddle_magick_test_{}", std::process::id()));
         let allowed_workspace = base_dir.join("workspace_temp");
         let forbidden_original = base_dir.join("original_protected");
 
@@ -250,8 +277,13 @@ mod tests {
         cmd_success.args(["-size", "16x16", "xc:blue", allowed_png.to_str().unwrap()]);
         sandbox.configure_command(&mut cmd_success, &allowed_workspace);
 
-        let status_success = cmd_success.status().expect("Failed to execute magick in allowed workspace");
-        assert!(status_success.success(), "Magick in allowed workspace should succeed");
+        let status_success = cmd_success
+            .status()
+            .expect("Failed to execute magick in allowed workspace");
+        assert!(
+            status_success.success(),
+            "Magick in allowed workspace should succeed"
+        );
         assert!(allowed_png.exists(), "Allowed png file must be generated");
 
         // 2. Blocked case: magick tries to write to forbidden original directory
@@ -260,12 +292,19 @@ mod tests {
         cmd_fail.args(["-size", "16x16", "xc:red", forbidden_png.to_str().unwrap()]);
         sandbox.configure_command(&mut cmd_fail, &allowed_workspace);
 
-        let output_fail = cmd_fail.output().expect("Failed to execute magick targeting forbidden path");
-        assert!(!output_fail.status.success(), "Magick must NOT succeed when writing to forbidden path");
-        assert!(!forbidden_png.exists(), "Forbidden file must never be created by external tool");
+        let output_fail = cmd_fail
+            .output()
+            .expect("Failed to execute magick targeting forbidden path");
+        assert!(
+            !output_fail.status.success(),
+            "Magick must NOT succeed when writing to forbidden path"
+        );
+        assert!(
+            !forbidden_png.exists(),
+            "Forbidden file must never be created by external tool"
+        );
 
         // Cleanup
         let _ = fs::remove_dir_all(&base_dir);
     }
 }
-

@@ -150,8 +150,8 @@ fn build_schema() -> (Schema, FulltextFields) {
 
 fn register_lindera_tokenizer(index: &Index) -> Result<(), FulltextError> {
     let mode = Mode::Normal;
-    let dictionary = load_dictionary("embedded://ipadic")
-        .map_err(|e| FulltextError::Lindera(e.to_string()))?;
+    let dictionary =
+        load_dictionary("embedded://ipadic").map_err(|e| FulltextError::Lindera(e.to_string()))?;
     let segmenter = Segmenter::new(mode, dictionary, None);
     let tokenizer = LinderaTokenizer::from_segmenter(segmenter);
 
@@ -265,16 +265,11 @@ impl CuddleFulltextEngine {
         );
 
         let query = query_parser.parse_query(trimmed)?;
-        let top_docs = searcher.search(
-            &query,
-            &TopDocs::with_limit(options.limit).order_by_score(),
-        )?;
+        let top_docs =
+            searcher.search(&query, &TopDocs::with_limit(options.limit).order_by_score())?;
 
-        let snippet_generator = tantivy::snippet::SnippetGenerator::create(
-            &searcher,
-            &*query,
-            self.fields.body,
-        )?;
+        let snippet_generator =
+            tantivy::snippet::SnippetGenerator::create(&searcher, &*query, self.fields.body)?;
 
         let mut hits = Vec::with_capacity(top_docs.len());
 
@@ -351,11 +346,13 @@ mod tests {
         let engine = CuddleFulltextEngine::new_in_ram().unwrap();
 
         let doc1 = make_test_item("doc-1", "東京案内.md");
-        let body1 = "羽田空港は東京都大田区にある日本最大の空港です。国際線ターミナルも充実しています。";
+        let body1 =
+            "羽田空港は東京都大田区にある日本最大の空港です。国際線ターミナルも充実しています。";
         engine.index_document(&doc1, body1).unwrap();
 
         let doc2 = make_test_item("doc-2", "関西旅行記.txt");
-        let body2 = "京都の寺院巡りと大阪の美味しいグルメを満喫しました。新幹線での移動も快適でした。";
+        let body2 =
+            "京都の寺院巡りと大阪の美味しいグルメを満喫しました。新幹線での移動も快適でした。";
         engine.index_document(&doc2, body2).unwrap();
 
         engine.commit().unwrap();

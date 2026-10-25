@@ -1,13 +1,13 @@
 // src-tauri/src/batch.rs
 // Cuddle - Phase 5.1: Normalization & Bulk Rename Rules Engine & Dry-run Verification
 
+use chrono::{DateTime, Local};
+use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::SystemTime;
-use chrono::{DateTime, Local};
-use regex::Regex;
-use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use unicode_normalization::UnicodeNormalization;
 
@@ -169,11 +169,7 @@ pub fn split_stem_and_ext(filename: &str) -> (String, Option<String>) {
     };
 
     if let Some(dot_idx) = search_slice.rfind('.') {
-        let actual_idx = if is_dotfile {
-            dot_idx + 1
-        } else {
-            dot_idx
-        };
+        let actual_idx = if is_dotfile { dot_idx + 1 } else { dot_idx };
         let stem = filename[..actual_idx].to_string();
         let ext = filename[actual_idx + 1..].to_string();
         (stem, Some(ext))
@@ -216,7 +212,10 @@ pub fn apply_rule(
     modified_time: Option<DateTime<Local>>,
 ) -> Result<String, String> {
     match rule {
-        RenameRule::RegexReplace { pattern, replacement } => {
+        RenameRule::RegexReplace {
+            pattern,
+            replacement,
+        } => {
             let re = Regex::new(pattern).map_err(|e| format!("Invalid regex: {}", e))?;
             Ok(re.replace_all(filename, replacement.as_str()).to_string())
         }
@@ -281,7 +280,8 @@ pub fn apply_rule(
                 let (stem, ext) = split_stem_and_ext(filename);
                 let new_stem = match position {
                     SequencePosition::Prefix => format!("{}{}", seq_str, stem),
-                    SequencePosition::SuffixBeforeExtension | SequencePosition::SuffixAfterExtension => {
+                    SequencePosition::SuffixBeforeExtension
+                    | SequencePosition::SuffixAfterExtension => {
                         format!("{}{}", stem, seq_str)
                     }
                 };
@@ -289,7 +289,8 @@ pub fn apply_rule(
             } else {
                 match position {
                     SequencePosition::Prefix => Ok(format!("{}{}", seq_str, filename)),
-                    SequencePosition::SuffixBeforeExtension | SequencePosition::SuffixAfterExtension => {
+                    SequencePosition::SuffixBeforeExtension
+                    | SequencePosition::SuffixAfterExtension => {
                         Ok(format!("{}{}", filename, seq_str))
                     }
                 }
@@ -311,7 +312,8 @@ pub fn apply_rule(
                 let (stem, ext) = split_stem_and_ext(filename);
                 let new_stem = match position {
                     SequencePosition::Prefix => format!("{}{}", dt_str, stem),
-                    SequencePosition::SuffixBeforeExtension | SequencePosition::SuffixAfterExtension => {
+                    SequencePosition::SuffixBeforeExtension
+                    | SequencePosition::SuffixAfterExtension => {
                         format!("{}{}", stem, dt_str)
                     }
                 };
@@ -319,7 +321,8 @@ pub fn apply_rule(
             } else {
                 match position {
                     SequencePosition::Prefix => Ok(format!("{}{}", dt_str, filename)),
-                    SequencePosition::SuffixBeforeExtension | SequencePosition::SuffixAfterExtension => {
+                    SequencePosition::SuffixBeforeExtension
+                    | SequencePosition::SuffixAfterExtension => {
                         Ok(format!("{}{}", filename, dt_str))
                     }
                 }
@@ -455,7 +458,9 @@ pub fn build_batch_plan_from_proposed_names(
     let mut target_path_counts: HashMap<String, usize> = HashMap::new();
     for op in &operations {
         if op.status == OperationStatus::Ok || op.status == OperationStatus::Unchanged {
-            *target_path_counts.entry(op.target_path.clone()).or_insert(0) += 1;
+            *target_path_counts
+                .entry(op.target_path.clone())
+                .or_insert(0) += 1;
         }
     }
 
@@ -524,10 +529,7 @@ pub fn build_batch_plan_from_proposed_names(
 }
 
 /// Generate a BatchPlan with full dry-run collision detection using rules
-pub fn generate_batch_plan(
-    items: Vec<RenameTargetItem>,
-    rules: &[RenameRule],
-) -> BatchPlanDto {
+pub fn generate_batch_plan(items: Vec<RenameTargetItem>, rules: &[RenameRule]) -> BatchPlanDto {
     let mut proposed_map = HashMap::with_capacity(items.len());
 
     for (idx, item) in items.iter().enumerate() {
@@ -552,9 +554,9 @@ pub fn resolve_rename_target_items(
         let path = PathBuf::from(&resolved.path_str);
         let raw_base64 = crate::models::encode_path_to_base64(&path);
 
-        let modified_time = input.mtime_ms.and_then(|ms| {
-            Local.timestamp_millis_opt(ms).single()
-        });
+        let modified_time = input
+            .mtime_ms
+            .and_then(|ms| Local.timestamp_millis_opt(ms).single());
 
         items.push(RenameTargetItem {
             item_id: input.item_id,
@@ -573,13 +575,17 @@ pub fn resolve_rename_target_items(
 /// [ID]<TAB>[Filename]
 pub fn generate_vidir_buffer(items: &[RenameTargetItem]) -> String {
     let mut buf = String::new();
-    buf.push_str("# ==============================================================================\n");
+    buf.push_str(
+        "# ==============================================================================\n",
+    );
     buf.push_str("# Cuddle - vidir Editor Rename (Phase 9.1 / Design 9.4)\n");
     buf.push_str("# Format: [ID]<TAB>[Filename]\n");
     buf.push_str("# ・Edit the filename on the right and save/apply.\n");
     buf.push_str("# ・Deleted lines are treated as UNCHANGED (files are NEVER deleted).\n");
     buf.push_str("# ・Do NOT change the ID on the left.\n");
-    buf.push_str("# ==============================================================================\n");
+    buf.push_str(
+        "# ==============================================================================\n",
+    );
 
     for item in items {
         buf.push_str(&format!("{}\t{}\n", item.item_id, item.display_name));
@@ -600,9 +606,15 @@ pub fn parse_vidir_buffer(items: Vec<RenameTargetItem>, buffer: &str) -> BatchPl
 
         // Split by tab first, or by 2+ spaces if tab is not present
         let (id_part, name_part) = if let Some(tab_pos) = line.find('\t') {
-            (line[..tab_pos].trim().to_string(), line[tab_pos + 1..].trim().to_string())
+            (
+                line[..tab_pos].trim().to_string(),
+                line[tab_pos + 1..].trim().to_string(),
+            )
         } else if let Some(space_pos) = line.find("  ") {
-            (line[..space_pos].trim().to_string(), line[space_pos..].trim().to_string())
+            (
+                line[..space_pos].trim().to_string(),
+                line[space_pos..].trim().to_string(),
+            )
         } else {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 2 {
@@ -702,7 +714,10 @@ pub fn launch_external_editor_vidir(
 
     if !status.success() {
         let _ = std::fs::remove_file(&temp_file_path);
-        return Err(format!("Editor exited with non-zero exit code: {:?}", status.code()));
+        return Err(format!(
+            "Editor exited with non-zero exit code: {:?}",
+            status.code()
+        ));
     }
 
     let edited_content = std::fs::read_to_string(&temp_file_path)
@@ -757,7 +772,9 @@ pub fn execute_batch_rename_internal(
     record_in_journal: bool,
 ) -> Result<BatchExecutionResultDto, String> {
     if !plan.is_executable {
-        return Err("Cannot execute plan: batch contains conflicts or validation errors".to_string());
+        return Err(
+            "Cannot execute plan: batch contains conflicts or validation errors".to_string(),
+        );
     }
 
     let changed_ops: Vec<PlannedOperationDto> = plan
@@ -787,7 +804,8 @@ pub fn execute_batch_rename_internal(
         }
     }
 
-    let mut phase1_moves: Vec<(&PlannedOperationDto, PathBuf)> = Vec::with_capacity(changed_ops.len());
+    let mut phase1_moves: Vec<(&PlannedOperationDto, PathBuf)> =
+        Vec::with_capacity(changed_ops.len());
 
     // --- PHASE 1: Move each file to intermediate temporary UUID name ---
     for op in &changed_ops {
@@ -811,7 +829,8 @@ pub fn execute_batch_rename_internal(
     }
 
     // --- PHASE 2: Move from intermediate temporary names to final target paths ---
-    let mut phase2_committed: Vec<(&PlannedOperationDto, PathBuf)> = Vec::with_capacity(changed_ops.len());
+    let mut phase2_committed: Vec<(&PlannedOperationDto, PathBuf)> =
+        Vec::with_capacity(changed_ops.len());
 
     for (op, temp_path) in &phase1_moves {
         let target_path = PathBuf::from(&op.target_path);
@@ -819,7 +838,10 @@ pub fn execute_batch_rename_internal(
         if let Err(e) = std::fs::rename(temp_path, &target_path) {
             // ROLLBACK PHASE 2: Revert committed target paths back to temp names
             for (c_op, c_target) in phase2_committed.iter().rev() {
-                if let Some((_, orig_temp)) = phase1_moves.iter().find(|(m_op, _)| m_op.item_id == c_op.item_id) {
+                if let Some((_, orig_temp)) = phase1_moves
+                    .iter()
+                    .find(|(m_op, _)| m_op.item_id == c_op.item_id)
+                {
                     let _ = std::fs::rename(c_target, orig_temp);
                 }
             }
@@ -925,14 +947,34 @@ impl BatchJournalManager {
     }
 
     pub fn undo_last(&self) -> Result<BatchExecutionResultDto, String> {
-        let mut hist = self.history.lock().unwrap();
+        let hist = self.history.lock().unwrap();
         let last_idx = hist
             .iter()
             .rposition(|entry| !entry.is_undone)
             .ok_or_else(|| "No bulk rename operation available to undo".to_string())?;
-
         let target_batch_id = hist[last_idx].batch_id.clone();
-        let operations_to_reverse = hist[last_idx].operations.clone();
+        drop(hist);
+
+        self.undo_batch_by_id(&target_batch_id)
+    }
+
+    /// Selectively undo a bulk rename operation by its batch_id (Design 6.2)
+    pub fn undo_batch_by_id(
+        &self,
+        target_batch_id: &str,
+    ) -> Result<BatchExecutionResultDto, String> {
+        let mut hist = self.history.lock().unwrap();
+        let target_idx = hist
+            .iter()
+            .rposition(|entry| entry.batch_id == target_batch_id && !entry.is_undone)
+            .ok_or_else(|| {
+                format!(
+                    "No active undo journal entry found for batch ID: {}",
+                    target_batch_id
+                )
+            })?;
+
+        let operations_to_reverse = hist[target_idx].operations.clone();
 
         // Construct reverse BatchPlanDto
         let undo_batch_id = format!("undo_{}", target_batch_id);
@@ -945,7 +987,7 @@ impl BatchJournalManager {
                 display_name: op.proposed_name.clone(), // Current display name
                 raw_base64: op.raw_base64.clone(),
                 proposed_name: op.display_name.clone(), // Revert strictly to original user display name (NOT internal disk filename)
-                target_path: op.original_path.clone(), // Revert to original path on disk
+                target_path: op.original_path.clone(),  // Revert to original path on disk
                 status: OperationStatus::Ok,
                 message: None,
             });
@@ -965,10 +1007,10 @@ impl BatchJournalManager {
         let result = execute_batch_rename_internal(reverse_plan, false)?;
 
         // Mark entry as undone in memory and SQLite persistent history
-        hist[last_idx].is_undone = true;
+        hist[target_idx].is_undone = true;
 
         let hist_mgr = crate::history::get_history_manager();
-        let _ = hist_mgr.mark_as_undone(&target_batch_id);
+        let _ = hist_mgr.mark_as_undone(target_batch_id);
         let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
             operation_id: undo_batch_id,
             operation_type: "UndoBulkRename".to_string(),
@@ -998,6 +1040,9 @@ pub fn undo_last_batch() -> Result<BatchExecutionResultDto, String> {
     get_journal_manager().undo_last()
 }
 
+pub fn undo_batch_by_id(batch_id: &str) -> Result<BatchExecutionResultDto, String> {
+    get_journal_manager().undo_batch_by_id(batch_id)
+}
 
 #[cfg(test)]
 mod tests {
@@ -1005,10 +1050,22 @@ mod tests {
 
     #[test]
     fn test_split_and_join_stem_and_ext() {
-        assert_eq!(split_stem_and_ext("report.pdf"), ("report".to_string(), Some("pdf".to_string())));
-        assert_eq!(split_stem_and_ext(".gitignore"), (".gitignore".to_string(), None));
-        assert_eq!(split_stem_and_ext(".config.json"), (".config".to_string(), Some("json".to_string())));
-        assert_eq!(split_stem_and_ext("Makefile"), ("Makefile".to_string(), None));
+        assert_eq!(
+            split_stem_and_ext("report.pdf"),
+            ("report".to_string(), Some("pdf".to_string()))
+        );
+        assert_eq!(
+            split_stem_and_ext(".gitignore"),
+            (".gitignore".to_string(), None)
+        );
+        assert_eq!(
+            split_stem_and_ext(".config.json"),
+            (".config".to_string(), Some("json".to_string()))
+        );
+        assert_eq!(
+            split_stem_and_ext("Makefile"),
+            ("Makefile".to_string(), None)
+        );
 
         assert_eq!(join_stem_and_ext("report", Some("pdf")), "report.pdf");
         assert_eq!(join_stem_and_ext("Makefile", None), "Makefile");
@@ -1019,7 +1076,9 @@ mod tests {
         // Japanese Dakuten separation test (Mac style NFD -> NFC)
         // 'ガ' in NFC is '\u{30AC}', in NFD is 'カ' ('\u{30AB}') + dakuten ('\u{3099}')
         let nfd_str = "\u{30AB}\u{3099}ストロ.txt";
-        let rule_nfc = RenameRule::UnicodeNormalize { form: NormalizationForm::Nfc };
+        let rule_nfc = RenameRule::UnicodeNormalize {
+            form: NormalizationForm::Nfc,
+        };
         let result = apply_rule(nfd_str, &rule_nfc, 0, None).unwrap();
         assert_eq!(result, "ガストロ.txt");
     }
@@ -1066,7 +1125,8 @@ mod tests {
 
     #[test]
     fn test_dry_run_duplicate_conflict_detection() {
-        let temp_dir = std::env::temp_dir().join(format!("cuddle_batch_dup_{}", uuid::Uuid::new_v4()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("cuddle_batch_dup_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
 
         let p1 = temp_dir.join("a.txt");
@@ -1098,15 +1158,22 @@ mod tests {
         let plan = generate_batch_plan(items, &[rule]);
         assert_eq!(plan.conflict_count, 2);
         assert!(!plan.is_executable);
-        assert_eq!(plan.operations[0].status, OperationStatus::ConflictDuplicate);
-        assert_eq!(plan.operations[1].status, OperationStatus::ConflictDuplicate);
+        assert_eq!(
+            plan.operations[0].status,
+            OperationStatus::ConflictDuplicate
+        );
+        assert_eq!(
+            plan.operations[1].status,
+            OperationStatus::ConflictDuplicate
+        );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
     fn test_dry_run_disk_conflict_detection() {
-        let temp_dir = std::env::temp_dir().join(format!("cuddle_batch_disk_{}", uuid::Uuid::new_v4()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("cuddle_batch_disk_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
 
         let p1 = temp_dir.join("source.txt");
@@ -1129,7 +1196,10 @@ mod tests {
         let plan = generate_batch_plan(items, &[rule]);
         assert_eq!(plan.conflict_count, 1);
         assert!(!plan.is_executable);
-        assert_eq!(plan.operations[0].status, OperationStatus::ConflictExistsOnDisk);
+        assert_eq!(
+            plan.operations[0].status,
+            OperationStatus::ConflictExistsOnDisk
+        );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -1189,7 +1259,8 @@ mod tests {
 
     #[test]
     fn test_two_phase_rename_missing_file_safety() {
-        let temp_dir = std::env::temp_dir().join(format!("cuddle_missing_{}", uuid::Uuid::new_v4()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("cuddle_missing_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
 
         let p1 = temp_dir.join("exist.txt");
@@ -1205,7 +1276,10 @@ mod tests {
                     display_name: "exist.txt".to_string(),
                     raw_base64: "dummy".to_string(),
                     proposed_name: "exist_renamed.txt".to_string(),
-                    target_path: temp_dir.join("exist_renamed.txt").to_string_lossy().to_string(),
+                    target_path: temp_dir
+                        .join("exist_renamed.txt")
+                        .to_string_lossy()
+                        .to_string(),
                     status: OperationStatus::Ok,
                     message: None,
                 },
@@ -1230,7 +1304,10 @@ mod tests {
         // Execution should fail pre-flight and leave original file intact
         let res = execute_batch_rename(plan);
         assert!(res.is_err());
-        assert!(p1.exists(), "Original file must remain completely untouched");
+        assert!(
+            p1.exists(),
+            "Original file must remain completely untouched"
+        );
         assert_eq!(std::fs::read_to_string(&p1).unwrap(), "safe-content");
 
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -1255,7 +1332,10 @@ mod tests {
                     display_name: "alpha.txt".to_string(),
                     raw_base64: "dummy1".to_string(),
                     proposed_name: "ALPHA_RENAMED.txt".to_string(),
-                    target_path: temp_dir.join("ALPHA_RENAMED.txt").to_string_lossy().to_string(),
+                    target_path: temp_dir
+                        .join("ALPHA_RENAMED.txt")
+                        .to_string_lossy()
+                        .to_string(),
                     status: OperationStatus::Ok,
                     message: None,
                 },
@@ -1265,7 +1345,10 @@ mod tests {
                     display_name: "beta.txt".to_string(),
                     raw_base64: "dummy2".to_string(),
                     proposed_name: "BETA_RENAMED.txt".to_string(),
-                    target_path: temp_dir.join("BETA_RENAMED.txt").to_string_lossy().to_string(),
+                    target_path: temp_dir
+                        .join("BETA_RENAMED.txt")
+                        .to_string_lossy()
+                        .to_string(),
                     status: OperationStatus::Ok,
                     message: None,
                 },
@@ -1317,7 +1400,8 @@ mod tests {
 
     #[test]
     fn test_staged_item_undo_restores_display_name_without_uuid() {
-        let temp_dir = std::env::temp_dir().join(format!("cuddle_staged_undo_{}", uuid::Uuid::new_v4()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("cuddle_staged_undo_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
 
         let stage_id = "test-stage-uuid-456".to_string();
@@ -1344,7 +1428,10 @@ mod tests {
         assert_eq!(plan.operations[0].proposed_name, "renamed_04.txt");
         // Target path on disk should retain the stage_id prefix
         let expected_target_path = temp_dir.join(format!("{}_renamed_04.txt", stage_id));
-        assert_eq!(plan.operations[0].target_path, expected_target_path.to_string_lossy().to_string());
+        assert_eq!(
+            plan.operations[0].target_path,
+            expected_target_path.to_string_lossy().to_string()
+        );
 
         // Execute rename with dedicated journal
         let journal = BatchJournalManager::new();
@@ -1363,7 +1450,10 @@ mod tests {
         // Undo
         let undo_res = journal.undo_last().expect("Undo must succeed");
         assert_eq!(undo_res.succeeded_count, 1);
-        assert_eq!(undo_res.affected_items[0].proposed_name, "04.txt", "Display name in undo plan must be original display name, NEVER uuid prefix");
+        assert_eq!(
+            undo_res.affected_items[0].proposed_name, "04.txt",
+            "Display name in undo plan must be original display name, NEVER uuid prefix"
+        );
         assert!(disk_path.exists(), "Original disk path must be restored");
         assert!(!expected_target_path.exists());
 
@@ -1372,7 +1462,8 @@ mod tests {
 
     #[test]
     fn test_vidir_buffer_generation_and_parsing() {
-        let temp_dir = std::env::temp_dir().join(format!("cuddle_test_vidir_{}", uuid::Uuid::new_v4()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("cuddle_test_vidir_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
 
         let item1 = RenameTargetItem {
@@ -1423,15 +1514,31 @@ id-101	photo_renamed.jpg
         assert_eq!(plan.error_count, 0);
         assert!(plan.is_executable);
 
-        let op101 = plan.operations.iter().find(|op| op.item_id == "id-101").unwrap();
+        let op101 = plan
+            .operations
+            .iter()
+            .find(|op| op.item_id == "id-101")
+            .unwrap();
         assert_eq!(op101.proposed_name, "photo_renamed.jpg");
         assert_eq!(op101.status, OperationStatus::Ok);
 
-        let op102 = plan.operations.iter().find(|op| op.item_id == "id-102").unwrap();
+        let op102 = plan
+            .operations
+            .iter()
+            .find(|op| op.item_id == "id-102")
+            .unwrap();
         assert_eq!(op102.proposed_name, "photo2.jpg");
-        assert_eq!(op102.status, OperationStatus::Unchanged, "Deleted line MUST be kept as Unchanged");
+        assert_eq!(
+            op102.status,
+            OperationStatus::Unchanged,
+            "Deleted line MUST be kept as Unchanged"
+        );
 
-        let op103 = plan.operations.iter().find(|op| op.item_id == "id-103").unwrap();
+        let op103 = plan
+            .operations
+            .iter()
+            .find(|op| op.item_id == "id-103")
+            .unwrap();
         assert_eq!(op103.proposed_name, "document.pdf");
         assert_eq!(op103.status, OperationStatus::Unchanged);
 
@@ -1440,7 +1547,8 @@ id-101	photo_renamed.jpg
 
     #[test]
     fn test_vidir_collision_detection() {
-        let temp_dir = std::env::temp_dir().join(format!("cuddle_test_vidir_col_{}", uuid::Uuid::new_v4()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("cuddle_test_vidir_col_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
 
         // Existing file on disk
@@ -1472,16 +1580,87 @@ id-101	photo_renamed.jpg
         // 2. On-disk conflict
         let edited_disk = "id-1\texisting_on_disk.txt\n";
         let plan_disk = parse_vidir_buffer(items.clone(), edited_disk);
-        let op1 = plan_disk.operations.iter().find(|o| o.item_id == "id-1").unwrap();
+        let op1 = plan_disk
+            .operations
+            .iter()
+            .find(|o| o.item_id == "id-1")
+            .unwrap();
         assert_eq!(op1.status, OperationStatus::ConflictExistsOnDisk);
         assert!(!plan_disk.is_executable);
 
         // 3. Invalid filename
         let edited_invalid = "id-1\tinvalid/name.txt\n";
         let plan_invalid = parse_vidir_buffer(items, edited_invalid);
-        let op_inv = plan_invalid.operations.iter().find(|o| o.item_id == "id-1").unwrap();
+        let op_inv = plan_invalid
+            .operations
+            .iter()
+            .find(|o| o.item_id == "id-1")
+            .unwrap();
         assert_eq!(op_inv.status, OperationStatus::InvalidFilename);
         assert!(!plan_invalid.is_executable);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_selective_undo_by_batch_id() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("cuddle_sel_undo_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let f1 = temp_dir.join("origin_a.txt");
+        let f2 = temp_dir.join("origin_b.txt");
+        std::fs::write(&f1, "data A").unwrap();
+        std::fs::write(&f2, "data B").unwrap();
+
+        let batch_id = format!("batch-sel-{}", uuid::Uuid::new_v4());
+        let plan = BatchPlanDto {
+            batch_id: batch_id.clone(),
+            operations: vec![
+                PlannedOperationDto {
+                    item_id: "item-a".to_string(),
+                    original_path: f1.to_string_lossy().to_string(),
+                    display_name: "origin_a.txt".to_string(),
+                    raw_base64: "dummy_a".to_string(),
+                    proposed_name: "renamed_a.txt".to_string(),
+                    target_path: temp_dir.join("renamed_a.txt").to_string_lossy().to_string(),
+                    status: OperationStatus::Ok,
+                    message: None,
+                },
+                PlannedOperationDto {
+                    item_id: "item-b".to_string(),
+                    original_path: f2.to_string_lossy().to_string(),
+                    display_name: "origin_b.txt".to_string(),
+                    raw_base64: "dummy_b".to_string(),
+                    proposed_name: "renamed_b.txt".to_string(),
+                    target_path: temp_dir.join("renamed_b.txt").to_string_lossy().to_string(),
+                    status: OperationStatus::Ok,
+                    message: None,
+                },
+            ],
+            total_count: 2,
+            changed_count: 2,
+            conflict_count: 0,
+            error_count: 0,
+            is_executable: true,
+        };
+
+        // Execute batch
+        let res = execute_batch_rename(plan).expect("Execute must succeed");
+        assert_eq!(res.succeeded_count, 2);
+        assert!(!f1.exists());
+        assert!(temp_dir.join("renamed_a.txt").exists());
+
+        // Selective Undo by Batch ID
+        let undo_res = undo_batch_by_id(&batch_id).expect("Selective undo must succeed");
+        assert_eq!(undo_res.succeeded_count, 2);
+        assert!(f1.exists(), "Original A must be restored");
+        assert!(f2.exists(), "Original B must be restored");
+        assert!(!temp_dir.join("renamed_a.txt").exists());
+        assert!(!temp_dir.join("renamed_b.txt").exists());
+
+        // Trying to undo again should fail
+        assert!(undo_batch_by_id(&batch_id).is_err());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

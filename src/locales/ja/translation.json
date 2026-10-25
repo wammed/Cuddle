@@ -94,7 +94,13 @@
     "reflect_success": "原本への反映が安全に完了しました",
     "reflect_failed": "原本への反映に失敗しました (原本保護ガード作動)",
     "conflict_detected_detail": "原本ファイルが作業コピー作成後に外部プロセス等で変更されています。原本破壊を防ぐため反映を自動遮断しました。「原本状態へ復元」で最新の原本を再読み込みできます。",
-    "status_reflected": "原本反映済 (Pristine)"
+    "status_reflected": "原本反映済 (Pristine)",
+    "mode_label": "原本反映方式 (設計書 5.2)",
+    "mode_overwrite": "方式 A: 原本を直接上書き (Atomic Overwrite)",
+    "mode_overwrite_desc": "原本と同一ディレクトリの一時ファイル置換と原子的 rename(2) を用いて原本を成果物で上書きします。",
+    "mode_backup_origin": "方式 B: 原本を .origin として退避保存 (推奨)",
+    "mode_backup_desc": "原本をタイムスタンプ付き .origin ファイルへ安全にリネーム退避した上で作業成果物を配置します。",
+    "backup_preview_label": "退避先バックアップファイル名 (予定)"
   },
   "policy": {
     "title": "安全操作ポリシー (OperationPolicy)",
@@ -285,7 +291,16 @@
     "status_undone": "取消済",
     "status_failed": "失敗",
     "empty": "操作履歴はありません",
-    "record_count": "{{count}} 件の記録 (上限 50 件)"
+    "record_count": "{{count}} 件の記録 (上限 50 件)",
+    "col_actions": "操作",
+    "undo_btn": "元に戻す (UNDO)",
+    "undo_confirm": "この操作を取り消して変更前の状態に戻しますか？\n対象: {{name}}",
+    "undo_success": "操作の取り消しに成功しました: {{message}}",
+    "undo_failed": "操作の取り消しに失敗しました",
+    "type_chmod": "権限変更 (chmod)",
+    "type_undo_chmod": "権限取消",
+    "type_touch_mtime": "タイムスタンプ変更",
+    "type_undo_touch_mtime": "日時取消"
   },
   "backup": {
     "dialog_title": "終了時バックアップ & 安全確認",

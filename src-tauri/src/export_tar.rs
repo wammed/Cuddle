@@ -87,8 +87,8 @@ pub fn export_workspace_to_tar(
         return Err("No files matched the selected export scope".to_string());
     }
 
-    let file = File::create(&dest_path)
-        .map_err(|e| format!("Failed to create destination file: {e}"))?;
+    let file =
+        File::create(&dest_path).map_err(|e| format!("Failed to create destination file: {e}"))?;
 
     let mut total_uncompressed_bytes: u64 = 0;
     let mut file_count: usize = 0;
@@ -123,7 +123,10 @@ pub fn export_workspace_to_tar(
                     builder
                         .append_path_with_name(staged_path, entry_name)
                         .map_err(|e| {
-                            format!("Failed to append {} to tar.gz archive: {e}", item.display_name)
+                            format!(
+                                "Failed to append {} to tar.gz archive: {e}",
+                                item.display_name
+                            )
                         })?;
                     total_uncompressed_bytes += item.size;
                     file_count += 1;
@@ -139,9 +142,7 @@ pub fn export_workspace_to_tar(
     }
 
     // Get final archive file size
-    let archive_bytes = std::fs::metadata(&dest_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let archive_bytes = std::fs::metadata(&dest_path).map(|m| m.len()).unwrap_or(0);
 
     // Record in SQLite WAL history
     if let Some(hist) = history_mgr {
@@ -150,7 +151,10 @@ pub fn export_workspace_to_tar(
             operation_type: "export_tar".to_string(),
             display_name: format!(
                 "Export: {}",
-                dest_path.file_name().and_then(|n| n.to_str()).unwrap_or("archive")
+                dest_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("archive")
             ),
             original_path: None,
             staged_path: Some(dest_path.to_string_lossy().to_string()),
@@ -185,7 +189,8 @@ mod tests {
 
     #[test]
     fn test_export_tar_uncompressed() {
-        let temp_dir = std::env::temp_dir().join(format!("cuddle_test_tar_{}", uuid::Uuid::new_v4()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("cuddle_test_tar_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
         let src_file = temp_dir.join("sample.txt");
         let mut f = File::create(&src_file).unwrap();
@@ -234,7 +239,8 @@ mod tests {
 
     #[test]
     fn test_export_tar_gz_compressed() {
-        let temp_dir = std::env::temp_dir().join(format!("cuddle_test_targz_{}", uuid::Uuid::new_v4()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("cuddle_test_targz_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
         let src_file = temp_dir.join("doc.md");
         let mut f = File::create(&src_file).unwrap();

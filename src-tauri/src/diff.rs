@@ -160,7 +160,8 @@ mod tests {
 
     #[test]
     fn test_compute_diff_identical_files() {
-        let temp_dir = std::env::temp_dir().join(format!("cuddle_diff_identical_{}", Uuid::new_v4()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("cuddle_diff_identical_{}", Uuid::new_v4()));
         fs::create_dir_all(&temp_dir).unwrap();
 
         let orig = temp_dir.join("orig.txt");

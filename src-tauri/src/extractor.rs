@@ -242,12 +242,17 @@ fn extract_tier2_pdf(
             tier_used: "tier2_isolated_pdf".to_string(),
             encoding_used: "N/A".to_string(),
             truncated: false,
-            warning: Some("pdftotext (poppler-utils) is not installed. PDF extraction skipped safely.".to_string()),
+            warning: Some(
+                "pdftotext (poppler-utils) is not installed. PDF extraction skipped safely."
+                    .to_string(),
+            ),
         });
     }
 
     let max_chars = options.max_chars.unwrap_or(DEFAULT_MAX_CHARS);
-    let mem_limit = options.memory_limit_bytes.unwrap_or(DEFAULT_MEMORY_LIMIT_BYTES);
+    let mem_limit = options
+        .memory_limit_bytes
+        .unwrap_or(DEFAULT_MEMORY_LIMIT_BYTES);
     let timeout_secs = options.timeout_secs.unwrap_or(DEFAULT_TIMEOUT_SECS);
 
     // Setup isolated tempdir for Landlock execution
@@ -306,7 +311,10 @@ fn extract_tier2_pdf(
             tier_used: "tier2_isolated_pdf".to_string(),
             encoding_used: "N/A".to_string(),
             truncated: false,
-            warning: Some(format!("pdftotext exited with non-zero status: {:?}", output.status.code())),
+            warning: Some(format!(
+                "pdftotext exited with non-zero status: {:?}",
+                output.status.code()
+            )),
         });
     }
 
@@ -355,10 +363,7 @@ pub fn extract_file_text(
         });
     }
 
-    let ext = path
-        .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
+    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
 
     if is_tier2_pdf_extension(ext) {
         extract_tier2_pdf(path, &item, &opts)
@@ -538,8 +543,16 @@ mod tests {
         assert_eq!(extracted.encoding_used, "UTF-8");
 
         let engine = search_fulltext::get_or_init_engine().unwrap();
-        let hits = engine.search("Landlock", &search_fulltext::FulltextSearchOptions::default()).unwrap();
-        assert!(!hits.is_empty(), "Fulltext search must find the newly indexed document");
+        let hits = engine
+            .search(
+                "Landlock",
+                &search_fulltext::FulltextSearchOptions::default(),
+            )
+            .unwrap();
+        assert!(
+            !hits.is_empty(),
+            "Fulltext search must find the newly indexed document"
+        );
         assert!(hits.iter().any(|h| h.display_name == "cuddle_manual.md"));
 
         let _ = fs::remove_dir_all(&temp_dir);
@@ -549,7 +562,9 @@ mod tests {
     fn test_export_typescript_bindings_extractor() {
         let _ = fs::create_dir_all("../src/types");
         let cfg = ts_rs::Config::default();
-        ExtractedTextDto::export(&cfg).expect("Failed to export ExtractedTextDto TypeScript binding");
-        ExtractTextOptions::export(&cfg).expect("Failed to export ExtractTextOptions TypeScript binding");
+        ExtractedTextDto::export(&cfg)
+            .expect("Failed to export ExtractedTextDto TypeScript binding");
+        ExtractTextOptions::export(&cfg)
+            .expect("Failed to export ExtractTextOptions TypeScript binding");
     }
 }

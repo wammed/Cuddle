@@ -1,12 +1,12 @@
+use crate::policy::OriginalSnapshotDto;
+use crate::workspace::{CloneMethod, StageStatus, StagedItemDto};
+use rusqlite::{params, Connection};
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 use std::time::SystemTime;
-use rusqlite::{params, Connection};
-use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use crate::policy::OriginalSnapshotDto;
-use crate::workspace::{CloneMethod, StageStatus, StagedItemDto};
 
 /// Operation History DTO exposed to TypeScript UI
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -51,12 +51,22 @@ impl HistoryManager {
             .map(|p| p.join("Cuddle"))
             .unwrap_or_else(|| PathBuf::from("."));
 
-        fs::create_dir_all(&db_dir)
-            .map_err(|e| format!("Failed to create database directory {}: {}", db_dir.display(), e))?;
+        fs::create_dir_all(&db_dir).map_err(|e| {
+            format!(
+                "Failed to create database directory {}: {}",
+                db_dir.display(),
+                e
+            )
+        })?;
 
         let db_path = db_dir.join("history.db");
-        let conn = Connection::open(&db_path)
-            .map_err(|e| format!("Failed to open SQLite database at {}: {}", db_path.display(), e))?;
+        let conn = Connection::open(&db_path).map_err(|e| {
+            format!(
+                "Failed to open SQLite database at {}: {}",
+                db_path.display(),
+                e
+            )
+        })?;
 
         let mgr = Self {
             conn: Mutex::new(conn),
@@ -223,6 +233,46 @@ impl HistoryManager {
         Ok(list)
     }
 
+    /// Retrieves a single history record by its operation_id
+    pub fn get_operation(&self, operation_id: &str) -> Result<Option<OperationHistoryDto>, String> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, operation_id, timestamp_ms, operation_type, display_name,
+                        original_path, staged_path, inode, status, can_undo, details
+                 FROM operation_history
+                 WHERE operation_id = ?1
+                 LIMIT 1;",
+            )
+            .map_err(|e| format!("Failed to prepare get_operation statement: {}", e))?;
+
+        let mut rows = stmt
+            .query_map(params![operation_id], |row| {
+                let can_undo_int: i32 = row.get(9)?;
+                Ok(OperationHistoryDto {
+                    id: row.get(0)?,
+                    operation_id: row.get(1)?,
+                    timestamp_ms: row.get(2)?,
+                    operation_type: row.get(3)?,
+                    display_name: row.get(4)?,
+                    original_path: row.get(5)?,
+                    staged_path: row.get(6)?,
+                    inode: row.get(7)?,
+                    status: row.get(8)?,
+                    can_undo: can_undo_int != 0,
+                    details: row.get(10)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query get_operation: {}", e))?;
+
+        if let Some(r) = rows.next() {
+            let item = r.map_err(|e| format!("Failed to read history row: {}", e))?;
+            Ok(Some(item))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Marks an operation as undone
     pub fn mark_as_undone(&self, operation_id: &str) -> Result<(), String> {
         let conn = self.conn.lock().unwrap();
@@ -302,8 +352,11 @@ impl HistoryManager {
     /// Removes a staged item from the session table
     pub fn remove_session_item(&self, stage_id: &str) -> Result<(), String> {
         let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM session_items WHERE stage_id = ?1;", params![stage_id])
-            .map_err(|e| format!("Failed to remove session item {}: {}", stage_id, e))?;
+        conn.execute(
+            "DELETE FROM session_items WHERE stage_id = ?1;",
+            params![stage_id],
+        )
+        .map_err(|e| format!("Failed to remove session item {}: {}", stage_id, e))?;
         Ok(())
     }
 
@@ -431,6 +484,14 @@ mod tests {
         assert_eq!(list[0].operation_type, "BulkRename");
         assert!(list[0].can_undo);
         assert_eq!(list[0].status, "Success");
+
+        // Verify get_operation
+        let fetched = mgr.get_operation("op-1").unwrap();
+        assert!(fetched.is_some());
+        assert_eq!(fetched.unwrap().operation_id, "op-1");
+
+        let missing = mgr.get_operation("non-existent").unwrap();
+        assert!(missing.is_none());
 
         // 2. Mark as undone
         mgr.mark_as_undone("op-1").unwrap();

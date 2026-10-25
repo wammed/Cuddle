@@ -1,5 +1,8 @@
 use crate::models::{decode_path_from_base64, encode_path_to_base64, FileItem, ModelError};
-use crate::policy::{check_disk_space, canonicalize_path, is_external_or_mount_boundary, OperationPolicy, OriginalSnapshotDto, PolicyError};
+use crate::policy::{
+    canonicalize_path, check_disk_space, is_external_or_mount_boundary, OperationPolicy,
+    OriginalSnapshotDto, PolicyError,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -67,6 +70,16 @@ pub enum StageStatus {
     Conflict,
 }
 
+/// Mode for reflecting staged working copies back to original destination (Design 5.2)
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "../../src/types/")]
+pub enum ReflectionMode {
+    /// 方式 A: 原本を直接上書き (Atomic Overwrite)
+    Overwrite,
+    /// 方式 B: 原本をタイムスタンプ付き .origin に退避保存してから配置 (Backup Origin)
+    BackupOrigin,
+}
+
 /// DTO representing an isolated staged file in the workbench.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[ts(export, export_to = "../../src/types/")]
@@ -86,8 +99,11 @@ pub struct StagedItemDto {
 
 /// Resolves the global fallback staging directory (`$XDG_CACHE_HOME/Cuddle/staging/`).
 pub fn get_global_staging_directory() -> PathBuf {
-    let cache_dir = dirs::cache_dir()
-        .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(std::env::temp_dir).join(".cache"));
+    let cache_dir = dirs::cache_dir().unwrap_or_else(|| {
+        dirs::home_dir()
+            .unwrap_or_else(std::env::temp_dir)
+            .join(".cache")
+    });
     cache_dir.join("Cuddle").join("staging")
 }
 
@@ -366,7 +382,10 @@ impl WorkspaceManager {
     }
 
     /// Computes the diff between the original file and its staged working copy.
-    pub fn get_diff(&self, stage_id: &str) -> Result<crate::diff::FileDiffResultDto, WorkspaceError> {
+    pub fn get_diff(
+        &self,
+        stage_id: &str,
+    ) -> Result<crate::diff::FileDiffResultDto, WorkspaceError> {
         let (raw_b64, staged_b64) = {
             let map = self.staged_items.lock().unwrap();
             let staged = map
@@ -383,12 +402,19 @@ impl WorkspaceManager {
     }
 
     /// Reflects staged working copy changes back to the original file safely.
-    /// STRICT PROTOCOL:
-    /// 1. Policy validation: Forbidden Zone checks (outside $HOME, mount boundaries, external storage)
-    /// 2. TOCTOU conflict verification: verifies original inode, dev, size, mtime, and SHA-256 against snapshot
-    /// 3. Atomic replace: creates temporary file in the original's directory, clones/copies staged data, and renames
-    /// 4. Updates snapshot & status to Reflected
+    /// Supports Mode A (Atomic Overwrite) and Mode B (Rename Original to .origin and place deliverable).
     pub fn reflect_staged_file(&self, stage_id: &str) -> Result<StagedItemDto, WorkspaceError> {
+        self.reflect_staged_file_with_mode(stage_id, ReflectionMode::Overwrite)
+            .map(|(item, _)| item)
+    }
+
+    /// Reflects staged working copy changes with specified ReflectionMode (Design 5.2).
+    /// Returns (updated StagedItemDto, Option<PathBuf of .origin backup if Mode B was used>)
+    pub fn reflect_staged_file_with_mode(
+        &self,
+        stage_id: &str,
+        mode: ReflectionMode,
+    ) -> Result<(StagedItemDto, Option<PathBuf>), WorkspaceError> {
         let mut map = self.staged_items.lock().unwrap();
         let staged = map
             .get_mut(stage_id)
@@ -397,16 +423,17 @@ impl WorkspaceManager {
         let orig_path = decode_path_from_base64(&staged.raw_base64)?;
         let staged_path = decode_path_from_base64(&staged.staged_raw_base64)?;
 
-        // 1. Policy Validation: Forbidden Zone
+        // 1. Policy Validation: Forbidden Zone (Outside $HOME, mount boundary, external storage)
         OperationPolicy::validate_reflection(&orig_path)?;
 
         // 2. TOCTOU Race & External Conflict Verification
         OperationPolicy::verify_conflict(&staged.original_snapshot, true)?;
 
-        // 3. Atomic Replace via Temporary File in same directory
         let orig_parent = orig_path
             .parent()
             .ok_or(WorkspaceError::StagingDirUnavailable)?;
+
+        // Temporary file in same directory for atomic POSIX rename
         let tmp_reflect_name = format!(".cuddle_reflect_{}.tmp", Uuid::new_v4());
         let tmp_reflect_path = orig_parent.join(tmp_reflect_name);
 
@@ -416,9 +443,24 @@ impl WorkspaceManager {
             return Err(WorkspaceError::Io(e));
         }
 
-        // Atomic replace via POSIX rename
+        // Mode B: Rename original to timestamped .origin backup
+        let mut backup_origin_path: Option<PathBuf> = None;
+        if mode == ReflectionMode::BackupOrigin {
+            let backup_target = generate_origin_backup_path(&orig_path);
+            if let Err(e) = fs::rename(&orig_path, &backup_target) {
+                let _ = fs::remove_file(&tmp_reflect_path);
+                return Err(WorkspaceError::Io(e));
+            }
+            backup_origin_path = Some(backup_target);
+        }
+
+        // Atomic replace via POSIX rename into destination orig_path
         if let Err(e) = fs::rename(&tmp_reflect_path, &orig_path) {
             let _ = fs::remove_file(&tmp_reflect_path);
+            // Rollback Mode B original backup if rename failed
+            if let Some(ref bkp) = backup_origin_path {
+                let _ = fs::rename(bkp, &orig_path);
+            }
             return Err(WorkspaceError::Io(e));
         }
 
@@ -428,6 +470,15 @@ impl WorkspaceManager {
 
         staged.original_snapshot = new_snapshot;
         staged.status = StageStatus::Reflected;
+
+        let details = match &backup_origin_path {
+            Some(bkp) => format!(
+                "Reflected with .origin backup: {} -> original: {}",
+                bkp.display(),
+                orig_path.display()
+            ),
+            None => format!("Reflected atomic replace to {}", orig_path.display()),
+        };
 
         let hist_mgr = crate::history::get_history_manager();
         let _ = hist_mgr.save_session_item(staged);
@@ -440,10 +491,15 @@ impl WorkspaceManager {
             inode: Some(updated_item.inode as i64),
             status: "Success".to_string(),
             can_undo: false,
-            details: Some(format!("Reflected atomic replace to {}", orig_path.display())),
+            details: Some(details),
         });
 
-        Ok(staged.clone())
+        Ok((staged.clone(), backup_origin_path))
+    }
+
+    /// Generates timestamped .origin backup path (Design 5.2 Mode B)
+    pub fn get_origin_backup_preview(&self, orig_path: &Path) -> PathBuf {
+        generate_origin_backup_path(orig_path)
     }
 
     /// Lists all currently active staged items.
@@ -529,6 +585,38 @@ pub fn get_workspace_manager() -> Arc<WorkspaceManager> {
         .clone()
 }
 
+/// Generates a timestamped .origin backup path (Design 5.2 Mode B).
+/// e.g. report.pdf -> report_20261025_201530.origin.pdf
+pub fn generate_origin_backup_path(orig_path: &Path) -> PathBuf {
+    let parent = orig_path.parent().unwrap_or_else(|| Path::new("."));
+    let stem = orig_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file");
+    let ext = orig_path.extension().and_then(|s| s.to_str());
+    let now = chrono::Local::now();
+    let timestamp = now.format("%Y%m%d_%H%M%S").to_string();
+
+    let backup_filename = if let Some(e) = ext {
+        format!("{}_{}.origin.{}", stem, timestamp, e)
+    } else {
+        format!("{}_{}.origin", stem, timestamp)
+    };
+
+    let mut candidate = parent.join(backup_filename);
+    let mut counter = 1;
+    while candidate.exists() {
+        let unique_name = if let Some(e) = ext {
+            format!("{}_{}_{}.origin.{}", stem, timestamp, counter, e)
+        } else {
+            format!("{}_{}_{}.origin", stem, timestamp, counter)
+        };
+        candidate = parent.join(unique_name);
+        counter += 1;
+    }
+    candidate
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -578,8 +666,12 @@ mod tests {
         assert_eq!(list[0].stage_id, staged.stage_id);
 
         // 3. Unstage file (Staged copy removed, original remains untouched)
-        mgr.unstage_file(&staged.stage_id).expect("Unstaging must succeed");
-        assert!(!Path::new(&staged.staged_path).exists(), "Staged file must be deleted");
+        mgr.unstage_file(&staged.stage_id)
+            .expect("Unstaging must succeed");
+        assert!(
+            !Path::new(&staged.staged_path).exists(),
+            "Staged file must be deleted"
+        );
         assert!(orig_file.exists(), "Original file must remain intact!");
 
         assert_eq!(mgr.list_staged().len(), 0);
@@ -604,14 +696,19 @@ mod tests {
         fs::write(&non_utf8_file, b"binary non-utf8 data").unwrap();
 
         let mgr = WorkspaceManager::new();
-        let staged = mgr.stage_file(&non_utf8_file).expect("Must stage non-UTF8 file without panic");
+        let staged = mgr
+            .stage_file(&non_utf8_file)
+            .expect("Must stage non-UTF8 file without panic");
 
         assert!(staged.display_name.contains('\u{FFFD}'));
         assert!(Path::new(&staged.staged_path).exists());
 
         mgr.clear_all().unwrap();
         assert_eq!(mgr.list_staged().len(), 0);
-        assert!(non_utf8_file.exists(), "Original non-UTF8 file must remain intact");
+        assert!(
+            non_utf8_file.exists(),
+            "Original non-UTF8 file must remain intact"
+        );
 
         let _ = fs::remove_dir_all(&temp_dir);
     }
@@ -629,7 +726,10 @@ mod tests {
 
         // Mutate staged working copy
         fs::write(&staged.staged_path, b"fn main() { println!(\"mutated\"); }").unwrap();
-        assert_eq!(fs::read(&staged.staged_path).unwrap(), b"fn main() { println!(\"mutated\"); }");
+        assert_eq!(
+            fs::read(&staged.staged_path).unwrap(),
+            b"fn main() { println!(\"mutated\"); }"
+        );
 
         // Verify diff before reset
         let diff = mgr.get_diff(&staged.stage_id).unwrap();
@@ -638,7 +738,10 @@ mod tests {
         // Reset staged copy to pristine original
         let reset_item = mgr.reset_staged_file(&staged.stage_id).unwrap();
         assert_eq!(reset_item.status, StageStatus::Staged);
-        assert_eq!(fs::read(&staged.staged_path).unwrap(), b"fn main() { println!(\"original\"); }");
+        assert_eq!(
+            fs::read(&staged.staged_path).unwrap(),
+            b"fn main() { println!(\"original\"); }"
+        );
 
         // Diff after reset must be clean
         let diff_after = mgr.get_diff(&staged.stage_id).unwrap();
@@ -714,9 +817,14 @@ mod tests {
         // 1. Restore on a new WorkspaceManager instance
         let new_mgr = WorkspaceManager::new();
         let restored_list = new_mgr.restore_session().unwrap();
-        assert!(restored_list.iter().any(|item| item.stage_id == staged.stage_id));
+        assert!(restored_list
+            .iter()
+            .any(|item| item.stage_id == staged.stage_id));
 
-        let restored_item = restored_list.into_iter().find(|i| i.stage_id == staged.stage_id).unwrap();
+        let restored_item = restored_list
+            .into_iter()
+            .find(|i| i.stage_id == staged.stage_id)
+            .unwrap();
         assert_eq!(restored_item.status, StageStatus::Staged);
 
         // 2. Simulate external modification of the original file
@@ -726,11 +834,51 @@ mod tests {
         // 3. Restore again: external modification must be detected as Conflict!
         let third_mgr = WorkspaceManager::new();
         let restored_list_2 = third_mgr.restore_session().unwrap();
-        let conflict_item = restored_list_2.into_iter().find(|i| i.stage_id == staged.stage_id).unwrap();
+        let conflict_item = restored_list_2
+            .into_iter()
+            .find(|i| i.stage_id == staged.stage_id)
+            .unwrap();
         assert_eq!(conflict_item.status, StageStatus::Conflict);
 
         // Clean up
         let _ = mgr.unstage_file(&staged.stage_id);
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_workspace_manager_reflect_mode_b_backup_origin() {
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_reflect_mode_b_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("report.pdf");
+        fs::write(&orig_file, b"Original PDF Version 1").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+
+        // Mutate staged working copy
+        fs::write(&staged.staged_path, b"Mutated Deliverable Version 2").unwrap();
+
+        // Reflect with Mode B (BackupOrigin)
+        let (reflected, backup_path) = mgr
+            .reflect_staged_file_with_mode(&staged.stage_id, ReflectionMode::BackupOrigin)
+            .unwrap();
+        assert_eq!(reflected.status, StageStatus::Reflected);
+        assert!(backup_path.is_some());
+
+        let bkp = backup_path.unwrap();
+        assert!(bkp.exists());
+        assert!(bkp.to_string_lossy().contains(".origin.pdf"));
+        // Backup contains original content
+        assert_eq!(fs::read(&bkp).unwrap(), b"Original PDF Version 1");
+
+        // Original location contains mutated deliverable
+        assert_eq!(
+            fs::read(&orig_file).unwrap(),
+            b"Mutated Deliverable Version 2"
+        );
+
         let _ = fs::remove_dir_all(&test_dir);
     }
 
@@ -741,5 +889,6 @@ mod tests {
         StagedItemDto::export(&cfg).expect("Failed to export StagedItemDto");
         CloneMethod::export(&cfg).expect("Failed to export CloneMethod");
         StageStatus::export(&cfg).expect("Failed to export StageStatus");
+        ReflectionMode::export(&cfg).expect("Failed to export ReflectionMode");
     }
 }

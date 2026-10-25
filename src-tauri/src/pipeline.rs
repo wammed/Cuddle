@@ -1,15 +1,15 @@
+use crate::models::AppErrorDto;
+use crate::sandbox::LandlockSandbox;
+use regex::Regex;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-use regex::Regex;
-use sha2::{Digest, Sha256};
-use crate::models::AppErrorDto;
-use crate::sandbox::LandlockSandbox;
 
 /// External tool probe definition.
 #[derive(Debug, Clone)]
@@ -272,7 +272,9 @@ impl PipelineCancellationManager {
     /// Checks if a job has been flagged for cancellation.
     pub fn is_cancelled(&self, job_id: &str) -> bool {
         let map = self.jobs.lock().unwrap();
-        map.get(job_id).map(|f| f.load(Ordering::SeqCst)).unwrap_or(false)
+        map.get(job_id)
+            .map(|f| f.load(Ordering::SeqCst))
+            .unwrap_or(false)
     }
 
     /// Unregisters a completed or cancelled pipeline job.
@@ -349,9 +351,7 @@ impl ToolDetector {
     /// Fetches the version output of an executable safely.
     fn fetch_version(path: &Path, arg: &str) -> Option<String> {
         let mut cmd = Command::new(path);
-        cmd.arg(arg)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        cmd.arg(arg).stdout(Stdio::piped()).stderr(Stdio::piped());
 
         let mut child = cmd.spawn().ok()?;
         let start = Instant::now();
@@ -451,7 +451,11 @@ impl SandboxedExecutor {
         }
 
         // Dedicated isolated tmpdir
-        let isolated_tmp = options.working_dir.as_ref().map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+        let isolated_tmp = options
+            .working_dir
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir);
 
         let mut cmd = Command::new(&exe_path);
         cmd.args(args);
@@ -466,7 +470,10 @@ impl SandboxedExecutor {
 
         let start_time = Instant::now();
         let mut child = cmd.spawn().map_err(|e| {
-            AppErrorDto::new("ERR_PROCESS_SPAWN_FAILED", format!("Failed to spawn {}: {}", executable, e))
+            AppErrorDto::new(
+                "ERR_PROCESS_SPAWN_FAILED",
+                format!("Failed to spawn {}: {}", executable, e),
+            )
         })?;
 
         // Monitor process with timeout and cancellation check
@@ -493,7 +500,10 @@ impl SandboxedExecutor {
                 Ok(Some(status)) => {
                     let duration_ms = start_time.elapsed().as_millis() as u64;
                     let output = child.wait_with_output().map_err(|e| {
-                        AppErrorDto::new("ERR_PROCESS_IO", format!("Failed to read process output: {}", e))
+                        AppErrorDto::new(
+                            "ERR_PROCESS_IO",
+                            format!("Failed to read process output: {}", e),
+                        )
                     })?;
 
                     // Truncate to 10 MiB safety limit
@@ -539,7 +549,10 @@ impl SandboxedExecutor {
             success: false,
             exit_code: None,
             stdout: String::new(),
-            stderr: format!("Process timed out after {} seconds and was killed", timeout_secs),
+            stderr: format!(
+                "Process timed out after {} seconds and was killed",
+                timeout_secs
+            ),
             duration_ms,
             timed_out: true,
             error_message: Some(format!("Command timed out after {} seconds", timeout_secs)),
@@ -560,7 +573,8 @@ impl BuiltinPipelineEngine {
         // Email regex
         let re_email = Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b").unwrap();
         // Generic API Key / Bearer Token / Hex Hash pattern (32+ chars)
-        let re_token = Regex::new(r"(?i)\b(?:bearer\s+|api[_-]?key\s*[:=]\s*)[a-zA-Z0-9_\-\.]{16,}").unwrap();
+        let re_token =
+            Regex::new(r"(?i)\b(?:bearer\s+|api[_-]?key\s*[:=]\s*)[a-zA-Z0-9_\-\.]{16,}").unwrap();
 
         let intermediate1 = re_ip.replace_all(text, |_caps: &regex::Captures| {
             count += 1;
@@ -607,10 +621,10 @@ impl BuiltinPipelineEngine {
 
     /// Preset 16: Validate JSON and minify (strip unnecessary whitespace/newlines).
     pub fn minify_json(text: &str) -> Result<(String, u64), String> {
-        let val: serde_json::Value = serde_json::from_str(text)
-            .map_err(|e| format!("Invalid JSON syntax: {}", e))?;
-        let minified = serde_json::to_string(&val)
-            .map_err(|e| format!("Failed to serialize JSON: {}", e))?;
+        let val: serde_json::Value =
+            serde_json::from_str(text).map_err(|e| format!("Invalid JSON syntax: {}", e))?;
+        let minified =
+            serde_json::to_string(&val).map_err(|e| format!("Failed to serialize JSON: {}", e))?;
         Ok((minified, 1))
     }
 
@@ -661,7 +675,10 @@ impl BuiltinPipelineEngine {
 
         for line in text.lines() {
             let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with("--") || trimmed.starts_with("/*") && trimmed.ends_with("*/") {
+            if trimmed.is_empty()
+                || trimmed.starts_with("--")
+                || trimmed.starts_with("/*") && trimmed.ends_with("*/")
+            {
                 continue;
             }
             output.push_str(line);
@@ -674,7 +691,9 @@ impl BuiltinPipelineEngine {
 
     /// Preset 20: SRT subtitle timecode shift (offset in milliseconds).
     pub fn shift_srt_timecodes(text: &str, offset_ms: i64) -> Result<(String, u64), String> {
-        let time_re = Regex::new(r"(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})").unwrap();
+        let time_re =
+            Regex::new(r"(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})")
+                .unwrap();
         let mut count = 0u64;
 
         let parse_time = |h: &str, m: &str, s: &str, ms: &str| -> i64 {
@@ -734,7 +753,14 @@ impl PipelineRegistry {
                 required_tools: vec!["imagemagick".to_string()],
                 is_builtin: false,
                 default_suffix: "_web.webp".to_string(),
-                supported_extensions: vec!["png".to_string(), "jpg".to_string(), "jpeg".to_string(), "webp".to_string(), "bmp".to_string(), "tiff".to_string()],
+                supported_extensions: vec![
+                    "png".to_string(),
+                    "jpg".to_string(),
+                    "jpeg".to_string(),
+                    "webp".to_string(),
+                    "bmp".to_string(),
+                    "tiff".to_string(),
+                ],
                 parameters: vec![
                     PipelineParameterDef {
                         key: "max_width".to_string(),
@@ -766,19 +792,22 @@ impl PipelineRegistry {
                 required_tools: vec!["imagemagick".to_string()],
                 is_builtin: false,
                 default_suffix: "_ogp.jpg".to_string(),
-                supported_extensions: vec!["png".to_string(), "jpg".to_string(), "jpeg".to_string(), "webp".to_string()],
-                parameters: vec![
-                    PipelineParameterDef {
-                        key: "quality".to_string(),
-                        label_key: "pipeline.params.quality".to_string(),
-                        param_type: "number".to_string(),
-                        default_value: "85".to_string(),
-                        min: Some(1.0),
-                        max: Some(100.0),
-                        step: Some(1.0),
-                        options: None,
-                    },
+                supported_extensions: vec![
+                    "png".to_string(),
+                    "jpg".to_string(),
+                    "jpeg".to_string(),
+                    "webp".to_string(),
                 ],
+                parameters: vec![PipelineParameterDef {
+                    key: "quality".to_string(),
+                    label_key: "pipeline.params.quality".to_string(),
+                    param_type: "number".to_string(),
+                    default_value: "85".to_string(),
+                    min: Some(1.0),
+                    max: Some(100.0),
+                    step: Some(1.0),
+                    options: None,
+                }],
             },
             PipelinePresetDto {
                 id: "image_favicon_pack".to_string(),
@@ -788,19 +817,27 @@ impl PipelineRegistry {
                 required_tools: vec!["imagemagick".to_string()],
                 is_builtin: false,
                 default_suffix: "_icon.png".to_string(),
-                supported_extensions: vec!["png".to_string(), "jpg".to_string(), "jpeg".to_string(), "svg".to_string()],
-                parameters: vec![
-                    PipelineParameterDef {
-                        key: "size".to_string(),
-                        label_key: "pipeline.params.icon_size".to_string(),
-                        param_type: "select".to_string(),
-                        default_value: "512".to_string(),
-                        min: None,
-                        max: None,
-                        step: None,
-                        options: Some(vec!["16".to_string(), "32".to_string(), "180".to_string(), "512".to_string()]),
-                    },
+                supported_extensions: vec![
+                    "png".to_string(),
+                    "jpg".to_string(),
+                    "jpeg".to_string(),
+                    "svg".to_string(),
                 ],
+                parameters: vec![PipelineParameterDef {
+                    key: "size".to_string(),
+                    label_key: "pipeline.params.icon_size".to_string(),
+                    param_type: "select".to_string(),
+                    default_value: "512".to_string(),
+                    min: None,
+                    max: None,
+                    step: None,
+                    options: Some(vec![
+                        "16".to_string(),
+                        "32".to_string(),
+                        "180".to_string(),
+                        "512".to_string(),
+                    ]),
+                }],
             },
             PipelinePresetDto {
                 id: "image_watermark".to_string(),
@@ -810,19 +847,21 @@ impl PipelineRegistry {
                 required_tools: vec!["imagemagick".to_string()],
                 is_builtin: false,
                 default_suffix: "_preview.jpg".to_string(),
-                supported_extensions: vec!["png".to_string(), "jpg".to_string(), "jpeg".to_string()],
-                parameters: vec![
-                    PipelineParameterDef {
-                        key: "watermark_text".to_string(),
-                        label_key: "pipeline.params.watermark_text".to_string(),
-                        param_type: "string".to_string(),
-                        default_value: "PREVIEW".to_string(),
-                        min: None,
-                        max: None,
-                        step: None,
-                        options: None,
-                    },
+                supported_extensions: vec![
+                    "png".to_string(),
+                    "jpg".to_string(),
+                    "jpeg".to_string(),
                 ],
+                parameters: vec![PipelineParameterDef {
+                    key: "watermark_text".to_string(),
+                    label_key: "pipeline.params.watermark_text".to_string(),
+                    param_type: "string".to_string(),
+                    default_value: "PREVIEW".to_string(),
+                    min: None,
+                    max: None,
+                    step: None,
+                    options: None,
+                }],
             },
             PipelinePresetDto {
                 id: "image_retina_downscale".to_string(),
@@ -844,18 +883,16 @@ impl PipelineRegistry {
                 is_builtin: false,
                 default_suffix: "_400pct.png".to_string(),
                 supported_extensions: vec!["png".to_string(), "gif".to_string()],
-                parameters: vec![
-                    PipelineParameterDef {
-                        key: "scale_percent".to_string(),
-                        label_key: "pipeline.params.scale_percent".to_string(),
-                        param_type: "number".to_string(),
-                        default_value: "400".to_string(),
-                        min: Some(100.0),
-                        max: Some(1600.0),
-                        step: Some(100.0),
-                        options: None,
-                    },
-                ],
+                parameters: vec![PipelineParameterDef {
+                    key: "scale_percent".to_string(),
+                    label_key: "pipeline.params.scale_percent".to_string(),
+                    param_type: "number".to_string(),
+                    default_value: "400".to_string(),
+                    min: Some(100.0),
+                    max: Some(1600.0),
+                    step: Some(100.0),
+                    options: None,
+                }],
             },
             PipelinePresetDto {
                 id: "image_print_cmyk".to_string(),
@@ -865,7 +902,12 @@ impl PipelineRegistry {
                 required_tools: vec!["imagemagick".to_string()],
                 is_builtin: false,
                 default_suffix: "_cmyk.tiff".to_string(),
-                supported_extensions: vec!["png".to_string(), "jpg".to_string(), "jpeg".to_string(), "tiff".to_string()],
+                supported_extensions: vec![
+                    "png".to_string(),
+                    "jpg".to_string(),
+                    "jpeg".to_string(),
+                    "tiff".to_string(),
+                ],
                 parameters: vec![],
             },
             PipelinePresetDto {
@@ -876,10 +918,14 @@ impl PipelineRegistry {
                 required_tools: vec!["imagemagick".to_string()],
                 is_builtin: false,
                 default_suffix: "_bw.jpg".to_string(),
-                supported_extensions: vec!["png".to_string(), "jpg".to_string(), "jpeg".to_string(), "webp".to_string()],
+                supported_extensions: vec![
+                    "png".to_string(),
+                    "jpg".to_string(),
+                    "jpeg".to_string(),
+                    "webp".to_string(),
+                ],
                 parameters: vec![],
             },
-
             // --- Category 2: Audio & Video Media (9-13) ---
             PipelinePresetDto {
                 id: "media_gif_anim".to_string(),
@@ -889,7 +935,12 @@ impl PipelineRegistry {
                 required_tools: vec!["ffmpeg".to_string()],
                 is_builtin: false,
                 default_suffix: "_anim.gif".to_string(),
-                supported_extensions: vec!["mp4".to_string(), "mov".to_string(), "mkv".to_string(), "webm".to_string()],
+                supported_extensions: vec![
+                    "mp4".to_string(),
+                    "mov".to_string(),
+                    "mkv".to_string(),
+                    "webm".to_string(),
+                ],
                 parameters: vec![
                     PipelineParameterDef {
                         key: "fps".to_string(),
@@ -921,19 +972,22 @@ impl PipelineRegistry {
                 required_tools: vec!["ffmpeg".to_string()],
                 is_builtin: false,
                 default_suffix: "_podcast.mp3".to_string(),
-                supported_extensions: vec!["wav".to_string(), "mp3".to_string(), "m4a".to_string(), "flac".to_string()],
-                parameters: vec![
-                    PipelineParameterDef {
-                        key: "target_lufs".to_string(),
-                        label_key: "pipeline.params.target_lufs".to_string(),
-                        param_type: "number".to_string(),
-                        default_value: "-16".to_string(),
-                        min: Some(-24.0),
-                        max: Some(-12.0),
-                        step: Some(1.0),
-                        options: None,
-                    },
+                supported_extensions: vec![
+                    "wav".to_string(),
+                    "mp3".to_string(),
+                    "m4a".to_string(),
+                    "flac".to_string(),
                 ],
+                parameters: vec![PipelineParameterDef {
+                    key: "target_lufs".to_string(),
+                    label_key: "pipeline.params.target_lufs".to_string(),
+                    param_type: "number".to_string(),
+                    default_value: "-16".to_string(),
+                    min: Some(-24.0),
+                    max: Some(-12.0),
+                    step: Some(1.0),
+                    options: None,
+                }],
             },
             PipelinePresetDto {
                 id: "media_extract_speech".to_string(),
@@ -943,19 +997,29 @@ impl PipelineRegistry {
                 required_tools: vec!["ffmpeg".to_string()],
                 is_builtin: false,
                 default_suffix: "_speech.wav".to_string(),
-                supported_extensions: vec!["mp4".to_string(), "mov".to_string(), "mkv".to_string(), "webm".to_string(), "mp3".to_string(), "m4a".to_string()],
-                parameters: vec![
-                    PipelineParameterDef {
-                        key: "sample_rate".to_string(),
-                        label_key: "pipeline.params.sample_rate".to_string(),
-                        param_type: "select".to_string(),
-                        default_value: "16000".to_string(),
-                        min: None,
-                        max: None,
-                        step: None,
-                        options: Some(vec!["8000".to_string(), "16000".to_string(), "22050".to_string(), "44100".to_string()]),
-                    },
+                supported_extensions: vec![
+                    "mp4".to_string(),
+                    "mov".to_string(),
+                    "mkv".to_string(),
+                    "webm".to_string(),
+                    "mp3".to_string(),
+                    "m4a".to_string(),
                 ],
+                parameters: vec![PipelineParameterDef {
+                    key: "sample_rate".to_string(),
+                    label_key: "pipeline.params.sample_rate".to_string(),
+                    param_type: "select".to_string(),
+                    default_value: "16000".to_string(),
+                    min: None,
+                    max: None,
+                    step: None,
+                    options: Some(vec![
+                        "8000".to_string(),
+                        "16000".to_string(),
+                        "22050".to_string(),
+                        "44100".to_string(),
+                    ]),
+                }],
             },
             PipelinePresetDto {
                 id: "media_sns_vertical".to_string(),
@@ -976,10 +1040,14 @@ impl PipelineRegistry {
                 required_tools: vec!["ffmpeg".to_string()],
                 is_builtin: false,
                 default_suffix: "_share.mp4".to_string(),
-                supported_extensions: vec!["mp4".to_string(), "mov".to_string(), "mkv".to_string(), "avi".to_string()],
+                supported_extensions: vec![
+                    "mp4".to_string(),
+                    "mov".to_string(),
+                    "mkv".to_string(),
+                    "avi".to_string(),
+                ],
                 parameters: vec![],
             },
-
             // --- Category 3: Text, Log & Data Formatting (14-20, Pure-Rust Builtin) ---
             PipelinePresetDto {
                 id: "text_mask_secrets".to_string(),
@@ -1023,18 +1091,16 @@ impl PipelineRegistry {
                 is_builtin: true,
                 default_suffix: "_conv.csv".to_string(),
                 supported_extensions: vec!["tsv".to_string(), "csv".to_string()],
-                parameters: vec![
-                    PipelineParameterDef {
-                        key: "lowercase_headers".to_string(),
-                        label_key: "pipeline.params.lowercase_headers".to_string(),
-                        param_type: "boolean".to_string(),
-                        default_value: "true".to_string(),
-                        min: None,
-                        max: None,
-                        step: None,
-                        options: None,
-                    },
-                ],
+                parameters: vec![PipelineParameterDef {
+                    key: "lowercase_headers".to_string(),
+                    label_key: "pipeline.params.lowercase_headers".to_string(),
+                    param_type: "boolean".to_string(),
+                    default_value: "true".to_string(),
+                    min: None,
+                    max: None,
+                    step: None,
+                    options: None,
+                }],
             },
             PipelinePresetDto {
                 id: "text_markdown_lint".to_string(),
@@ -1067,20 +1133,17 @@ impl PipelineRegistry {
                 is_builtin: true,
                 default_suffix: "_shifted.srt".to_string(),
                 supported_extensions: vec!["srt".to_string()],
-                parameters: vec![
-                    PipelineParameterDef {
-                        key: "offset_ms".to_string(),
-                        label_key: "pipeline.params.offset_ms".to_string(),
-                        param_type: "number".to_string(),
-                        default_value: "1000".to_string(),
-                        min: Some(-60000.0),
-                        max: Some(60000.0),
-                        step: Some(100.0),
-                        options: None,
-                    },
-                ],
+                parameters: vec![PipelineParameterDef {
+                    key: "offset_ms".to_string(),
+                    label_key: "pipeline.params.offset_ms".to_string(),
+                    param_type: "number".to_string(),
+                    default_value: "1000".to_string(),
+                    min: Some(-60000.0),
+                    max: Some(60000.0),
+                    step: Some(100.0),
+                    options: None,
+                }],
             },
-
             // --- Category 4: Document & PDF (21-24) ---
             PipelinePresetDto {
                 id: "doc_pdf_binarize".to_string(),
@@ -1126,7 +1189,6 @@ impl PipelineRegistry {
                 supported_extensions: vec!["pdf".to_string()],
                 parameters: vec![],
             },
-
             // --- Category 5: File Organization & Normalization (25-27) ---
             PipelinePresetDto {
                 id: "file_exif_organize".to_string(),
@@ -1136,7 +1198,13 @@ impl PipelineRegistry {
                 required_tools: vec!["exiftool".to_string()],
                 is_builtin: false,
                 default_suffix: "".to_string(),
-                supported_extensions: vec!["jpg".to_string(), "jpeg".to_string(), "png".to_string(), "mp4".to_string(), "mov".to_string()],
+                supported_extensions: vec![
+                    "jpg".to_string(),
+                    "jpeg".to_string(),
+                    "png".to_string(),
+                    "mp4".to_string(),
+                    "mov".to_string(),
+                ],
                 parameters: vec![],
             },
             PipelinePresetDto {
@@ -1159,20 +1227,17 @@ impl PipelineRegistry {
                 is_builtin: true,
                 default_suffix: "".to_string(),
                 supported_extensions: vec!["*".to_string()],
-                parameters: vec![
-                    PipelineParameterDef {
-                        key: "digits".to_string(),
-                        label_key: "pipeline.params.padding_digits".to_string(),
-                        param_type: "number".to_string(),
-                        default_value: "4".to_string(),
-                        min: Some(2.0),
-                        max: Some(8.0),
-                        step: Some(1.0),
-                        options: None,
-                    },
-                ],
+                parameters: vec![PipelineParameterDef {
+                    key: "digits".to_string(),
+                    label_key: "pipeline.params.padding_digits".to_string(),
+                    param_type: "number".to_string(),
+                    default_value: "4".to_string(),
+                    min: Some(2.0),
+                    max: Some(8.0),
+                    step: Some(1.0),
+                    options: None,
+                }],
             },
-
             // --- Category 6: Developer, Package & Security (28-30) ---
             PipelinePresetDto {
                 id: "dev_clean_package".to_string(),
@@ -1211,7 +1276,9 @@ impl PipelineRegistry {
     }
 
     pub fn find_preset(preset_id: &str) -> Option<PipelinePresetDto> {
-        Self::get_all_presets().into_iter().find(|p| p.id == preset_id)
+        Self::get_all_presets()
+            .into_iter()
+            .find(|p| p.id == preset_id)
     }
 }
 
@@ -1233,8 +1300,12 @@ impl PipelineRunner {
         workspace_manager: &crate::workspace::WorkspaceManager,
         progress_callback: Option<Box<dyn Fn(PipelineProgressEvent) + Send + Sync>>,
     ) -> Result<PipelineExecutionResultDto, AppErrorDto> {
-        let preset = PipelineRegistry::find_preset(&req.preset_id)
-            .ok_or_else(|| AppErrorDto::new("PresetNotFound", format!("Preset {} not found", req.preset_id)))?;
+        let preset = PipelineRegistry::find_preset(&req.preset_id).ok_or_else(|| {
+            AppErrorDto::new(
+                "PresetNotFound",
+                format!("Preset {} not found", req.preset_id),
+            )
+        })?;
 
         // If preset requires external tools, verify availability first
         for tool_id in &preset.required_tools {
@@ -1245,7 +1316,10 @@ impl PipelineRunner {
                 if !s.is_available {
                     return Err(AppErrorDto::new(
                         "ToolMissing",
-                        format!("Required tool '{}' is not installed on system", s.display_name),
+                        format!(
+                            "Required tool '{}' is not installed on system",
+                            s.display_name
+                        ),
                     ));
                 }
             } else {
@@ -1256,7 +1330,10 @@ impl PipelineRunner {
             }
         }
 
-        let job_id = req.job_id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let job_id = req
+            .job_id
+            .clone()
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let cancel_mgr = get_cancellation_manager();
         let cancel_flag = cancel_mgr.register_job(&job_id);
 
@@ -1280,7 +1357,11 @@ impl PipelineRunner {
                         current_filename: String::new(),
                         stage_id: stage_id.clone(),
                         status: "Cancelled".to_string(),
-                        percent: if total_items > 0 { ((idx as f32) / (total_items as f32)) * 100.0 } else { 0.0 },
+                        percent: if total_items > 0 {
+                            ((idx as f32) / (total_items as f32)) * 100.0
+                        } else {
+                            0.0
+                        },
                         message: Some("Pipeline execution cancelled by user".to_string()),
                     });
                 }
@@ -1298,7 +1379,10 @@ impl PipelineRunner {
                         original_name: String::new(),
                         output_name: String::new(),
                         success: false,
-                        error_message: Some(format!("Staged item {} not found in workspace", stage_id)),
+                        error_message: Some(format!(
+                            "Staged item {} not found in workspace",
+                            stage_id
+                        )),
                         execution_time_ms: start.elapsed().as_millis() as u64,
                     });
                     failure_count += 1;
@@ -1313,7 +1397,10 @@ impl PipelineRunner {
                     original_name: staged.display_name.clone(),
                     output_name: staged.display_name.clone(),
                     success: false,
-                    error_message: Some(format!("Staged file missing on disk: {}", staged.staged_path)),
+                    error_message: Some(format!(
+                        "Staged file missing on disk: {}",
+                        staged.staged_path
+                    )),
                     execution_time_ms: start.elapsed().as_millis() as u64,
                 });
                 failure_count += 1;
@@ -1330,18 +1417,29 @@ impl PipelineRunner {
                     current_filename: staged.display_name.clone(),
                     stage_id: stage_id.clone(),
                     status: "Processing".to_string(),
-                    percent: if total_items > 0 { ((idx as f32) / (total_items as f32)) * 100.0 } else { 0.0 },
+                    percent: if total_items > 0 {
+                        ((idx as f32) / (total_items as f32)) * 100.0
+                    } else {
+                        0.0
+                    },
                     message: None,
                 });
             }
 
             // Run transformation with cancel_flag support
-            match Self::apply_preset_to_file(&preset, &staged_path, &staged.display_name, &req.custom_parameters, Some(&cancel_flag)) {
+            match Self::apply_preset_to_file(
+                &preset,
+                &staged_path,
+                &staged.display_name,
+                &req.custom_parameters,
+                Some(&cancel_flag),
+            ) {
                 Ok(new_name) => {
                     let elapsed = start.elapsed().as_millis() as u64;
                     // Update display name if changed
                     if new_name != staged.display_name {
-                        let _ = workspace_manager.update_staged_path(stage_id, &staged_path, &new_name);
+                        let _ =
+                            workspace_manager.update_staged_path(stage_id, &staged_path, &new_name);
                     }
                     item_results.push(PipelineExecutionItemResultDto {
                         stage_id: stage_id.clone(),
@@ -1362,7 +1460,11 @@ impl PipelineRunner {
                             current_filename: staged.display_name.clone(),
                             stage_id: stage_id.clone(),
                             status: "Completed".to_string(),
-                            percent: if total_items > 0 { (((idx + 1) as f32) / (total_items as f32)) * 100.0 } else { 100.0 },
+                            percent: if total_items > 0 {
+                                (((idx + 1) as f32) / (total_items as f32)) * 100.0
+                            } else {
+                                100.0
+                            },
                             message: None,
                         });
                     }
@@ -1391,7 +1493,11 @@ impl PipelineRunner {
                                 current_filename: staged.display_name.clone(),
                                 stage_id: stage_id.clone(),
                                 status: "Cancelled".to_string(),
-                                percent: if total_items > 0 { (((idx + 1) as f32) / (total_items as f32)) * 100.0 } else { 100.0 },
+                                percent: if total_items > 0 {
+                                    (((idx + 1) as f32) / (total_items as f32)) * 100.0
+                                } else {
+                                    100.0
+                                },
                                 message: Some("Process cancelled by user".to_string()),
                             });
                         }
@@ -1405,7 +1511,11 @@ impl PipelineRunner {
                             current_filename: staged.display_name.clone(),
                             stage_id: stage_id.clone(),
                             status: "Failed".to_string(),
-                            percent: if total_items > 0 { (((idx + 1) as f32) / (total_items as f32)) * 100.0 } else { 100.0 },
+                            percent: if total_items > 0 {
+                                (((idx + 1) as f32) / (total_items as f32)) * 100.0
+                            } else {
+                                100.0
+                            },
                             message: Some(err.message),
                         });
                     }
@@ -1473,10 +1583,7 @@ impl PipelineRunner {
                 .and_then(|e| e.to_str())
                 .unwrap_or("");
 
-            let final_ext = pipeline
-                .output_extension
-                .as_deref()
-                .unwrap_or(orig_ext);
+            let final_ext = pipeline.output_extension.as_deref().unwrap_or(orig_ext);
 
             let suffix = &pipeline.default_suffix;
             let output_name = if !suffix.is_empty() && !stem.ends_with(suffix) {
@@ -1526,11 +1633,20 @@ impl PipelineRunner {
             }
 
             let message = if !executable_found {
-                Some(format!("Executable '{}' not found in system PATH", pipeline.executable))
+                Some(format!(
+                    "Executable '{}' not found in system PATH",
+                    pipeline.executable
+                ))
             } else if conflict {
-                Some(format!("Output file '{}' already exists in staging area", output_name))
+                Some(format!(
+                    "Output file '{}' already exists in staging area",
+                    output_name
+                ))
             } else if !ext_compatible {
-                Some(format!("Extension '.{}' is not in supported extensions list", orig_ext))
+                Some(format!(
+                    "Extension '.{}' is not in supported extensions list",
+                    orig_ext
+                ))
             } else {
                 None
             };
@@ -1585,12 +1701,16 @@ impl PipelineRunner {
         let mut is_cancelled = false;
         let mut item_results = Vec::new();
 
-        let resolved_exec = ToolDetector::find_binary_in_path(&pipeline.executable).ok_or_else(|| {
-            AppErrorDto::new(
-                "ExecutableNotFound",
-                format!("Executable '{}' could not be found in PATH", pipeline.executable),
-            )
-        })?;
+        let resolved_exec =
+            ToolDetector::find_binary_in_path(&pipeline.executable).ok_or_else(|| {
+                AppErrorDto::new(
+                    "ExecutableNotFound",
+                    format!(
+                        "Executable '{}' could not be found in PATH",
+                        pipeline.executable
+                    ),
+                )
+            })?;
 
         for (idx, stage_id) in stage_ids.iter().enumerate() {
             if cancel_flag.load(Ordering::SeqCst) {
@@ -1617,10 +1737,7 @@ impl PipelineRunner {
                 .extension()
                 .and_then(|e| e.to_str())
                 .unwrap_or("");
-            let final_ext = pipeline
-                .output_extension
-                .as_deref()
-                .unwrap_or(orig_ext);
+            let final_ext = pipeline.output_extension.as_deref().unwrap_or(orig_ext);
             let suffix = &pipeline.default_suffix;
 
             let output_name = if !suffix.is_empty() && !stem.ends_with(suffix) {
@@ -1646,7 +1763,11 @@ impl PipelineRunner {
                     current_filename: staged.display_name.clone(),
                     stage_id: stage_id.clone(),
                     status: "Running".to_string(),
-                    percent: if total_items > 0 { ((idx as f32) / (total_items as f32)) * 100.0 } else { 0.0 },
+                    percent: if total_items > 0 {
+                        ((idx as f32) / (total_items as f32)) * 100.0
+                    } else {
+                        0.0
+                    },
                     message: None,
                 });
             }
@@ -1683,7 +1804,11 @@ impl PipelineRunner {
                 Ok(res) if res.success => {
                     success_count += 1;
                     if proposed_output_path.exists() && output_name != staged.display_name {
-                        let _ = workspace_manager.update_staged_path(stage_id, &proposed_output_path, &output_name);
+                        let _ = workspace_manager.update_staged_path(
+                            stage_id,
+                            &proposed_output_path,
+                            &output_name,
+                        );
                     }
                     item_results.push(PipelineExecutionItemResultDto {
                         stage_id: stage_id.clone(),
@@ -1702,7 +1827,11 @@ impl PipelineRunner {
                             current_filename: staged.display_name.clone(),
                             stage_id: stage_id.clone(),
                             status: "Completed".to_string(),
-                            percent: if total_items > 0 { (((idx + 1) as f32) / (total_items as f32)) * 100.0 } else { 100.0 },
+                            percent: if total_items > 0 {
+                                (((idx + 1) as f32) / (total_items as f32)) * 100.0
+                            } else {
+                                100.0
+                            },
                             message: None,
                         });
                     }
@@ -1795,7 +1924,10 @@ impl PipelineRunner {
             "text_tsv_csv_convert" => {
                 let text = std::fs::read_to_string(file_path)
                     .map_err(|e| AppErrorDto::new("IOError", e.to_string()))?;
-                let lowercase = params.get("lowercase_headers").map(|v| v == "true").unwrap_or(true);
+                let lowercase = params
+                    .get("lowercase_headers")
+                    .map(|v| v == "true")
+                    .unwrap_or(true);
                 let (converted, _) = BuiltinPipelineEngine::convert_tsv_csv(&text, lowercase)
                     .map_err(|e| AppErrorDto::new("ConvertTsvCsvFailed", e))?;
                 std::fs::write(file_path, converted)
@@ -1810,7 +1942,8 @@ impl PipelineRunner {
             "text_shift_srt" => {
                 let text = std::fs::read_to_string(file_path)
                     .map_err(|e| AppErrorDto::new("IOError", e.to_string()))?;
-                let offset_ms = params.get("offset_ms")
+                let offset_ms = params
+                    .get("offset_ms")
                     .and_then(|v| v.parse::<i64>().ok())
                     .unwrap_or(1000);
                 let (shifted, _) = BuiltinPipelineEngine::shift_srt_timecodes(&text, offset_ms)
@@ -1876,7 +2009,10 @@ impl PipelineRunner {
             }
             "file_zero_padding" => {
                 // Find trailing numbers before extension
-                let digits: usize = params.get("digits").and_then(|v| v.parse().ok()).unwrap_or(4);
+                let digits: usize = params
+                    .get("digits")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(4);
                 let num_re = Regex::new(r"^(.*?)(\d+)(\.[^.]+)?$").unwrap();
                 if let Some(caps) = num_re.captures(display_name) {
                     let stem = caps.get(1).map_or("", |m| m.as_str());
@@ -1892,7 +2028,8 @@ impl PipelineRunner {
             "dev_checksum_bundle" => {
                 let content = std::fs::read(file_path)
                     .map_err(|e| AppErrorDto::new("IOError", e.to_string()))?;
-                let checksum_line = BuiltinPipelineEngine::generate_checksums_txt(&[(display_name, &content)]);
+                let checksum_line =
+                    BuiltinPipelineEngine::generate_checksums_txt(&[(display_name, &content)]);
                 let checksum_path = parent_dir.join("checksums.txt");
                 std::fs::write(&checksum_path, checksum_line)
                     .map_err(|e| AppErrorDto::new("IOError", e.to_string()))?;
@@ -1901,12 +2038,27 @@ impl PipelineRunner {
 
             // External Tools: ImageMagick Presets
             "image_web_light" => {
-                let max_width = params.get("max_width").unwrap_or(&"1920".to_string()).to_string();
-                let quality = params.get("quality").unwrap_or(&"80".to_string()).to_string();
-                let out_name = format!("{}_web.webp", display_name.rsplit_once('.').map_or(display_name, |(s, _)| s));
+                let max_width = params
+                    .get("max_width")
+                    .unwrap_or(&"1920".to_string())
+                    .to_string();
+                let quality = params
+                    .get("quality")
+                    .unwrap_or(&"80".to_string())
+                    .to_string();
+                let out_name = format!(
+                    "{}_web.webp",
+                    display_name
+                        .rsplit_once('.')
+                        .map_or(display_name, |(s, _)| s)
+                );
                 let out_path = parent_dir.join(&out_name);
 
-                let exe = if ToolDetector::find_binary_in_path("magick").is_some() { "magick" } else { "convert" };
+                let exe = if ToolDetector::find_binary_in_path("magick").is_some() {
+                    "magick"
+                } else {
+                    "convert"
+                };
                 let args = vec![
                     file_path.to_string_lossy().to_string(),
                     "-strip".to_string(),
@@ -1925,7 +2077,12 @@ impl PipelineRunner {
                     working_dir: Some(parent_dir.to_string_lossy().to_string()),
                 };
 
-                let res = SandboxedExecutor::execute_with_cancellation(exe, &args, &options, cancel_flag)?;
+                let res = SandboxedExecutor::execute_with_cancellation(
+                    exe,
+                    &args,
+                    &options,
+                    cancel_flag,
+                )?;
                 if !res.success {
                     if res.error_message.as_deref() == Some("Process cancelled by user") {
                         return Err(AppErrorDto::new("Cancelled", "Process cancelled by user"));
@@ -1935,11 +2092,24 @@ impl PipelineRunner {
                 Ok(out_name)
             }
             "image_pixel_art_scale" => {
-                let scale = params.get("scale_percent").unwrap_or(&"400".to_string()).to_string();
-                let out_name = format!("{}_{}pct.png", display_name.rsplit_once('.').map_or(display_name, |(s, _)| s), scale);
+                let scale = params
+                    .get("scale_percent")
+                    .unwrap_or(&"400".to_string())
+                    .to_string();
+                let out_name = format!(
+                    "{}_{}pct.png",
+                    display_name
+                        .rsplit_once('.')
+                        .map_or(display_name, |(s, _)| s),
+                    scale
+                );
                 let out_path = parent_dir.join(&out_name);
 
-                let exe = if ToolDetector::find_binary_in_path("magick").is_some() { "magick" } else { "convert" };
+                let exe = if ToolDetector::find_binary_in_path("magick").is_some() {
+                    "magick"
+                } else {
+                    "convert"
+                };
                 let args = vec![
                     file_path.to_string_lossy().to_string(),
                     "-interpolate".to_string(),
@@ -1959,7 +2129,12 @@ impl PipelineRunner {
                     working_dir: Some(parent_dir.to_string_lossy().to_string()),
                 };
 
-                let res = SandboxedExecutor::execute_with_cancellation(exe, &args, &options, cancel_flag)?;
+                let res = SandboxedExecutor::execute_with_cancellation(
+                    exe,
+                    &args,
+                    &options,
+                    cancel_flag,
+                )?;
                 if !res.success {
                     if res.error_message.as_deref() == Some("Process cancelled by user") {
                         return Err(AppErrorDto::new("Cancelled", "Process cancelled by user"));
@@ -2074,14 +2249,17 @@ mod tests {
         assert!(!tools.is_empty(), "Should probe known tools list");
         println!("Probed tools count: {}", tools.len());
         for t in &tools {
-            println!("Tool {}: available={}, version={:?}", t.tool_id, t.is_available, t.version);
+            println!(
+                "Tool {}: available={}, version={:?}",
+                t.tool_id, t.is_available, t.version
+            );
         }
     }
 
     #[test]
     fn test_sandboxed_executor_runs_safe_binary() {
-        let echo_bin = ToolDetector::find_binary_in_path("echo")
-            .unwrap_or_else(|| PathBuf::from("/bin/echo"));
+        let echo_bin =
+            ToolDetector::find_binary_in_path("echo").unwrap_or_else(|| PathBuf::from("/bin/echo"));
 
         if echo_bin.exists() {
             let options = CommandExecutionOptionsDto {
@@ -2169,8 +2347,14 @@ mod tests {
             assert!(res.is_ok());
             let result = res.unwrap();
             assert!(!result.success);
-            assert_eq!(result.error_message.as_deref(), Some("Process cancelled by user"));
-            assert!(start.elapsed() < Duration::from_secs(3), "Should cancel quickly without waiting for 10s");
+            assert_eq!(
+                result.error_message.as_deref(),
+                Some("Process cancelled by user")
+            );
+            assert!(
+                start.elapsed() < Duration::from_secs(3),
+                "Should cancel quickly without waiting for 10s"
+            );
         }
     }
 
@@ -2210,7 +2394,10 @@ mod tests {
         let res = BuiltinPipelineEngine::minify_json(formatted);
         assert!(res.is_ok());
         let (minified, _) = res.unwrap();
-        assert_eq!(minified, r#"{"app":"Cuddle","items":["one","two"],"version":1}"#);
+        assert_eq!(
+            minified,
+            r#"{"app":"Cuddle","items":["one","two"],"version":1}"#
+        );
     }
 
     #[test]
@@ -2220,7 +2407,10 @@ mod tests {
         assert!(res.is_ok());
         let (csv, rows) = res.unwrap();
         assert_eq!(rows, 3);
-        assert_eq!(csv, "user_name,user_age,user_country\nAlice,20,Japan\nBob,25,USA\n");
+        assert_eq!(
+            csv,
+            "user_name,user_age,user_country\nAlice,20,Japan\nBob,25,USA\n"
+        );
     }
 
     #[test]
@@ -2251,17 +2441,41 @@ mod tests {
         let presets = PipelineRegistry::get_all_presets();
         assert_eq!(presets.len(), 30, "Must have exactly 30 pipeline presets");
 
-        let image_count = presets.iter().filter(|p| p.category == PipelineCategory::Image).count();
-        let media_count = presets.iter().filter(|p| p.category == PipelineCategory::Media).count();
-        let text_count = presets.iter().filter(|p| p.category == PipelineCategory::Text).count();
-        let doc_count = presets.iter().filter(|p| p.category == PipelineCategory::Document).count();
-        let file_count = presets.iter().filter(|p| p.category == PipelineCategory::File).count();
-        let dev_count = presets.iter().filter(|p| p.category == PipelineCategory::Dev).count();
+        let image_count = presets
+            .iter()
+            .filter(|p| p.category == PipelineCategory::Image)
+            .count();
+        let media_count = presets
+            .iter()
+            .filter(|p| p.category == PipelineCategory::Media)
+            .count();
+        let text_count = presets
+            .iter()
+            .filter(|p| p.category == PipelineCategory::Text)
+            .count();
+        let doc_count = presets
+            .iter()
+            .filter(|p| p.category == PipelineCategory::Document)
+            .count();
+        let file_count = presets
+            .iter()
+            .filter(|p| p.category == PipelineCategory::File)
+            .count();
+        let dev_count = presets
+            .iter()
+            .filter(|p| p.category == PipelineCategory::Dev)
+            .count();
 
         assert_eq!(image_count, 8, "Image category should have 8 presets (1-8)");
-        assert_eq!(media_count, 5, "Media category should have 5 presets (9-13)");
+        assert_eq!(
+            media_count, 5,
+            "Media category should have 5 presets (9-13)"
+        );
         assert_eq!(text_count, 7, "Text category should have 7 presets (14-20)");
-        assert_eq!(doc_count, 4, "Document category should have 4 presets (21-24)");
+        assert_eq!(
+            doc_count, 4,
+            "Document category should have 4 presets (21-24)"
+        );
         assert_eq!(file_count, 3, "File category should have 3 presets (25-27)");
         assert_eq!(dev_count, 3, "Dev category should have 3 presets (28-30)");
     }
@@ -2273,9 +2487,19 @@ mod tests {
 
         // Test text_mask_secrets
         let log_file = temp_dir.join("app.log");
-        std::fs::write(&log_file, "User admin@corp.internal logged in from 10.0.0.1 token=secret-tok-12345678").unwrap();
+        std::fs::write(
+            &log_file,
+            "User admin@corp.internal logged in from 10.0.0.1 token=secret-tok-12345678",
+        )
+        .unwrap();
         let preset = PipelineRegistry::find_preset("text_mask_secrets").unwrap();
-        let res = PipelineRunner::apply_preset_to_file(&preset, &log_file, "app.log", &std::collections::HashMap::new(), None);
+        let res = PipelineRunner::apply_preset_to_file(
+            &preset,
+            &log_file,
+            "app.log",
+            &std::collections::HashMap::new(),
+            None,
+        );
         assert!(res.is_ok());
         let updated_text = std::fs::read_to_string(&log_file).unwrap();
         assert!(!updated_text.contains("admin@corp.internal"));
@@ -2283,7 +2507,13 @@ mod tests {
 
         // Test file_clean_names
         let preset_clean = PipelineRegistry::find_preset("file_clean_names").unwrap();
-        let res_clean = PipelineRunner::apply_preset_to_file(&preset_clean, &log_file, "My%20Sample%20Report%202026.pdf", &std::collections::HashMap::new(), None);
+        let res_clean = PipelineRunner::apply_preset_to_file(
+            &preset_clean,
+            &log_file,
+            "My%20Sample%20Report%202026.pdf",
+            &std::collections::HashMap::new(),
+            None,
+        );
         assert!(res_clean.is_ok());
         assert_eq!(res_clean.unwrap(), "my-sample-report-2026.pdf");
 
@@ -2291,7 +2521,13 @@ mod tests {
         let preset_pad = PipelineRegistry::find_preset("file_zero_padding").unwrap();
         let mut params = std::collections::HashMap::new();
         params.insert("digits".to_string(), "4".to_string());
-        let res_pad = PipelineRunner::apply_preset_to_file(&preset_pad, &log_file, "frame_42.png", &params, None);
+        let res_pad = PipelineRunner::apply_preset_to_file(
+            &preset_pad,
+            &log_file,
+            "frame_42.png",
+            &params,
+            None,
+        );
         assert!(res_pad.is_ok());
         assert_eq!(res_pad.unwrap(), "frame_0042.png");
 

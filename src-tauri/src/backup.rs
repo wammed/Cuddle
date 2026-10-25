@@ -1,13 +1,13 @@
+use crate::workspace::StagedItemDto;
+use flate2::write::GzEncoder;
+use flate2::Compression;
+use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-use flate2::write::GzEncoder;
-use flate2::Compression;
-use serde::{Deserialize, Serialize};
 use tar::{Builder, Header};
 use ts_rs::TS;
-use crate::workspace::StagedItemDto;
 
 /// DTO representing the result of a workspace backup operation
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -46,12 +46,22 @@ pub fn create_workspace_backup(
     };
 
     if let Some(parent) = archive_path_buf.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create backup directory {}: {}", parent.display(), e))?;
+        fs::create_dir_all(parent).map_err(|e| {
+            format!(
+                "Failed to create backup directory {}: {}",
+                parent.display(),
+                e
+            )
+        })?;
     }
 
-    let file = File::create(&archive_path_buf)
-        .map_err(|e| format!("Failed to create backup file {}: {}", archive_path_buf.display(), e))?;
+    let file = File::create(&archive_path_buf).map_err(|e| {
+        format!(
+            "Failed to create backup file {}: {}",
+            archive_path_buf.display(),
+            e
+        )
+    })?;
     let enc = GzEncoder::new(BufWriter::new(file), Compression::default());
     let mut builder = Builder::new(enc);
 
@@ -62,8 +72,13 @@ pub fn create_workspace_backup(
         let staged_path = Path::new(&item.staged_path);
         if staged_path.exists() {
             let entry_name = format!("files/{}", item.display_name);
-            let mut file_to_archive = File::open(staged_path)
-                .map_err(|e| format!("Failed to open staged file {}: {}", staged_path.display(), e))?;
+            let mut file_to_archive = File::open(staged_path).map_err(|e| {
+                format!(
+                    "Failed to open staged file {}: {}",
+                    staged_path.display(),
+                    e
+                )
+            })?;
             builder
                 .append_file(&entry_name, &mut file_to_archive)
                 .map_err(|e| format!("Failed to append {} to tar.gz: {}", entry_name, e))?;
@@ -126,12 +141,12 @@ pub fn create_workspace_backup(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::policy::OriginalSnapshotDto;
+    use crate::workspace::{CloneMethod, StageStatus};
     use flate2::read::GzDecoder;
     use std::io::BufReader;
     use tar::Archive;
     use uuid::Uuid;
-    use crate::policy::OriginalSnapshotDto;
-    use crate::workspace::{CloneMethod, StageStatus};
 
     #[test]
     fn test_create_workspace_backup_and_verify_archive() {

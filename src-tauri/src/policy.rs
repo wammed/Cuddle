@@ -285,7 +285,10 @@ impl OperationPolicy {
     }
 
     /// Creates an original snapshot for tracking mutations and TOCTOU races.
-    pub fn create_snapshot(item: &FileItem, compute_sha: bool) -> Result<OriginalSnapshotDto, PolicyError> {
+    pub fn create_snapshot(
+        item: &FileItem,
+        compute_sha: bool,
+    ) -> Result<OriginalSnapshotDto, PolicyError> {
         let path = item.to_path()?;
         let canonical = canonicalize_path(&path)?;
 
@@ -325,7 +328,9 @@ impl OperationPolicy {
     ) -> Result<(), PolicyError> {
         let path = decode_path_from_base64(&snapshot.raw_base64)?;
         if !path.exists() {
-            return Err(PolicyError::ConflictDetected("Original file was deleted externally".to_string()));
+            return Err(PolicyError::ConflictDetected(
+                "Original file was deleted externally".to_string(),
+            ));
         }
 
         let meta = std::fs::symlink_metadata(&path)?;
@@ -412,7 +417,10 @@ mod tests {
             // Reflection back to original is strictly forbidden
             let reflection_err = OperationPolicy::validate_reflection(etc_file);
             assert!(reflection_err.is_err());
-            assert_eq!(reflection_err.unwrap_err().error_code(), "ERR_FORBIDDEN_ZONE");
+            assert_eq!(
+                reflection_err.unwrap_err().error_code(),
+                "ERR_FORBIDDEN_ZONE"
+            );
 
             let check = OperationPolicy::check_policy(etc_file, true);
             assert!(!check.allowed);
@@ -465,7 +473,10 @@ mod tests {
         // 3. Verification must fail with conflict detected
         let conflict_res = OperationPolicy::verify_conflict(&snapshot, true);
         assert!(conflict_res.is_err());
-        assert_eq!(conflict_res.unwrap_err().error_code(), "ERR_CONFLICT_DETECTED");
+        assert_eq!(
+            conflict_res.unwrap_err().error_code(),
+            "ERR_CONFLICT_DETECTED"
+        );
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

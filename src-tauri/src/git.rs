@@ -105,9 +105,7 @@ pub fn get_git_status(path_base64: String) -> Result<GitStatusDto, AppErrorDto> 
         .output();
 
     let repo_root = match rev_parse_output {
-        Ok(out) if out.status.success() => {
-            String::from_utf8_lossy(&out.stdout).trim().to_string()
-        }
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_string(),
         Ok(_) => {
             // Not a git repository
             return Ok(GitStatusDto::default());
@@ -137,7 +135,8 @@ pub fn get_git_status(path_base64: String) -> Result<GitStatusDto, AppErrorDto> 
             let output_str = String::from_utf8_lossy(&out.stdout);
             parse_porcelain_v2(&output_str, &mut status_dto);
         } else {
-            status_dto.error_message = Some(String::from_utf8_lossy(&out.stderr).trim().to_string());
+            status_dto.error_message =
+                Some(String::from_utf8_lossy(&out.stderr).trim().to_string());
         }
     }
 
@@ -340,8 +339,12 @@ u UU N... 100644 100644 100644 100644 5555 6666 7777 conflict.txt
     #[test]
     fn test_get_git_status_on_current_repo() {
         // Run get_git_status on current crate directory
-        let res = get_git_status(".".to_string()).expect("Should succeed querying current git repo");
-        assert!(res.is_repo, "Current workspace should be recognized as git repo");
+        let res =
+            get_git_status(".".to_string()).expect("Should succeed querying current git repo");
+        assert!(
+            res.is_repo,
+            "Current workspace should be recognized as git repo"
+        );
         assert!(res.branch.is_some(), "Current branch should be detected");
     }
 

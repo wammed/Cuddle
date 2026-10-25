@@ -187,9 +187,10 @@ fn run_walkdir_fallback(
     let all_items = scan_directory(&search_root, &scan_opts).map_err(|e| match e {
         crate::scanner::ScanError::Io(io_err) => SearchError::Io(io_err),
         crate::scanner::ScanError::Model(model_err) => SearchError::Model(model_err),
-        crate::scanner::ScanError::PathNotFound(p) => {
-            SearchError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, p.to_string_lossy()))
-        }
+        crate::scanner::ScanError::PathNotFound(p) => SearchError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            p.to_string_lossy(),
+        )),
     })?;
 
     let pattern_normalized = if options.ignore_case {

@@ -373,8 +373,10 @@ pub fn execute_timestamp_plan(
                     status: "Success".to_string(),
                     can_undo: true,
                     details: Some(format!(
-                        "Mtime changed: {} -> {}",
-                        item.current_mtime_formatted, item.target_mtime_formatted
+                        "Mtime changed: {} -> {} [orig_ms:{}]",
+                        item.current_mtime_formatted,
+                        item.target_mtime_formatted,
+                        item.current_mtime_ms
                     )),
                 });
             }
@@ -429,7 +431,8 @@ mod tests {
 
     #[test]
     fn test_generate_and_execute_timestamp_plan() {
-        let temp_dir = std::env::temp_dir().join(format!("cuddle_test_ts_{}", uuid::Uuid::new_v4()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("cuddle_test_ts_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
         let file_path = temp_dir.join("test_touch.txt");
         File::create(&file_path).unwrap();

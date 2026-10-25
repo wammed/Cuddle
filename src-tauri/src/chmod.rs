@@ -6,10 +6,10 @@
 // - Prohibits privilege escalation (operates strictly within current user permissions)
 // - Supports Dry-run verification and atomic rollback journal for one-click Undo
 
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// Input target item representation for chmod operation
@@ -85,7 +85,11 @@ pub fn mode_to_string(mode: u32, is_dir: bool) -> String {
     s.push(if mode & 0o400 != 0 { 'r' } else { '-' });
     s.push(if mode & 0o200 != 0 { 'w' } else { '-' });
     s.push(if mode & 0o4000 != 0 {
-        if mode & 0o100 != 0 { 's' } else { 'S' }
+        if mode & 0o100 != 0 {
+            's'
+        } else {
+            'S'
+        }
     } else if mode & 0o100 != 0 {
         'x'
     } else {
@@ -96,7 +100,11 @@ pub fn mode_to_string(mode: u32, is_dir: bool) -> String {
     s.push(if mode & 0o040 != 0 { 'r' } else { '-' });
     s.push(if mode & 0o020 != 0 { 'w' } else { '-' });
     s.push(if mode & 0o2000 != 0 {
-        if mode & 0o010 != 0 { 's' } else { 'S' }
+        if mode & 0o010 != 0 {
+            's'
+        } else {
+            'S'
+        }
     } else if mode & 0o010 != 0 {
         'x'
     } else {
@@ -107,7 +115,11 @@ pub fn mode_to_string(mode: u32, is_dir: bool) -> String {
     s.push(if mode & 0o004 != 0 { 'r' } else { '-' });
     s.push(if mode & 0o002 != 0 { 'w' } else { '-' });
     s.push(if mode & 0o1000 != 0 {
-        if mode & 0o001 != 0 { 't' } else { 'T' }
+        if mode & 0o001 != 0 {
+            't'
+        } else {
+            'T'
+        }
     } else if mode & 0o001 != 0 {
         'x'
     } else {
@@ -160,7 +172,8 @@ pub fn parse_symbolic_mode(current_mode: u32, expr: &str) -> Result<u32, String>
         }
 
         // Find operator position (+, -, =)
-        let op_pos = c.find(|ch| ch == '+' || ch == '-' || ch == '=')
+        let op_pos = c
+            .find(|ch| ch == '+' || ch == '-' || ch == '=')
             .ok_or_else(|| format!("Missing operator (+, -, =) in symbolic clause: '{}'", c))?;
 
         let who_str = &c[..op_pos];
@@ -171,11 +184,18 @@ pub fn parse_symbolic_mode(current_mode: u32, expr: &str) -> Result<u32, String>
         let (apply_u, apply_g, apply_o) = if who_str.is_empty() || who_str.contains('a') {
             (true, true, true)
         } else {
-            (who_str.contains('u'), who_str.contains('g'), who_str.contains('o'))
+            (
+                who_str.contains('u'),
+                who_str.contains('g'),
+                who_str.contains('o'),
+            )
         };
 
         if !apply_u && !apply_g && !apply_o {
-            return Err(format!("Invalid target in clause '{}'. Use u, g, o, or a.", c));
+            return Err(format!(
+                "Invalid target in clause '{}'. Use u, g, o, or a.",
+                c
+            ));
         }
 
         // Parse permission bits
@@ -186,30 +206,57 @@ pub fn parse_symbolic_mode(current_mode: u32, expr: &str) -> Result<u32, String>
         for ch in perm_str.chars() {
             match ch {
                 'r' => {
-                    if apply_u { bits_u |= 0o400; }
-                    if apply_g { bits_g |= 0o040; }
-                    if apply_o { bits_o |= 0o004; }
+                    if apply_u {
+                        bits_u |= 0o400;
+                    }
+                    if apply_g {
+                        bits_g |= 0o040;
+                    }
+                    if apply_o {
+                        bits_o |= 0o004;
+                    }
                 }
                 'w' => {
-                    if apply_u { bits_u |= 0o200; }
-                    if apply_g { bits_g |= 0o020; }
-                    if apply_o { bits_o |= 0o002; }
+                    if apply_u {
+                        bits_u |= 0o200;
+                    }
+                    if apply_g {
+                        bits_g |= 0o020;
+                    }
+                    if apply_o {
+                        bits_o |= 0o002;
+                    }
                 }
                 'x' => {
-                    if apply_u { bits_u |= 0o100; }
-                    if apply_g { bits_g |= 0o010; }
-                    if apply_o { bits_o |= 0o001; }
+                    if apply_u {
+                        bits_u |= 0o100;
+                    }
+                    if apply_g {
+                        bits_g |= 0o010;
+                    }
+                    if apply_o {
+                        bits_o |= 0o001;
+                    }
                 }
                 's' => {
                     // setuid / setgid
-                    if apply_u { bits_u |= 0o4000; }
-                    if apply_g { bits_g |= 0o2000; }
+                    if apply_u {
+                        bits_u |= 0o4000;
+                    }
+                    if apply_g {
+                        bits_g |= 0o2000;
+                    }
                 }
                 't' => {
                     // sticky bit
                     bits_o |= 0o1000;
                 }
-                _ => return Err(format!("Unknown permission character '{}' in clause '{}'", ch, c)),
+                _ => {
+                    return Err(format!(
+                        "Unknown permission character '{}' in clause '{}'",
+                        ch, c
+                    ))
+                }
             }
         }
 
@@ -224,9 +271,15 @@ pub fn parse_symbolic_mode(current_mode: u32, expr: &str) -> Result<u32, String>
             }
             '=' => {
                 // Clear existing permissions for selected who, then set new bits
-                if apply_u { mode &= !(0o700 | 0o4000); }
-                if apply_g { mode &= !(0o070 | 0o2000); }
-                if apply_o { mode &= !(0o007 | 0o1000); }
+                if apply_u {
+                    mode &= !(0o700 | 0o4000);
+                }
+                if apply_g {
+                    mode &= !(0o070 | 0o2000);
+                }
+                if apply_o {
+                    mode &= !(0o007 | 0o1000);
+                }
                 mode |= mask_target;
             }
             _ => unreachable!(),
@@ -269,8 +322,13 @@ pub fn generate_chmod_plan(
             return Err(format!("File does not exist: {}", path.to_string_lossy()));
         }
 
-        let meta = fs::symlink_metadata(&path)
-            .map_err(|e| format!("Failed to read metadata for {}: {}", path.to_string_lossy(), e))?;
+        let meta = fs::symlink_metadata(&path).map_err(|e| {
+            format!(
+                "Failed to read metadata for {}: {}",
+                path.to_string_lossy(),
+                e
+            )
+        })?;
 
         let is_dir = meta.is_dir();
         let current_mode = meta.permissions().mode() & 0o7777;
@@ -296,12 +354,24 @@ pub fn generate_chmod_plan(
         let mut warning = None;
         if item_has_special {
             let mut bits_desc = Vec::new();
-            if target_mode & 0o4000 != 0 { bits_desc.push("setuid"); }
-            if target_mode & 0o2000 != 0 { bits_desc.push("setgid"); }
-            if target_mode & 0o1000 != 0 { bits_desc.push("sticky"); }
-            warning = Some(format!("Special permission bits enabled ({}) - ensure this is intentional", bits_desc.join(", ")));
+            if target_mode & 0o4000 != 0 {
+                bits_desc.push("setuid");
+            }
+            if target_mode & 0o2000 != 0 {
+                bits_desc.push("setgid");
+            }
+            if target_mode & 0o1000 != 0 {
+                bits_desc.push("sticky");
+            }
+            warning = Some(format!(
+                "Special permission bits enabled ({}) - ensure this is intentional",
+                bits_desc.join(", ")
+            ));
         } else if is_dir && (target_mode & 0o111 == 0) {
-            warning = Some("Directory has no execute (search) bit set, which will make it inaccessible".to_string());
+            warning = Some(
+                "Directory has no execute (search) bit set, which will make it inaccessible"
+                    .to_string(),
+            );
             has_warnings = true;
         } else if target_mode & 0o400 == 0 {
             warning = Some("Owner read permission removed".to_string());
@@ -379,7 +449,10 @@ pub fn execute_chmod_plan(plan: ChmodPlanDto) -> Result<ChmodExecutionResultDto,
                 succeeded_count: 0,
                 failed_count: plan.changed_count,
                 is_rolled_back: true,
-                error_message: Some(format!("Failed to chmod '{}' to {:04o}: {}", item.display_name, item.target_mode, e)),
+                error_message: Some(format!(
+                    "Failed to chmod '{}' to {:04o}: {}",
+                    item.display_name, item.target_mode, e
+                )),
             });
         }
 
@@ -401,8 +474,12 @@ pub fn execute_chmod_plan(plan: ChmodPlanDto) -> Result<ChmodExecutionResultDto,
             status: "Success".to_string(),
             can_undo: true,
             details: Some(format!(
-                "Mode changed: {} ({}) -> {} ({})",
-                item.current_octal, item.current_mode_str, item.target_octal, item.target_mode_str
+                "Mode changed: {} ({}) -> {} ({}) [orig_octal:{}]",
+                item.current_octal,
+                item.current_mode_str,
+                item.target_octal,
+                item.target_mode_str,
+                item.current_octal
             )),
         });
     }
@@ -475,7 +552,8 @@ mod tests {
 
     #[test]
     fn test_generate_chmod_plan_and_execution() {
-        let temp_dir = std::env::temp_dir().join(format!("cuddle_test_chmod_{}", uuid::Uuid::new_v4()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("cuddle_test_chmod_{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&temp_dir).unwrap();
         let file_path = temp_dir.join("test_file.txt");
         fs::write(&file_path, "chmod test").unwrap();
@@ -488,7 +566,8 @@ mod tests {
         };
 
         // 1. Dry run with 755
-        let plan = generate_chmod_plan(vec![target], ChmodModeSpec::Octal("755".to_string())).unwrap();
+        let plan =
+            generate_chmod_plan(vec![target], ChmodModeSpec::Octal("755".to_string())).unwrap();
         assert_eq!(plan.total_count, 1);
         assert_eq!(plan.changed_count, 1);
         assert_eq!(plan.items[0].current_mode, 0o644);

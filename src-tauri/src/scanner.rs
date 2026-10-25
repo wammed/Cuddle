@@ -88,7 +88,10 @@ pub fn scan_directory<P: AsRef<Path>>(
         let meta = match std::fs::symlink_metadata(path) {
             Ok(m) => m,
             Err(e) => {
-                eprintln!("[Cuddle Scanner] Failed to get metadata for {:?}: {}", path, e);
+                eprintln!(
+                    "[Cuddle Scanner] Failed to get metadata for {:?}: {}",
+                    path, e
+                );
                 continue;
             }
         };
@@ -105,7 +108,10 @@ pub fn scan_directory<P: AsRef<Path>>(
         match FileItem::from_path_and_metadata(path, &meta) {
             Ok(item) => items.push(item),
             Err(e) => {
-                eprintln!("[Cuddle Scanner] Failed to construct FileItem for {:?}: {}", path, e);
+                eprintln!(
+                    "[Cuddle Scanner] Failed to construct FileItem for {:?}: {}",
+                    path, e
+                );
             }
         }
     }

@@ -22,6 +22,7 @@ import {
   MinusCircle,
   Trash2,
   Wrench,
+  Loader2,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
@@ -33,6 +34,7 @@ import type { FileDiffResultDto } from "../types/FileDiffResultDto";
 import type { OperationHistoryDto } from "../types/OperationHistoryDto";
 import type { ExternalToolStatusDto } from "../types/ExternalToolStatusDto";
 import type { GitStatusDto } from "../types/GitStatusDto";
+import type { ReflectionMode } from "../types/ReflectionMode";
 import { RichPreview } from "./RichPreview";
 
 export type BottomTabId = "preview" | "diff" | "history" | "git" | "security" | "logs";
@@ -47,7 +49,8 @@ interface BottomTabPanelProps {
   onClearHistory?: () => void;
   stagedItems?: StagedItemDto[];
   onResetStagedItem?: (stageId: string) => void;
-  onReflectStagedItem?: (stageId: string) => Promise<void> | void;
+  onReflectStagedItem?: (stageId: string, mode?: ReflectionMode) => Promise<void> | void;
+  onUndoHistoryItem?: (operationId: string) => Promise<void> | void;
   onClose: () => void;
   currentPath?: string;
   activeTab?: BottomTabId;
@@ -66,6 +69,7 @@ export function BottomTabPanel({
   stagedItems = [],
   onResetStagedItem,
   onReflectStagedItem,
+  onUndoHistoryItem,
   onClose,
   currentPath,
   activeTab: controlledActiveTab,
@@ -88,6 +92,9 @@ export function BottomTabPanel({
   const [showReflectModal, setShowReflectModal] = useState(false);
   const [isReflecting, setIsReflecting] = useState(false);
   const [reflectError, setReflectError] = useState<string | null>(null);
+  const [reflectionMode, setReflectionMode] = useState<ReflectionMode>("BackupOrigin");
+  const [backupPreviewPath, setBackupPreviewPath] = useState<string | null>(null);
+  const [isUndoingId, setIsUndoingId] = useState<string | null>(null);
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
   const [externalTools, setExternalTools] = useState<ExternalToolStatusDto[]>([]);
   const [isToolsLoading, setIsToolsLoading] = useState(false);
@@ -95,6 +102,7 @@ export function BottomTabPanel({
   // Git Status State
   const [gitStatus, setGitStatus] = useState<GitStatusDto | null>(null);
   const [isGitLoading, setIsGitLoading] = useState(false);
+
 
   const loadTools = useCallback(async () => {
     try {
@@ -157,6 +165,17 @@ export function BottomTabPanel({
     return stagedItems.length > 0 ? stagedItems[stagedItems.length - 1] : null;
   }, [selectedItem, stagedItems, selectedStageId]);
 
+  // Load preview backup path whenever reflection modal opens (Design 5.2 Mode B)
+  useEffect(() => {
+    if (showReflectModal && matchedStaged) {
+      invoke<string>("get_origin_backup_preview", {
+        path: matchedStaged.original_snapshot.canonical_path,
+      })
+        .then((preview) => setBackupPreviewPath(preview))
+        .catch((err) => console.error("Failed to load origin backup preview:", err));
+    }
+  }, [showReflectModal, matchedStaged]);
+
   const loadDiff = useCallback(async (stageId: string) => {
     try {
       setIsDiffLoading(true);
@@ -199,9 +218,12 @@ export function BottomTabPanel({
       setIsReflecting(true);
       setReflectError(null);
       if (onReflectStagedItem) {
-        await onReflectStagedItem(matchedStaged.stage_id);
+        await onReflectStagedItem(matchedStaged.stage_id, reflectionMode);
       } else {
-        await invoke("reflect_staged_file", { stageId: matchedStaged.stage_id });
+        await invoke("reflect_staged_file", {
+          stageId: matchedStaged.stage_id,
+          mode: reflectionMode,
+        });
       }
       setShowReflectModal(false);
       await loadDiff(matchedStaged.stage_id);
@@ -214,11 +236,42 @@ export function BottomTabPanel({
     }
   };
 
+  const handleUndoOperation = async (item: OperationHistoryDto) => {
+    if (!item.can_undo) return;
+    const confirmed = window.confirm(
+      t("history.undo_confirm", { name: item.display_name })
+    );
+    if (!confirmed) return;
+
+    try {
+      setIsUndoingId(item.operation_id);
+      if (onUndoHistoryItem) {
+        await onUndoHistoryItem(item.operation_id);
+      } else {
+        await invoke("undo_history_operation", { operationId: item.operation_id });
+      }
+    } catch (err) {
+      console.error("Selective undo failed:", err);
+      const errStr = typeof err === "string" ? err : String(err);
+      alert(`${t("history.undo_failed")}: ${errStr}`);
+    } finally {
+      setIsUndoingId(null);
+    }
+  };
+
   const getOpBadgeClass = (opType: string) => {
     switch (opType) {
       case "BulkRename":
         return "badge-op badge-rename";
       case "UndoBulkRename":
+        return "badge-op badge-undo";
+      case "chmod":
+        return "badge-op badge-chmod";
+      case "UndoChmod":
+        return "badge-op badge-undo";
+      case "touch_mtime":
+        return "badge-op badge-time";
+      case "UndoTouchMtime":
         return "badge-op badge-undo";
       case "Reflect":
         return "badge-op badge-reflect";
@@ -241,6 +294,14 @@ export function BottomTabPanel({
         return t("history.type_bulk_rename");
       case "UndoBulkRename":
         return t("history.type_undo_rename");
+      case "chmod":
+        return t("history.type_chmod");
+      case "UndoChmod":
+        return t("history.type_undo_chmod");
+      case "touch_mtime":
+        return t("history.type_touch_mtime");
+      case "UndoTouchMtime":
+        return t("history.type_undo_touch_mtime");
       case "Reflect":
         return t("history.type_reflect");
       case "Stage":
@@ -338,6 +399,44 @@ export function BottomTabPanel({
                     </span>
                   </div>
                 )}
+                {reflectionMode === "BackupOrigin" && backupPreviewPath && (
+                  <div className="dialog-meta-row backup-preview-row">
+                    <span className="dialog-label text-teal-400">{t("reflection.backup_preview_label")}:</span>
+                    <span className="dialog-value font-mono text-teal-300 font-bold">{backupPreviewPath}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Reflection Mode Selection (Design 5.2) */}
+              <div className="dialog-mode-selection">
+                <label className="dialog-mode-group-label">{t("reflection.mode_label")}</label>
+                <div className="dialog-mode-cards">
+                  <div
+                    className={`dialog-mode-card ${reflectionMode === "BackupOrigin" ? "selected" : ""}`}
+                    onClick={() => setReflectionMode("BackupOrigin")}
+                  >
+                    <div className="mode-card-radio">
+                      <span className={`custom-radio ${reflectionMode === "BackupOrigin" ? "checked" : ""}`} />
+                    </div>
+                    <div className="mode-card-content">
+                      <span className="mode-card-title">{t("reflection.mode_backup_origin")}</span>
+                      <p className="mode-card-desc">{t("reflection.mode_backup_desc")}</p>
+                    </div>
+                  </div>
+
+                  <div
+                    className={`dialog-mode-card ${reflectionMode === "Overwrite" ? "selected" : ""}`}
+                    onClick={() => setReflectionMode("Overwrite")}
+                  >
+                    <div className="mode-card-radio">
+                      <span className={`custom-radio ${reflectionMode === "Overwrite" ? "checked" : ""}`} />
+                    </div>
+                    <div className="mode-card-content">
+                      <span className="mode-card-title">{t("reflection.mode_overwrite")}</span>
+                      <p className="mode-card-desc">{t("reflection.mode_overwrite_desc")}</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -661,6 +760,7 @@ export function BottomTabPanel({
                         <th className="th-target">{t("history.col_target")}</th>
                         <th className="th-status">{t("history.col_status")}</th>
                         <th className="th-details">{t("history.col_details")}</th>
+                        <th className="th-actions">{t("history.col_actions")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -687,6 +787,24 @@ export function BottomTabPanel({
                             <td className="history-col-status">{getStatusBadge(item.status)}</td>
                             <td className="history-col-details font-mono text-muted">
                               {item.details || "-"}
+                            </td>
+                            <td className="history-col-actions">
+                              {item.can_undo && (
+                                <button
+                                  type="button"
+                                  className="history-undo-btn"
+                                  onClick={() => handleUndoOperation(item)}
+                                  disabled={isUndoingId === item.operation_id}
+                                  title={t("history.undo_btn")}
+                                >
+                                  {isUndoingId === item.operation_id ? (
+                                    <Loader2 size={12} className="animate-spin" />
+                                  ) : (
+                                    <RotateCcw size={12} />
+                                  )}
+                                  <span>{t("history.undo_btn")}</span>
+                                </button>
+                              )}
                             </td>
                           </tr>
                         );

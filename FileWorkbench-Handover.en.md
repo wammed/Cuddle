@@ -544,16 +544,36 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
 * **Verification & Testing:**
   * 65 Vitest unit tests passing (100%, added `TimestampModal.test.tsx` and `TarExportModal.test.tsx`), 167 Cargo unit tests passing (100%), TypeScript and Vite production builds passing cleanly.
 
-### 9.5 Implementation Details (Phase 9.4: Source Release Packaging & CI Validation): Completed
-* **License Selection & LICENSE Creation:**
-  * Approved via the user decision gate to adopt the universally recognized and flexible **MIT License** (`LICENSE` file created).
-* **Bilingual README Documentation (`README.md`, `README.ja.md`):**
-  * Fully synchronized English and Japanese overviews, official hero banner (`images/Cuddle-Banner.jpeg`), 8 core principles, complete features matrix, quick start guide, and links to all specifications.
-* **Build & Development Environment Guide (`BUILD.md`, `BUILD.ja.md`):**
-  * Target Linux distributions (CachyOS, Arch, Ubuntu, Fedora, Debian), kernel Landlock LSM requirements, Tauri 2 system library dependencies, optional CLI utilities for rich pipelines, dev start commands, full test execution, native release packaging, and FAQ / troubleshooting.
-* **GitHub Actions CI Automation Workflow (`.github/workflows/ci.yml`):**
-  * Triggered on Push and Pull Request to `main`, setting up Rust stable, Tauri 2 Linux system packages, Node.js 20, and pnpm on an Ubuntu runner.
-  * Automated pipeline executing `cargo test` (167 tests), `pnpm test` (65 tests), and `pnpm run build` (TypeScript check and Vite bundle).
+### 9.6 Implementation Details (Phase 9.5: Original Reflection Modes & Selective Undo): Completed
+* **Original Reflection Modes (Design 5.2 Independent Explicit Operations):**
+  * **2 Reflection Modes (`workspace::ReflectionMode`):**
+    * **Mode A (`Overwrite`):** Creates a staging temp file (`.cuddle_reflect_<uuid>.tmp`) in the original file's parent directory, verifies copy integrity, and performs atomic replacement using POSIX `fs::rename(2)`.
+    * **Mode B (`BackupOrigin` / Recommended):** Safely renames the original file to a timestamped `.origin` file (e.g. `report_YYYYMMDD_HHMMSS.origin.pdf`, with collision-resistant sequence suffixes) before placing the deliverable. Automatically rolls back from the backup if deliverable placement fails, physically preventing original data loss.
+  * **Real-time Backup Path Preview:**
+    * Backend IPC `get_origin_backup_preview` computes and returns the planned backup path on the fly.
+  * **Modal UI Integration (`BottomTabPanel.tsx`, `App.css`):**
+    * Radio card selection UI for Mode A vs Mode B styled in Midnight Cyber Dark aesthetic.
+    * When Mode B is selected, displays the planned backup path preview in vibrant neon teal.
+    * Returns `ReflectExecutionResultDto` (updated `StagedItemDto`, `backup_path`, and executed `mode`), updating toast notifications and activity logs.
+* **Selective Undo (Design 6.2):**
+  * **Tight SQLite WAL Operation History Integration (`history.rs`, `batch.rs`, `lib.rs`):**
+    * Implemented integrated IPC command `undo_history_operation(operation_id)` to pinpoint and revert specific operations with `can_undo == true`.
+    * **Dispatched Inversion for 3 Core Operations:**
+      1. **Bulk Rename (`BulkRename`):** `batch::get_journal_manager().undo_batch_by_id(&operation_id)` inverts and renames the specific batch back to original display names and disk paths.
+      2. **Permissions (`chmod`):** Parses recorded prior octal mode from `details` and restores exact permissions using `fs::set_permissions`.
+      3. **Timestamps (`touch_mtime`):** Parses recorded prior epoch millisecond timestamp (`[orig_ms:...]`) from `details` and restores mtime with high precision using `filetime::set_file_mtime`.
+    * Updates SQLite WAL record to `status = 'Undone'`, `can_undo = false`, and inserts an audit undo entry (`UndoBulkRename`, `UndoChmod`, `UndoTouchMtime`).
+  * **UI Integration ("Operation History" Tab):**
+    * Added action column (`.th-actions`) to the history table.
+    * Displays "Revert (UNDO)" (`RotateCcw` icon in teal) on rows where `can_undo == true`.
+    * Includes confirmation dialog with target filename and async execution with loading spinner.
+    * Automatically refreshes file browser and history records upon completion.
+* **Bilingual Synchronization (`ja/translation.json`, `en/translation.json`):**
+  * Full parity across Japanese and English locales for all `reflection.mode_*`, `reflection.backup_preview_label`, `history.col_actions`, `history.undo_*`, and `history.type_undo_*` keys.
+* **Verification & Testing:**
+  * 67 Vitest unit tests passing (100%, added reflection Mode A/B switching and selective undo tests).
+  * 174 Cargo unit tests passing (100%, added `test_workspace_manager_reflect_mode_b_backup_origin`, `test_selective_undo_by_batch_id`, `test_undo_history_chmod_and_touch`).
+  * TypeScript type check and Vite production bundle passing cleanly.
 
 ---
 

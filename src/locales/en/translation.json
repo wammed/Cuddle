@@ -94,7 +94,13 @@
     "reflect_success": "Reflection to original completed safely",
     "reflect_failed": "Reflection to original failed (Protection Guard Active)",
     "conflict_detected_detail": "The original file was modified externally after staging. To prevent data corruption, reflection was blocked. You can use 'Reset to Original' to reload the pristine original file.",
-    "status_reflected": "Reflected to Original"
+    "status_reflected": "Reflected to Original",
+    "mode_label": "Reflection Mode (Design 5.2)",
+    "mode_overwrite": "Mode A: Overwrite Original Directly (Atomic Overwrite)",
+    "mode_overwrite_desc": "Overwrites the original file in place using temp file swap and atomic rename(2) within the same directory.",
+    "mode_backup_origin": "Mode B: Backup Original as .origin (Recommended)",
+    "mode_backup_desc": "Safely renames original to a timestamped .origin file before placing the deliverable in its original path.",
+    "backup_preview_label": "Planned Backup File (Target)"
   },
   "policy": {
     "title": "Operation Safety Policy (OperationPolicy)",
@@ -285,7 +291,16 @@
     "status_undone": "Undone",
     "status_failed": "Failed",
     "empty": "No operation history recorded",
-    "record_count": "{{count}} records (capped at 50)"
+    "record_count": "{{count}} records (capped at 50)",
+    "col_actions": "Action",
+    "undo_btn": "Revert (UNDO)",
+    "undo_confirm": "Revert this operation and restore prior state?\nTarget: {{name}}",
+    "undo_success": "Operation undone successfully: {{message}}",
+    "undo_failed": "Failed to undo operation",
+    "type_chmod": "Change Mode (chmod)",
+    "type_undo_chmod": "Undo Mode",
+    "type_touch_mtime": "Timestamp Change",
+    "type_undo_touch_mtime": "Undo Timestamp"
   },
   "backup": {
     "dialog_title": "Session Exit Backup & Safety Check",

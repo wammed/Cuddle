@@ -17,7 +17,27 @@ pub mod search_fulltext;
 pub mod timestamp;
 pub mod workspace;
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/types/")]
+pub struct ReflectExecutionResultDto {
+    pub staged_item: workspace::StagedItemDto,
+    pub backup_path: Option<String>,
+    pub mode: workspace::ReflectionMode,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/types/")]
+pub struct UndoHistoryResultDto {
+    pub operation_id: String,
+    pub operation_type: String,
+    pub success: bool,
+    pub message: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LandlockStatusInfo {
     pub supported: bool,
     pub abi_version: Option<String>,
@@ -55,7 +75,9 @@ fn get_demo_items() -> Vec<models::FileItem> {
         item_id: "00000000-0000-0000-0000-000000000001".to_string(),
         raw_base64: models::encode_path_to_base64(&normal_path),
         display_name: "sample_project.md".to_string(),
-        parent_raw_base64: Some(models::encode_path_to_base64(PathBuf::from("/home/susie/documents"))),
+        parent_raw_base64: Some(models::encode_path_to_base64(PathBuf::from(
+            "/home/susie/documents",
+        ))),
         is_dir: false,
         is_symlink: false,
         size: 2048,
@@ -72,8 +94,14 @@ fn get_demo_items() -> Vec<models::FileItem> {
     let non_utf8_item = models::FileItem {
         item_id: "00000000-0000-0000-0000-000000000002".to_string(),
         raw_base64: models::encode_path_to_base64(&invalid_path),
-        display_name: invalid_path.file_name().unwrap().to_string_lossy().to_string(),
-        parent_raw_base64: Some(models::encode_path_to_base64(PathBuf::from("/home/susie/legacy_data"))),
+        display_name: invalid_path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string(),
+        parent_raw_base64: Some(models::encode_path_to_base64(PathBuf::from(
+            "/home/susie/legacy_data",
+        ))),
         is_dir: false,
         is_symlink: false,
         size: 1048576,
@@ -243,18 +271,182 @@ fn reset_staged_file(stage_id: String) -> Result<workspace::StagedItemDto, Strin
 }
 
 #[tauri::command]
-fn reflect_staged_file(stage_id: String) -> Result<workspace::StagedItemDto, String> {
+fn reflect_staged_file(
+    stage_id: String,
+    mode: Option<workspace::ReflectionMode>,
+) -> Result<ReflectExecutionResultDto, String> {
     let mgr = workspace::get_workspace_manager();
-    mgr.reflect_staged_file(&stage_id).map_err(|e| e.to_string())
+    let target_mode = mode.unwrap_or(workspace::ReflectionMode::Overwrite);
+    let (staged_item, backup_path) = mgr
+        .reflect_staged_file_with_mode(&stage_id, target_mode)
+        .map_err(|e| e.to_string())?;
+
+    Ok(ReflectExecutionResultDto {
+        staged_item,
+        backup_path: backup_path.map(|p| p.to_string_lossy().to_string()),
+        mode: target_mode,
+    })
 }
 
 #[tauri::command]
-fn generate_bulk_rename_plan(options: batch::BulkRenameOptions) -> Result<batch::BatchPlanDto, String> {
+fn get_origin_backup_preview(path: String) -> Result<String, String> {
+    let p = std::path::Path::new(&path);
+    let preview = workspace::generate_origin_backup_path(p);
+    Ok(preview.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn undo_history_operation(operation_id: String) -> Result<UndoHistoryResultDto, String> {
+    let hist_mgr = history::get_history_manager();
+    let op = hist_mgr
+        .get_operation(&operation_id)?
+        .ok_or_else(|| format!("Operation not found: {}", operation_id))?;
+
+    if !op.can_undo {
+        return Err("This operation cannot be undone or has already been undone.".to_string());
+    }
+
+    match op.operation_type.as_str() {
+        "BulkRename" => {
+            let res = batch::undo_batch_by_id(&operation_id)?;
+            Ok(UndoHistoryResultDto {
+                operation_id: operation_id.clone(),
+                operation_type: op.operation_type,
+                success: true,
+                message: format!(
+                    "Successfully undid bulk rename ({} files restored)",
+                    res.succeeded_count
+                ),
+            })
+        }
+        "chmod" => {
+            let path_str = op
+                .original_path
+                .as_deref()
+                .ok_or_else(|| "Missing target path in chmod history".to_string())?;
+            let path = std::path::Path::new(path_str);
+            if !path.exists() {
+                return Err(format!(
+                    "Cannot undo chmod: file no longer exists at {}",
+                    path_str
+                ));
+            }
+
+            let details = op.details.as_deref().unwrap_or("");
+            let octal_str = if let Some(pos) = details.find("[orig_octal:") {
+                let rest = &details[pos + 12..];
+                rest.trim_end_matches(']').trim()
+            } else if let Some(caps) = details.strip_prefix("Mode changed: ") {
+                caps.split_whitespace().next().unwrap_or("")
+            } else {
+                ""
+            };
+
+            let mode = chmod::parse_octal_mode(octal_str)
+                .map_err(|e| format!("Failed to parse original mode '{}': {}", octal_str, e))?;
+
+            use std::os::unix::fs::PermissionsExt;
+            let permissions = std::fs::Permissions::from_mode(mode);
+            std::fs::set_permissions(path, permissions)
+                .map_err(|e| format!("Failed to restore permissions to {:04o}: {}", mode, e))?;
+
+            let _ = hist_mgr.mark_as_undone(&operation_id);
+            let undo_id = format!("undo_{}", operation_id);
+            let _ = hist_mgr.record_operation(&history::NewHistoryEntry {
+                operation_id: undo_id,
+                operation_type: "UndoChmod".to_string(),
+                display_name: op.display_name.clone(),
+                original_path: Some(path_str.to_string()),
+                staged_path: Some(path_str.to_string()),
+                inode: None,
+                status: "Success".to_string(),
+                can_undo: false,
+                details: Some(format!(
+                    "Restored permissions to {:04o} on {}",
+                    mode, path_str
+                )),
+            });
+
+            Ok(UndoHistoryResultDto {
+                operation_id,
+                operation_type: op.operation_type,
+                success: true,
+                message: format!(
+                    "Restored permissions of '{}' to {:04o}",
+                    op.display_name, mode
+                ),
+            })
+        }
+        "touch_mtime" => {
+            let path_str = op
+                .original_path
+                .as_deref()
+                .ok_or_else(|| "Missing target path in timestamp history".to_string())?;
+            let path = std::path::Path::new(path_str);
+            if !path.exists() {
+                return Err(format!(
+                    "Cannot undo timestamp: file no longer exists at {}",
+                    path_str
+                ));
+            }
+
+            let details = op.details.as_deref().unwrap_or("");
+            let mtime_ms: i64 = if let Some(pos) = details.find("[orig_ms:") {
+                let rest = &details[pos + 9..];
+                let ms_str = rest.trim_end_matches(']').trim();
+                ms_str
+                    .parse::<i64>()
+                    .map_err(|e| format!("Failed to parse mtime ms: {}", e))?
+            } else {
+                return Err("Missing original timestamp data in operation details".to_string());
+            };
+
+            let file_time = filetime::FileTime::from_unix_time(
+                mtime_ms / 1000,
+                ((mtime_ms % 1000) * 1_000_000) as u32,
+            );
+            filetime::set_file_mtime(path, file_time)
+                .map_err(|e| format!("Failed to restore mtime on {}: {}", path_str, e))?;
+
+            let _ = hist_mgr.mark_as_undone(&operation_id);
+            let undo_id = format!("undo_{}", operation_id);
+            let _ = hist_mgr.record_operation(&history::NewHistoryEntry {
+                operation_id: undo_id,
+                operation_type: "UndoTouchMtime".to_string(),
+                display_name: op.display_name.clone(),
+                original_path: Some(path_str.to_string()),
+                staged_path: Some(path_str.to_string()),
+                inode: None,
+                status: "Success".to_string(),
+                can_undo: false,
+                details: Some(format!("Restored mtime to ms:{} on {}", mtime_ms, path_str)),
+            });
+
+            Ok(UndoHistoryResultDto {
+                operation_id,
+                operation_type: op.operation_type,
+                success: true,
+                message: format!("Restored modification timestamp of '{}'", op.display_name),
+            })
+        }
+        other => Err(format!(
+            "Operation type '{}' does not support selective undo",
+            other
+        )),
+    }
+}
+
+#[tauri::command]
+fn generate_bulk_rename_plan(
+    options: batch::BulkRenameOptions,
+) -> Result<batch::BatchPlanDto, String> {
     batch::generate_plan_from_options(options)
 }
 
 #[tauri::command]
-fn execute_bulk_rename(plan: batch::BatchPlanDto) -> Result<batch::BatchExecutionResultDto, String> {
+fn execute_bulk_rename(
+    plan: batch::BatchPlanDto,
+) -> Result<batch::BatchExecutionResultDto, String> {
     batch::execute_batch_rename(plan)
 }
 
@@ -330,7 +522,9 @@ fn export_workspace_tar(
 }
 
 #[tauri::command]
-fn get_operation_history(limit: Option<usize>) -> Result<Vec<history::OperationHistoryDto>, String> {
+fn get_operation_history(
+    limit: Option<usize>,
+) -> Result<Vec<history::OperationHistoryDto>, String> {
     let mgr = history::get_history_manager();
     mgr.list_history(limit.unwrap_or(50))
 }
@@ -347,7 +541,9 @@ fn get_default_backup_path() -> Result<String, String> {
 }
 
 #[tauri::command]
-fn create_workspace_backup(destination_path: Option<String>) -> Result<backup::BackupResultDto, String> {
+fn create_workspace_backup(
+    destination_path: Option<String>,
+) -> Result<backup::BackupResultDto, String> {
     let mgr = workspace::get_workspace_manager();
     let staged = mgr.list_staged();
     backup::create_workspace_backup(destination_path, &staged)
@@ -357,7 +553,9 @@ fn create_workspace_backup(destination_path: Option<String>) -> Result<backup::B
 fn has_unreflected_staged_items() -> bool {
     let mgr = workspace::get_workspace_manager();
     let staged = mgr.list_staged();
-    staged.iter().any(|item| item.status != workspace::StageStatus::Reflected)
+    staged
+        .iter()
+        .any(|item| item.status != workspace::StageStatus::Reflected)
 }
 
 #[tauri::command]
@@ -391,39 +589,33 @@ fn run_builtin_text_transform(
                 error_message: None,
             })
         }
-        "clean_csv" => {
-            match pipeline::BuiltinPipelineEngine::clean_csv(input_text.as_bytes()) {
-                Ok((out, rows)) => Ok(pipeline::BuiltinTransformResultDto {
-                    success: true,
-                    output_text: out,
-                    items_processed: rows,
-                    error_message: None,
-                }),
-                Err(e) => Err(models::AppErrorDto::new("ERR_CLEAN_CSV_FAILED", e)),
-            }
-        }
-        "minify_json" => {
-            match pipeline::BuiltinPipelineEngine::minify_json(&input_text) {
-                Ok((out, count)) => Ok(pipeline::BuiltinTransformResultDto {
-                    success: true,
-                    output_text: out,
-                    items_processed: count,
-                    error_message: None,
-                }),
-                Err(e) => Err(models::AppErrorDto::new("ERR_MINIFY_JSON_FAILED", e)),
-            }
-        }
-        "tsv_to_csv" => {
-            match pipeline::BuiltinPipelineEngine::convert_tsv_csv(&input_text, true) {
-                Ok((out, rows)) => Ok(pipeline::BuiltinTransformResultDto {
-                    success: true,
-                    output_text: out,
-                    items_processed: rows,
-                    error_message: None,
-                }),
-                Err(e) => Err(models::AppErrorDto::new("ERR_CONVERT_TSV_CSV_FAILED", e)),
-            }
-        }
+        "clean_csv" => match pipeline::BuiltinPipelineEngine::clean_csv(input_text.as_bytes()) {
+            Ok((out, rows)) => Ok(pipeline::BuiltinTransformResultDto {
+                success: true,
+                output_text: out,
+                items_processed: rows,
+                error_message: None,
+            }),
+            Err(e) => Err(models::AppErrorDto::new("ERR_CLEAN_CSV_FAILED", e)),
+        },
+        "minify_json" => match pipeline::BuiltinPipelineEngine::minify_json(&input_text) {
+            Ok((out, count)) => Ok(pipeline::BuiltinTransformResultDto {
+                success: true,
+                output_text: out,
+                items_processed: count,
+                error_message: None,
+            }),
+            Err(e) => Err(models::AppErrorDto::new("ERR_MINIFY_JSON_FAILED", e)),
+        },
+        "tsv_to_csv" => match pipeline::BuiltinPipelineEngine::convert_tsv_csv(&input_text, true) {
+            Ok((out, rows)) => Ok(pipeline::BuiltinTransformResultDto {
+                success: true,
+                output_text: out,
+                items_processed: rows,
+                error_message: None,
+            }),
+            Err(e) => Err(models::AppErrorDto::new("ERR_CONVERT_TSV_CSV_FAILED", e)),
+        },
         "csv_to_tsv" => {
             match pipeline::BuiltinPipelineEngine::convert_tsv_csv(&input_text, false) {
                 Ok((out, rows)) => Ok(pipeline::BuiltinTransformResultDto {
@@ -612,10 +804,12 @@ pub fn run() {
             get_file_diff,
             reset_staged_file,
             reflect_staged_file,
+            get_origin_backup_preview,
             generate_bulk_rename_plan,
             execute_bulk_rename,
             can_undo_bulk_rename,
             undo_last_bulk_rename,
+            undo_history_operation,
             generate_vidir_text,
             parse_vidir_text,
             launch_external_editor_vidir,
@@ -649,7 +843,92 @@ mod tests {
 
     #[test]
     fn test_greet() {
-        assert_eq!(greet("World"), "Hello, World! You've been greeted from Rust!");
+        assert_eq!(
+            greet("World"),
+            "Hello, World! You've been greeted from Rust!"
+        );
+    }
+
+    #[test]
+    fn test_export_typescript_bindings_lib() {
+        let _ = std::fs::create_dir_all("../src/types");
+        let cfg = ts_rs::Config::default();
+        ReflectExecutionResultDto::export(&cfg)
+            .expect("Failed to export ReflectExecutionResultDto");
+        UndoHistoryResultDto::export(&cfg).expect("Failed to export UndoHistoryResultDto");
+    }
+
+    #[test]
+    fn test_undo_history_chmod_and_touch() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("cuddle_undo_lib_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let file_path = temp_dir.join("chmod_test.txt");
+        std::fs::write(&file_path, "hello chmod").unwrap();
+
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o644);
+        std::fs::set_permissions(&file_path, perms).unwrap();
+
+        // 1. Chmod to 0755
+        let plan = chmod::generate_chmod_plan(
+            vec![chmod::ChmodTargetInputDto {
+                item_id: "chmod-1".to_string(),
+                path_or_base64: file_path.to_string_lossy().to_string(),
+                display_name: "chmod_test.txt".to_string(),
+            }],
+            chmod::ChmodModeSpec::Octal("0755".to_string()),
+        )
+        .unwrap();
+        let res = chmod::execute_chmod_plan(plan).unwrap();
+        assert!(res.success);
+
+        // Verify disk has 0755
+        let meta = std::fs::metadata(&file_path).unwrap();
+        assert_eq!(meta.permissions().mode() & 0o777, 0o755);
+
+        // Find the operation in history
+        let hist_mgr = history::get_history_manager();
+        let list = hist_mgr.list_history(5).unwrap();
+        let chmod_op = list
+            .iter()
+            .find(|op| op.operation_type == "chmod" && op.can_undo)
+            .expect("Chmod operation must be present and undoable");
+
+        // Undo chmod operation
+        let undo_res = undo_history_operation(chmod_op.operation_id.clone()).unwrap();
+        assert!(undo_res.success);
+
+        // Verify disk is restored to 0644
+        let meta_restored = std::fs::metadata(&file_path).unwrap();
+        assert_eq!(meta_restored.permissions().mode() & 0o777, 0o644);
+
+        // Cannot undo again
+        assert!(undo_history_operation(chmod_op.operation_id.clone()).is_err());
+
+        // 2. Touch mtime
+        let past_time_str = "2020-01-01 12:00:00";
+        let time_plan = timestamp::generate_timestamp_plan(
+            vec![timestamp::TimestampTargetInputDto {
+                item_id: "time-1".to_string(),
+                path_or_base64: file_path.to_string_lossy().to_string(),
+                display_name: "chmod_test.txt".to_string(),
+            }],
+            timestamp::TimestampModeSpec::Absolute(past_time_str.to_string()),
+        );
+        let time_res = timestamp::execute_timestamp_plan(time_plan, Some(&hist_mgr));
+        assert!(time_res.success);
+
+        let list_time = hist_mgr.list_history(5).unwrap();
+        let time_op = list_time
+            .iter()
+            .find(|op| op.operation_type == "touch_mtime" && op.can_undo)
+            .expect("Touch mtime operation must be present and undoable");
+
+        let undo_time_res = undo_history_operation(time_op.operation_id.clone()).unwrap();
+        assert!(undo_time_res.success);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }
-

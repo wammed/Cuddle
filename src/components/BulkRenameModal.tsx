@@ -19,6 +19,7 @@ import {
 import type { StagedItemDto } from "../types/StagedItemDto";
 import type { FileItem } from "../types/FileItem";
 import type { BatchPlanDto } from "../types/BatchPlanDto";
+import type { BatchExecutionResultDto } from "../types/BatchExecutionResultDto";
 import type { BulkRenameOptions } from "../types/BulkRenameOptions";
 import type { RenameRule } from "../types/RenameRule";
 import type { RenameTargetInputDto } from "../types/RenameTargetInputDto";
@@ -28,6 +29,7 @@ interface BulkRenameModalProps {
   onClose: () => void;
   items: (StagedItemDto | FileItem)[];
   onConfirmPlan?: (plan: BatchPlanDto) => void;
+  onExecuteSuccess?: (result: BatchExecutionResultDto) => void;
 }
 
 export const BulkRenameModal: React.FC<BulkRenameModalProps> = ({
@@ -35,6 +37,7 @@ export const BulkRenameModal: React.FC<BulkRenameModalProps> = ({
   onClose,
   items,
   onConfirmPlan,
+  onExecuteSuccess,
 }) => {
   const { t } = useTranslation();
 
@@ -71,6 +74,7 @@ export const BulkRenameModal: React.FC<BulkRenameModalProps> = ({
   // Dry-run results
   const [plan, setPlan] = useState<BatchPlanDto | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isExecuting, setIsExecuting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Convert inputs to RenameTargetInputDto
@@ -126,6 +130,36 @@ export const BulkRenameModal: React.FC<BulkRenameModalProps> = ({
     },
     [targetInputs]
   );
+
+  const handleExecute = async () => {
+    if (!plan || !plan.is_executable || isExecuting) return;
+
+    setIsExecuting(true);
+    setError(null);
+
+    try {
+      const result = await invoke<BatchExecutionResultDto>("execute_bulk_rename", {
+        plan,
+      });
+
+      if (result.success) {
+        if (onExecuteSuccess) {
+          onExecuteSuccess(result);
+        } else if (onConfirmPlan) {
+          onConfirmPlan(plan);
+        }
+        onClose();
+      } else {
+        setError(result.error_message || t("bulk_rename.execute_failed"));
+      }
+    } catch (err) {
+      console.error("Execute bulk rename failed:", err);
+      const errMsg = typeof err === "string" ? err : String(err);
+      setError(`${errMsg} - ${t("bulk_rename.execute_failed")}`);
+    } finally {
+      setIsExecuting(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -566,21 +600,17 @@ export const BulkRenameModal: React.FC<BulkRenameModalProps> = ({
 
         {/* Footer */}
         <div className="dialog-footer">
-          <button type="button" className="dialog-btn secondary" onClick={onClose}>
+          <button type="button" className="dialog-btn secondary" onClick={onClose} disabled={isExecuting}>
             {t("bulk_rename.cancel")}
           </button>
           <button
             type="button"
             className="dialog-btn primary"
-            disabled={!plan?.is_executable || loading}
-            onClick={() => {
-              if (plan && onConfirmPlan) {
-                onConfirmPlan(plan);
-              }
-            }}
+            disabled={!plan?.is_executable || loading || isExecuting}
+            onClick={handleExecute}
           >
-            <Sparkles size={14} />
-            {t("bulk_rename.apply_plan")}
+            <Sparkles size={14} className={isExecuting ? "animate-spin" : ""} />
+            {isExecuting ? t("bulk_rename.executing") : t("bulk_rename.apply_plan")}
           </button>
         </div>
       </div>

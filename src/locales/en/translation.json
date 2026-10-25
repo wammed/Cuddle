@@ -239,6 +239,9 @@
     "conflict_warning": "Cannot execute rename due to duplicate collisions or existing files. Please adjust rules.",
     "dry_run_success": "Dry-run verification passed: Safe to execute without conflicts or errors.",
     "cancel": "Close",
-    "apply_plan": "Confirm Batch Plan"
+    "apply_plan": "Execute Two-Phase Rename",
+    "executing": "Executing Two-Phase Rename (Temp UUID Parking -> Commit)...",
+    "execute_success": "Bulk rename completed: {{count}} files safely renamed",
+    "execute_failed": "Bulk rename failed: Entire batch was safely rolled back to original state"
   }
 }

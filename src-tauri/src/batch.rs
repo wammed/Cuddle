@@ -110,6 +110,19 @@ pub struct BatchPlanDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../src/types/")]
+pub struct BatchExecutionResultDto {
+    pub batch_id: String,
+    pub success: bool,
+    pub total_count: usize,
+    pub succeeded_count: usize,
+    pub failed_count: usize,
+    pub is_rolled_back: bool,
+    pub error_message: Option<String>,
+    pub affected_items: Vec<PlannedOperationDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/types/")]
 pub struct RenameTargetInputDto {
     pub item_id: String,
     pub path_or_base64: String,
@@ -506,6 +519,116 @@ pub fn generate_plan_from_options(options: BulkRenameOptions) -> Result<BatchPla
     Ok(generate_batch_plan(items, &options.rules))
 }
 
+/// Executes a two-phase bulk rename plan with atomic rollback on any failure.
+/// Phase 1: Parks each target file into a temporary intermediate UUID file.
+/// Phase 2: Moves each temporary file into its final target path.
+/// If any error occurs at any phase, all moved files are reverted in reverse order.
+pub fn execute_batch_rename(plan: BatchPlanDto) -> Result<BatchExecutionResultDto, String> {
+    if !plan.is_executable {
+        return Err("Cannot execute plan: batch contains conflicts or validation errors".to_string());
+    }
+
+    let changed_ops: Vec<PlannedOperationDto> = plan
+        .operations
+        .into_iter()
+        .filter(|op| op.status == OperationStatus::Ok && op.original_path != op.target_path)
+        .collect();
+
+    if changed_ops.is_empty() {
+        return Ok(BatchExecutionResultDto {
+            batch_id: plan.batch_id,
+            success: true,
+            total_count: 0,
+            succeeded_count: 0,
+            failed_count: 0,
+            is_rolled_back: false,
+            error_message: None,
+            affected_items: Vec::new(),
+        });
+    }
+
+    // Verify all original source files exist
+    for op in &changed_ops {
+        let p = Path::new(&op.original_path);
+        if !p.exists() {
+            return Err(format!("Source file does not exist: {}", op.original_path));
+        }
+    }
+
+    let mut phase1_moves: Vec<(&PlannedOperationDto, PathBuf)> = Vec::with_capacity(changed_ops.len());
+
+    // --- PHASE 1: Move each file to intermediate temporary UUID name ---
+    for op in &changed_ops {
+        let orig_path = PathBuf::from(&op.original_path);
+        let parent_dir = orig_path.parent().unwrap_or_else(|| Path::new("."));
+        let temp_name = format!(".cuddle_tmp_{}_{}.tmp", plan.batch_id, uuid::Uuid::new_v4());
+        let temp_path = parent_dir.join(temp_name);
+
+        if let Err(e) = std::fs::rename(&orig_path, &temp_path) {
+            // ROLLBACK PHASE 1: Revert all moves done so far in Phase 1
+            for (prev_op, prev_temp) in phase1_moves.iter().rev() {
+                let _ = std::fs::rename(prev_temp, &prev_op.original_path);
+            }
+            return Err(format!(
+                "Failed in Phase 1 (temp parking) for '{}': {}. Entire batch rolled back.",
+                op.display_name, e
+            ));
+        }
+
+        phase1_moves.push((op, temp_path));
+    }
+
+    // --- PHASE 2: Move from intermediate temporary names to final target paths ---
+    let mut phase2_committed: Vec<(&PlannedOperationDto, PathBuf)> = Vec::with_capacity(changed_ops.len());
+
+    for (op, temp_path) in &phase1_moves {
+        let target_path = PathBuf::from(&op.target_path);
+
+        if let Err(e) = std::fs::rename(temp_path, &target_path) {
+            // ROLLBACK PHASE 2: Revert committed target paths back to temp names
+            for (c_op, c_target) in phase2_committed.iter().rev() {
+                if let Some((_, orig_temp)) = phase1_moves.iter().find(|(m_op, _)| m_op.item_id == c_op.item_id) {
+                    let _ = std::fs::rename(c_target, orig_temp);
+                }
+            }
+
+            // ROLLBACK PHASE 1: Revert all temp names back to original paths
+            for (p1_op, p1_temp) in phase1_moves.iter().rev() {
+                let _ = std::fs::rename(p1_temp, &p1_op.original_path);
+            }
+
+            return Err(format!(
+                "Failed in Phase 2 (final renaming) for '{}' -> '{}': {}. Entire batch safely rolled back.",
+                op.display_name, op.proposed_name, e
+            ));
+        }
+
+        phase2_committed.push((op, target_path));
+    }
+
+    // --- PHASE 3: Update WorkspaceManager registry ---
+    let ws_mgr = crate::workspace::get_workspace_manager();
+    let mut affected_items = Vec::with_capacity(changed_ops.len());
+
+    for op in changed_ops {
+        let target_p = PathBuf::from(&op.target_path);
+        let _ = ws_mgr.update_staged_path(&op.item_id, &target_p, &op.proposed_name);
+        affected_items.push(op);
+    }
+
+    let count = affected_items.len();
+    Ok(BatchExecutionResultDto {
+        batch_id: plan.batch_id,
+        success: true,
+        total_count: count,
+        succeeded_count: count,
+        failed_count: 0,
+        is_rolled_back: false,
+        error_message: None,
+        affected_items,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -642,10 +765,113 @@ mod tests {
     }
 
     #[test]
+    fn test_two_phase_rename_swap_success() {
+        let temp_dir = std::env::temp_dir().join(format!("cuddle_swap_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let p1 = temp_dir.join("first.txt");
+        let p2 = temp_dir.join("second.txt");
+        std::fs::write(&p1, "content-first").unwrap();
+        std::fs::write(&p2, "content-second").unwrap();
+
+        // Swap plan: first.txt -> second.txt, second.txt -> first.txt
+        let plan = BatchPlanDto {
+            batch_id: "swap-batch".to_string(),
+            operations: vec![
+                PlannedOperationDto {
+                    item_id: "1".to_string(),
+                    original_path: p1.to_string_lossy().to_string(),
+                    display_name: "first.txt".to_string(),
+                    raw_base64: "dummy1".to_string(),
+                    proposed_name: "second.txt".to_string(),
+                    target_path: p2.to_string_lossy().to_string(),
+                    status: OperationStatus::Ok,
+                    message: None,
+                },
+                PlannedOperationDto {
+                    item_id: "2".to_string(),
+                    original_path: p2.to_string_lossy().to_string(),
+                    display_name: "second.txt".to_string(),
+                    raw_base64: "dummy2".to_string(),
+                    proposed_name: "first.txt".to_string(),
+                    target_path: p1.to_string_lossy().to_string(),
+                    status: OperationStatus::Ok,
+                    message: None,
+                },
+            ],
+            total_count: 2,
+            changed_count: 2,
+            conflict_count: 0,
+            error_count: 0,
+            is_executable: true,
+        };
+
+        let result = execute_batch_rename(plan).expect("Two-phase swap must succeed");
+        assert_eq!(result.succeeded_count, 2);
+        assert!(!result.is_rolled_back);
+
+        // Verify contents swapped without loss
+        assert_eq!(std::fs::read_to_string(&p1).unwrap(), "content-second");
+        assert_eq!(std::fs::read_to_string(&p2).unwrap(), "content-first");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_two_phase_rename_missing_file_safety() {
+        let temp_dir = std::env::temp_dir().join(format!("cuddle_missing_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let p1 = temp_dir.join("exist.txt");
+        let p2 = temp_dir.join("non_existent.txt");
+        std::fs::write(&p1, "safe-content").unwrap();
+
+        let plan = BatchPlanDto {
+            batch_id: "missing-batch".to_string(),
+            operations: vec![
+                PlannedOperationDto {
+                    item_id: "1".to_string(),
+                    original_path: p1.to_string_lossy().to_string(),
+                    display_name: "exist.txt".to_string(),
+                    raw_base64: "dummy".to_string(),
+                    proposed_name: "exist_renamed.txt".to_string(),
+                    target_path: temp_dir.join("exist_renamed.txt").to_string_lossy().to_string(),
+                    status: OperationStatus::Ok,
+                    message: None,
+                },
+                PlannedOperationDto {
+                    item_id: "2".to_string(),
+                    original_path: p2.to_string_lossy().to_string(),
+                    display_name: "non_existent.txt".to_string(),
+                    raw_base64: "dummy".to_string(),
+                    proposed_name: "failed.txt".to_string(),
+                    target_path: temp_dir.join("failed.txt").to_string_lossy().to_string(),
+                    status: OperationStatus::Ok,
+                    message: None,
+                },
+            ],
+            total_count: 2,
+            changed_count: 2,
+            conflict_count: 0,
+            error_count: 0,
+            is_executable: true,
+        };
+
+        // Execution should fail pre-flight and leave original file intact
+        let res = execute_batch_rename(plan);
+        assert!(res.is_err());
+        assert!(p1.exists(), "Original file must remain completely untouched");
+        assert_eq!(std::fs::read_to_string(&p1).unwrap(), "safe-content");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
     fn test_export_typescript_bindings_batch() {
         let _ = std::fs::create_dir_all("../src/types");
         let cfg = ts_rs::Config::default();
         BatchPlanDto::export(&cfg).expect("Failed to export BatchPlanDto");
+        BatchExecutionResultDto::export(&cfg).expect("Failed to export BatchExecutionResultDto");
         RenameRule::export(&cfg).expect("Failed to export RenameRule");
         NormalizationForm::export(&cfg).expect("Failed to export NormalizationForm");
         SequencePosition::export(&cfg).expect("Failed to export SequencePosition");

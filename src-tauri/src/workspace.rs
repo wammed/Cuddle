@@ -258,6 +258,42 @@ impl WorkspaceManager {
             .ok_or_else(|| WorkspaceError::NotFound(stage_id.to_string()))
     }
 
+    /// Updates the staged copy path and display name after a successful batch operation.
+    pub fn update_staged_path(
+        &self,
+        identifier: &str,
+        new_path: &Path,
+        new_display_name: &str,
+    ) -> Result<StagedItemDto, WorkspaceError> {
+        let mut map = self.staged_items.lock().unwrap();
+        let target_key = if map.contains_key(identifier) {
+            Some(identifier.to_string())
+        } else {
+            map.iter().find_map(|(k, v)| {
+                if v.stage_id == identifier
+                    || v.original_item_id == identifier
+                    || v.staged_path == identifier
+                    || v.display_name == identifier
+                {
+                    Some(k.clone())
+                } else {
+                    None
+                }
+            })
+        };
+
+        if let Some(key) = target_key {
+            if let Some(item) = map.get_mut(&key) {
+                item.staged_path = new_path.to_string_lossy().to_string();
+                item.staged_raw_base64 = encode_path_to_base64(new_path);
+                item.display_name = new_display_name.to_string();
+                item.status = StageStatus::Modified;
+                return Ok(item.clone());
+            }
+        }
+        Err(WorkspaceError::NotFound(identifier.to_string()))
+    }
+
     /// Resets a modified staged working copy back to pristine original state.
     pub fn reset_staged_file(&self, stage_id: &str) -> Result<StagedItemDto, WorkspaceError> {
         let mut map = self.staged_items.lock().unwrap();

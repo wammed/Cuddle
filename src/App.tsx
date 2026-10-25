@@ -240,6 +240,35 @@ export function App() {
     }
   };
 
+  const handleBulkRenameSuccess = useCallback(
+    async (result: { batch_id: string; succeeded_count: number }) => {
+      try {
+        const updatedList = await invoke<StagedItemDto[]>("list_staged_items");
+        setStagedItems(updatedList);
+        setStagedFiles((prev) =>
+          prev.map((f) => {
+            const match = updatedList.find(
+              (u) => u.stage_id === f.item_id || u.original_item_id === f.item_id || u.raw_base64 === f.raw_base64
+            );
+            if (match) {
+              return {
+                ...f,
+                display_name: match.display_name,
+                raw_base64: match.staged_raw_base64,
+              };
+            }
+            return f;
+          })
+        );
+        addHistory(`Executed two-phase bulk rename on ${result.succeeded_count} items in workspace-temp/`);
+        addLog(`Bulk rename executed successfully: batch ${result.batch_id} (${result.succeeded_count} items renamed)`);
+      } catch (err) {
+        addLog(`Failed to refresh staged items after bulk rename: ${String(err)}`);
+      }
+    },
+    [addHistory, addLog]
+  );
+
   const handleExtractText = async (item: FileItem) => {
     try {
       setExtractLoading(true);
@@ -438,7 +467,7 @@ export function App() {
         </Group>
       </main>
 
-      {/* Bulk Rename & Normalization Modal (Phase 5.1) */}
+      {/* Bulk Rename & Normalization Modal (Phase 5.1 & 5.2) */}
       <BulkRenameModal
         isOpen={bulkRenameOpen}
         onClose={() => setBulkRenameOpen(false)}
@@ -447,13 +476,14 @@ export function App() {
           addLog(`Bulk rename dry-run plan confirmed: ${plan.batch_id} (${plan.changed_count} changed)`);
           setBulkRenameOpen(false);
         }}
+        onExecuteSuccess={handleBulkRenameSuccess}
       />
 
       <footer className="cuddle-global-statusbar">
         <div className="statusbar-left">
           <span className="status-label">Cuddle</span>
           <span className="status-sep">|</span>
-          <span>Phase 5.1 Bulk Normalization &amp; Dry-run Engine Active</span>
+          <span>Phase 5.2 Two-Phase Rename &amp; Atomic Rollback Active</span>
         </div>
         <div className="statusbar-right">
           <span>Staged: {stagedFiles.length} files</span>

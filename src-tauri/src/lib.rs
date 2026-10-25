@@ -240,6 +240,11 @@ fn generate_bulk_rename_plan(options: batch::BulkRenameOptions) -> Result<batch:
     batch::generate_plan_from_options(options)
 }
 
+#[tauri::command]
+fn execute_bulk_rename(plan: batch::BatchPlanDto) -> Result<batch::BatchExecutionResultDto, String> {
+    batch::execute_batch_rename(plan)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -267,7 +272,8 @@ pub fn run() {
             get_file_diff,
             reset_staged_file,
             reflect_staged_file,
-            generate_bulk_rename_plan
+            generate_bulk_rename_plan,
+            execute_bulk_rename
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

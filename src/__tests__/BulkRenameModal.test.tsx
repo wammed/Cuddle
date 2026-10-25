@@ -64,11 +64,23 @@ vi.mock("@tauri-apps/api/core", () => ({
     if (cmd === "generate_bulk_rename_plan") {
       return Promise.resolve(currentPlan);
     }
+    if (cmd === "execute_bulk_rename") {
+      return Promise.resolve({
+        batch_id: "batch-12345",
+        success: true,
+        total_count: 1,
+        succeeded_count: 1,
+        failed_count: 0,
+        is_rolled_back: false,
+        error_message: null,
+        affected_items: currentPlan.operations,
+      });
+    }
     return Promise.resolve(null);
   }),
 }));
 
-describe("BulkRenameModal (Phase 5.1)", () => {
+describe("BulkRenameModal (Phase 5.1 & 5.2)", () => {
   const mockStagedItems: StagedItemDto[] = [
     {
       stage_id: "stage-1",
@@ -118,7 +130,7 @@ describe("BulkRenameModal (Phase 5.1)", () => {
     });
 
     // Confirm button is enabled when plan is executable
-    const confirmBtn = screen.getByRole("button", { name: /バッチ計画を確定/i });
+    const confirmBtn = screen.getByRole("button", { name: /段階リネームを実行/i });
     expect((confirmBtn as HTMLButtonElement).disabled).toBe(false);
   });
 
@@ -138,8 +150,34 @@ describe("BulkRenameModal (Phase 5.1)", () => {
       expect(screen.getAllByText("重複衝突 (同名)").length).toBeGreaterThan(0);
     });
 
-    const confirmBtn = screen.getByRole("button", { name: /バッチ計画を確定/i });
+    const confirmBtn = screen.getByRole("button", { name: /段階リネームを実行/i });
     expect((confirmBtn as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("successfully invokes execute_bulk_rename and calls onExecuteSuccess", async () => {
+    const handleSuccess = vi.fn();
+    const handleClose = vi.fn();
+
+    render(
+      <BulkRenameModal
+        isOpen={true}
+        onClose={handleClose}
+        items={mockStagedItems}
+        onExecuteSuccess={handleSuccess}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("SAMPLE.txt")).toBeDefined();
+    });
+
+    const confirmBtn = screen.getByRole("button", { name: /段階リネームを実行/i });
+    confirmBtn.click();
+
+    await waitFor(() => {
+      expect(handleSuccess).toHaveBeenCalledTimes(1);
+      expect(handleClose).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("supports bilingual switching to English", async () => {
@@ -155,6 +193,6 @@ describe("BulkRenameModal (Phase 5.1)", () => {
 
     expect(screen.getByText("Bulk Rename & Normalize (Dry-run Verification)")).toBeDefined();
     expect(screen.getByText("Dry-run Preview Verification")).toBeDefined();
-    expect(screen.getByRole("button", { name: /Confirm Batch Plan/i })).toBeDefined();
+    expect(screen.getByRole("button", { name: /Execute Two-Phase Rename/i })).toBeDefined();
   });
 });

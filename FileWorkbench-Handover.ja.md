@@ -222,6 +222,16 @@
   * `ts-rs` による TypeScript 型自動同期（`BackupResultDto.ts`）
   * 日英完全バイリンガル辞書（`backup.*`）整備
   * Cargo テスト 105 件 100% パス、Vitest 31 件 100% パス、Clippy 警告ゼロ、Vite ビルド成功
+* [x] **Phase 7.1（外部コマンド安全実行エンジン & ツール検出 & 純Rust高速変換）：完了**
+  * `src-tauri/src/pipeline.rs` による安全隔離実行・外部ツール自動検出・純Rust変換エンジン実装
+  * **Landlock LSM 隔離:** 原本パスへのアクセスを遮断し、`workspace-temp/` 領域のみ読み書き許可で子プロセスを実行
+  * **ガードレール保護:** RLIMIT_AS (512 MiB) 仮想メモリ上限、30 秒 SIGKILL タイムアウト保護、10 MiB 出力切り詰めガード、シェル非経由（`sh -c` 排除）の引数配列直接プロセス起動
+  * **純 Rust 変換エンジン:** 外部ツール未インストール環境でも即時稼働する軽量高速変換（ログ機密マスキング、CSV クレンジング、JSON Minify、TSV/CSV 相互変換、SQL ダンプ軽量化、SRT 字幕タイムシフト、SHA-256 チェックサム生成）
+  * **Tauri IPC コマンド:** `probe_external_tools`, `execute_sandboxed_command`, `run_builtin_text_transform` を公開
+  * **UI 統合:** `BottomTabPanel.tsx`「セキュリティ & 設定」タブ内に「外部ツール連携環境 (Phase 7.1)」カードを配備（ImageMagick, FFmpeg, qpdf, pdfimages, exiftool, pandoc の可用性・バージョン・パス表示、再スキャンボタン）
+  * **ダークテーマ統一:** 白背景完全禁止、Dark Velvet Slate パレット準拠
+  * **型自動同期:** `ts-rs` による TypeScript 型自動生成（`ExternalToolStatusDto.ts`, `CommandExecutionOptionsDto.ts`, `CommandExecutionResultDto.ts`, `BuiltinTransformResultDto.ts`）
+  * **テスト・ビルド検証:** Cargo テスト 119 件 100% パス、Vitest 33 件 100% パス、Clippy 警告ゼロ、Vite ビルド成功
 
 ---
 

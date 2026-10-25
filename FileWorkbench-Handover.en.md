@@ -222,6 +222,16 @@
   * `ts-rs` automated TypeScript type synchronization (`BackupResultDto.ts`)
   * Full bilingual dictionary expansion (`backup.*`) in English and Japanese
   * Automated testing: 105 Cargo tests 100% pass, 31 Vitest tests 100% pass, Clippy zero warnings, Vite build success
+* [x] **Phase 7.1 (Sandboxed External Tool Execution, Probe & Pure-Rust Transforms): Completed**
+  * Implemented `src-tauri/src/pipeline.rs` providing SandboxedExecutor, ToolDetector, and BuiltinPipelineEngine
+  * **Landlock LSM Isolation:** Original paths blocked from read/write; sub-processes restricted exclusively to `workspace-temp/` directory
+  * **Safety Guardrails:** RLIMIT_AS (512 MiB) virtual memory limit, 30-second SIGKILL timeout protection, 10 MiB output truncation guards, direct argument array execution (eliminating `sh -c` shell injections)
+  * **Pure-Rust Builtin Transforms:** Zero-dependency, immediate processing even without external tools (log secret masking, CSV cleansing, JSON minify, TSV/CSV conversion, SQL dump slimming, SRT timecode shift, SHA-256 checksum generation)
+  * **Tauri IPC Commands:** Exposed `probe_external_tools`, `execute_sandboxed_command`, `run_builtin_text_transform`
+  * **UI Integration:** Added "External Tool Ecosystem (Phase 7.1)" card inside `BottomTabPanel.tsx` Security & Settings tab (displaying ImageMagick, FFmpeg, qpdf, pdfimages, exiftool, pandoc status badges, versions, paths, and rescan action)
+  * **Dark Theme Compliance:** Zero white backgrounds, adhering strictly to Dark Velvet Slate palette
+  * **Automated Type Sync:** `ts-rs` generation of `ExternalToolStatusDto.ts`, `CommandExecutionOptionsDto.ts`, `CommandExecutionResultDto.ts`, `BuiltinTransformResultDto.ts`
+  * **Verification:** 119 Cargo tests 100% pass, 33 Vitest tests 100% pass, Clippy zero warnings, Vite build success
 
 ---
 

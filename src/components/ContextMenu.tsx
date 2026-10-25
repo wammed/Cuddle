@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 export interface ContextMenuItem {
   label: string;
@@ -50,17 +51,34 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
   if (!isOpen) return null;
 
-  // Window boundary adjustment to avoid offscreen overflow
-  const adjustedX = Math.min(x, window.innerWidth - 220);
-  const adjustedY = Math.min(y, window.innerHeight - (items.length * 36 + 20));
+  // Window boundary adjustment & smart flip to prevent clipping
+  const menuWidth = 220;
+  const menuHeight = items.length * 36 + 18;
 
-  return (
+  // If there's not enough room below, open upward from the cursor
+  let adjustedY = y;
+  if (y + menuHeight > window.innerHeight - 8) {
+    adjustedY = Math.max(8, y - menuHeight);
+  } else {
+    adjustedY = Math.max(8, y);
+  }
+
+  // If there's not enough room on the right, open to the left of the cursor
+  let adjustedX = x;
+  if (x + menuWidth > window.innerWidth - 8) {
+    adjustedX = Math.max(8, x - menuWidth);
+  } else {
+    adjustedX = Math.max(8, x);
+  }
+
+  const menuContent = (
     <div
       ref={menuRef}
       className="custom-context-menu"
       style={{
-        left: `${Math.max(10, adjustedX)}px`,
-        top: `${Math.max(10, adjustedY)}px`,
+        left: `${adjustedX}px`,
+        top: `${adjustedY}px`,
+        zIndex: 99999,
       }}
     >
       {items.map((item, idx) => (
@@ -82,4 +100,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       ))}
     </div>
   );
+
+  return createPortal(menuContent, document.body);
 };

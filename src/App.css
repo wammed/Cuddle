@@ -931,25 +931,31 @@ body {
 
 .col-header.col-name {
   flex: 1;
+  padding-right: 12px;
 }
 
 .col-header.col-size {
   width: 80px;
   text-align: right;
+  padding-right: 12px;
 }
 
 .col-header.col-mtime {
   width: 140px;
   text-align: right;
+  padding-right: 12px;
 }
 
 .col-header.col-inode {
-  width: 80px;
+  width: 84px;
   text-align: right;
+  padding-right: 12px;
 }
 
 .col-header.col-actions {
-  width: 32px;
+  width: 72px;
+  min-width: 72px;
+  flex-shrink: 0;
 }
 
 .browser-footer-status {
@@ -1032,9 +1038,10 @@ body {
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
   overflow: hidden;
+  padding-right: 12px;
 }
 
 .file-name-text {
@@ -1084,6 +1091,7 @@ body {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--text-secondary);
+  padding-right: 12px;
 }
 
 .row-col-mtime {
@@ -1091,49 +1099,99 @@ body {
   text-align: right;
   font-size: var(--text-xs);
   color: var(--text-muted);
+  padding-right: 12px;
 }
 
 .row-col-inode {
-  width: 80px;
+  width: 84px;
   text-align: right;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--text-muted);
+  padding-right: 12px;
 }
 
 .row-col-actions {
-  width: 32px;
+  width: 72px;
+  min-width: 72px;
+  flex-shrink: 0;
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 6px;
+  padding-right: 4px;
 }
 
 .row-action-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 25px;
+  height: 25px;
   background: rgba(56, 189, 248, 0.12);
-  border: 1px solid rgba(56, 189, 248, 0.3);
-  color: var(--accent-brand);
-  border-radius: var(--radius-xs);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  color: #38bdf8;
+  border-radius: var(--radius-xs, 4px);
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: all var(--transition-fast, 0.15s ease);
+  flex-shrink: 0;
 }
 
 .row-action-btn:hover {
   background: rgba(56, 189, 248, 0.25);
+  border-color: rgba(56, 189, 248, 0.55);
+  color: #fff;
+  transform: scale(1.08);
 }
 
+.row-action-btn.preview-action-btn {
+  background: rgba(45, 212, 191, 0.12);
+  border-color: rgba(45, 212, 191, 0.28);
+  color: #2dd4bf;
+}
+
+.row-action-btn.preview-action-btn:hover {
+  background: rgba(45, 212, 191, 0.25);
+  border-color: rgba(45, 212, 191, 0.55);
+  color: #fff;
+}
+
+.row-action-btn.unstage-btn,
 .row-action-btn.danger {
   background: rgba(239, 68, 68, 0.12);
-  border-color: rgba(239, 68, 68, 0.3);
+  border-color: rgba(239, 68, 68, 0.28);
   color: #f87171;
 }
 
+.row-action-btn.unstage-btn:hover,
 .row-action-btn.danger:hover {
   background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.55);
   color: #fca5a5;
+  transform: scale(1.08);
+}
+
+/* Density variants for action buttons */
+.virtual-row-item.density-compact .row-col-actions {
+  width: 62px;
+  min-width: 62px;
+  gap: 4px;
+}
+
+.virtual-row-item.density-compact .row-action-btn {
+  width: 22px;
+  height: 22px;
+}
+
+.virtual-row-item.density-spacious .row-col-actions {
+  width: 82px;
+  min-width: 82px;
+  gap: 8px;
+}
+
+.virtual-row-item.density-spacious .row-action-btn {
+  width: 28px;
+  height: 28px;
 }
 
 .reflink-pill-sm.is-reflink {

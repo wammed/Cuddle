@@ -224,7 +224,7 @@ export function VirtualFileList({
                     }}
                     title={t("context_menu.open_preview")}
                   >
-                    <Eye size={12} />
+                    <Eye size={density === "compact" ? 11 : density === "spacious" ? 14 : 13} />
                   </button>
                 )}
 
@@ -238,7 +238,7 @@ export function VirtualFileList({
                     }}
                     title={t("browser.stage_to_workspace")}
                   >
-                    <CornerDownRight size={12} />
+                    <CornerDownRight size={density === "compact" ? 11 : density === "spacious" ? 14 : 13} />
                   </button>
                 )}
 
@@ -252,7 +252,7 @@ export function VirtualFileList({
                     }}
                     title={t("workspace.unstage_btn")}
                   >
-                    <Trash2 size={12} />
+                    <Trash2 size={density === "compact" ? 11 : density === "spacious" ? 14 : 13} />
                   </button>
                 )}
               </div>

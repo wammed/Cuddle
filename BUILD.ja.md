@@ -36,7 +36,7 @@
    rustc --version
    cargo --version
    ```
-2. **Node.js（v20 LTS 以降）& pnpm：**
+2. **Node.js（v22 LTS 以降）& pnpm：**
    ```bash
    # ディストリビューションのパッケージマネージャー、または nvm/fnm で Node.js を導入
    node --version

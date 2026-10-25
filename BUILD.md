@@ -37,7 +37,7 @@ Ensure the following tools are installed:
    rustc --version
    cargo --version
    ```
-2. **Node.js (v20 LTS or later) & pnpm:**
+2. **Node.js (v22 LTS or later) & pnpm:**
    ```bash
    # Install Node.js via your distribution package manager or nvm/fnm
    node --version

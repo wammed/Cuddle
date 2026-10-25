@@ -213,5 +213,49 @@ describe("WorkspacePanel & Staging Operations (Phase 4.1)", () => {
 
     expect(screen.getByText("原本競合検出")).toBeDefined();
   });
+
+  it("renders 2-row header with dedicated workspace-action-toolbar-row and action buttons", async () => {
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    const handleOpenPipeline = vi.fn();
+    const handleOpenBulkRename = vi.fn();
+    const handleOpenBackup = vi.fn();
+
+    const { container } = render(
+      <WorkspacePanel
+        stagedFiles={sampleStagedFiles}
+        stagedItems={sampleStagedItems}
+        selectedId={null}
+        canUndo={false}
+        onSelect={vi.fn()}
+        onClearWorkspace={vi.fn()}
+        onOpenPipeline={handleOpenPipeline}
+        onOpenBulkRename={handleOpenBulkRename}
+        onOpenBackup={handleOpenBackup}
+      />
+    );
+
+    // Verify Row 1 and Row 2 elements
+    expect(container.querySelector(".workspace-header-top-row")).not.toBeNull();
+    expect(container.querySelector(".workspace-action-toolbar-row")).not.toBeNull();
+
+    // Verify Action Buttons
+    const pipelineBtn = screen.getByText("パイプライン");
+    expect(pipelineBtn).toBeDefined();
+    fireEvent.click(pipelineBtn);
+    expect(handleOpenPipeline).toHaveBeenCalledTimes(1);
+
+    const renameBtn = screen.getByText("一括リネーム");
+    expect(renameBtn).toBeDefined();
+    fireEvent.click(renameBtn);
+    expect(handleOpenBulkRename).toHaveBeenCalledTimes(1);
+
+    const backupBtn = screen.getByText("バックアップ / 終了");
+    expect(backupBtn).toBeDefined();
+    fireEvent.click(backupBtn);
+    expect(handleOpenBackup).toHaveBeenCalledTimes(1);
+  });
 });
 

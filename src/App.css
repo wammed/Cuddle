@@ -560,6 +560,8 @@ body {
   color: var(--accent-brand);
   font-size: var(--text-xs);
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: all var(--transition-fast);
 }
 
@@ -583,6 +585,8 @@ body {
   color: #fb7185;
   font-size: var(--text-xs);
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .spinning {
@@ -880,6 +884,8 @@ body {
   font-size: var(--text-xs);
   color: #34d399;
   font-family: var(--font-mono);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .workspace-security-banner {
@@ -2250,7 +2256,24 @@ body {
   filter: grayscale(0.5);
 }
 
-/* File Browser Path Bar & Stage Navigation Improvements */
+/* ==========================================================================
+   Multi-Line Header & Toolbar System for File Browser & Workspace Panes
+   Guarantees no overflow or squashing at any window size (FHD, QHD, WQHD)
+   ========================================================================== */
+
+/* File Browser Multi-line Header */
+.browser-header-top-row {
+  height: 38px;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
 .browser-header-wrap {
   display: flex;
   align-items: center;
@@ -2263,6 +2286,66 @@ body {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+  min-width: 0;
+}
+
+.browser-path-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  min-height: 32px;
+  background: rgba(0, 0, 0, 0.28);
+  border-bottom: 1px solid var(--border-subtle);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.browser-path-toolbar-row .browser-path-form {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.browser-path-toolbar-row .current-path-badge {
+  flex: 1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Workspace Multi-line Header & Toolbar */
+.workspace-header-top-row {
+  height: 38px;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.workspace-action-toolbar-row {
+  display: flex;
+  align-items: center;
+  padding: 5px 10px;
+  min-height: 34px;
+  background: rgba(0, 0, 0, 0.28);
+  border-bottom: 1px solid var(--border-subtle);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.workspace-toolbar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
 }
 
 .browser-path-bar {
@@ -2339,6 +2422,8 @@ body {
   border: 1px solid rgba(56, 189, 248, 0.5);
   border-radius: var(--radius-xs);
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: all var(--trans-fast);
   box-shadow: 0 1px 4px rgba(2, 132, 199, 0.3);
 }
@@ -2360,6 +2445,8 @@ body {
   border: 1px solid rgba(245, 158, 11, 0.5);
   border-radius: var(--radius-xs);
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: all var(--trans-fast);
   box-shadow: 0 1px 4px rgba(217, 119, 6, 0.3);
 }
@@ -2381,6 +2468,8 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: var(--radius-xs);
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: all var(--trans-fast);
 }
 
@@ -3267,6 +3356,8 @@ body {
   border: 1px solid rgba(45, 212, 191, 0.45);
   border-radius: var(--radius-xs);
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: all var(--trans-fast);
   box-shadow: 0 1px 4px rgba(15, 118, 110, 0.35);
 }

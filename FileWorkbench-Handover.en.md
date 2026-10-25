@@ -369,8 +369,19 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
   * Created clean, extensively commented template in repository root documenting all config fields, guardrail enforcement, and available theme keys.
 * **Start Page Launchpad (`StartPage.tsx`):**
   * Built a rich welcome dashboard featuring 3 key action cards (Folder Explorer, 30-Pipeline Runner, Bulk Renamer), quick jump locations, and real-time security & system health indicators.
+* **2-Row Multi-Line Panel Headers & Dedicated Action Toolbars (Zero Overflow):**
+  * **Root Cause of Previous Overflow:** The File Browser header placed title, long path bar, and staging buttons on one row (38px fixed height), while the Workspace header packed title, protected badge, and 5 action buttons (Pipeline, Rename, Undo, Backup, Clear All) into one row. This required an excessive panel width of ~880px (equivalent to near-fullscreen WQHD 2560px) to prevent elements from wrapping, squashing, and overflowing.
+  * **File Browser Panel (`FileBrowserPanel.tsx`):**
+    * Row 1: `FolderOpen` icon, "File Browser" title, and right-aligned action buttons ("Stage Selected", "Stage All", "Refresh").
+    * Row 2: "Navigate Up" button and full-width path bar (`browser-path-toolbar-row`) with inline click-to-edit support.
+  * **Workspace Panel (`WorkspacePanel.tsx`):**
+    * Row 1: `Briefcase` icon, "Staging Workspace" title, `workspace-temp/` badge, and right-aligned "Clear All" action.
+    * Row 2: Dedicated operations toolbar (`workspace-action-toolbar-row`) grouping "30 Presets Pipeline", "Bulk Rename", "Undo Rename", and "Exit Backup".
+  * **CSS Hardening (`App.css`):**
+    * Enforced `white-space: nowrap; flex-shrink: 0;` on all toolbar and action buttons.
+    * Enabled graceful wrapping (`flex-wrap: wrap`) so headers remain stable down to 400px panel widths (compact and standard FHD displays).
 * **Verification & Testing:**
-  * 41 Vitest unit/component tests passing (100%), 130 Cargo integration tests passing (100%), zero Clippy warnings, TypeScript/Vite production build passing cleanly.
+  * 44 Vitest unit/component tests passing (100%, newly added `FileBrowserPanel.test.tsx` and 2-row layout test in `WorkspacePanel.test.tsx`), 130 Cargo integration tests passing (100%), zero Clippy warnings, TypeScript/Vite production build passing cleanly.
 
 ---
 

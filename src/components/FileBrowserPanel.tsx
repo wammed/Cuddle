@@ -54,45 +54,11 @@ export function FileBrowserPanel({
 
   return (
     <div className="panel-container file-browser-container">
-      <div className="panel-header browser-header-wrap">
+      {/* Row 1: Title and Header Actions */}
+      <div className="panel-header browser-header-top-row">
         <div className="panel-title-group browser-title-left">
           <FolderOpen size={16} />
           <h3>{t("panels.browser_title")}</h3>
-        </div>
-
-        <div className="browser-path-bar">
-          {hasParent && onNavigateParent && (
-            <button
-              type="button"
-              className="browser-nav-btn"
-              onClick={onNavigateParent}
-              title={t("browser.navigate_up")}
-            >
-              <ArrowUp size={13} />
-            </button>
-          )}
-
-          {isEditingPath ? (
-            <form onSubmit={handlePathSubmit} className="browser-path-form">
-              <input
-                type="text"
-                className="browser-path-input font-mono"
-                value={pathInput}
-                onChange={(e) => setPathInput(e.target.value)}
-                onBlur={() => setIsEditingPath(false)}
-                autoFocus
-                placeholder={t("browser.path_placeholder")}
-              />
-            </form>
-          ) : (
-            <span
-              className="current-path-badge clickable font-mono"
-              onClick={() => setIsEditingPath(true)}
-              title="Click to edit path"
-            >
-              {currentPath}
-            </span>
-          )}
         </div>
 
         <div className="panel-header-actions">
@@ -128,6 +94,42 @@ export function FileBrowserPanel({
             <RefreshCw size={13} />
           </button>
         </div>
+      </div>
+
+      {/* Row 2: Path Bar & Navigation Toolbar (Full Width) */}
+      <div className="browser-path-toolbar-row">
+        {hasParent && onNavigateParent && (
+          <button
+            type="button"
+            className="browser-nav-btn"
+            onClick={onNavigateParent}
+            title={t("browser.navigate_up")}
+          >
+            <ArrowUp size={13} />
+          </button>
+        )}
+
+        {isEditingPath ? (
+          <form onSubmit={handlePathSubmit} className="browser-path-form">
+            <input
+              type="text"
+              className="browser-path-input font-mono"
+              value={pathInput}
+              onChange={(e) => setPathInput(e.target.value)}
+              onBlur={() => setIsEditingPath(false)}
+              autoFocus
+              placeholder={t("browser.path_placeholder")}
+            />
+          </form>
+        ) : (
+          <span
+            className="current-path-badge clickable font-mono"
+            onClick={() => setIsEditingPath(true)}
+            title="Click to edit path"
+          >
+            {currentPath}
+          </span>
+        )}
       </div>
 
       <div className="browser-table-header">

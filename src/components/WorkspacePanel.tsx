@@ -77,7 +77,8 @@ export function WorkspacePanel({
 
   return (
     <div className="panel-container workspace-panel-container">
-      <div className="panel-header">
+      {/* Row 1: Workspace Title, Protection Badge, and Clear All */}
+      <div className="panel-header workspace-header-top-row">
         <div className="panel-title-group">
           <Briefcase size={16} />
           <h3>{t("panels.workspace_title")}</h3>
@@ -88,54 +89,6 @@ export function WorkspacePanel({
         </div>
 
         <div className="panel-header-actions">
-          {stagedFiles.length > 0 && onOpenBulkRename && (
-            <button
-              type="button"
-              className="panel-header-btn-primary"
-              onClick={onOpenBulkRename}
-              title={t("workspace.bulk_rename_btn")}
-            >
-              <Sparkles size={13} />
-              <span>{t("workspace.bulk_rename_btn")}</span>
-            </button>
-          )}
-
-          {stagedFiles.length > 0 && onOpenPipeline && (
-            <button
-              type="button"
-              className="panel-header-btn-pipeline"
-              onClick={onOpenPipeline}
-              title={t("pipeline.action_open_modal")}
-            >
-              <Workflow size={13} />
-              <span>{t("pipeline.action_open_modal")}</span>
-            </button>
-          )}
-
-          {canUndo && onUndo && (
-            <button
-              type="button"
-              className="panel-header-btn-undo"
-              onClick={onUndo}
-              title={t("workspace.undo_rename_btn")}
-            >
-              <RotateCcw size={13} />
-              <span>{t("workspace.undo_rename_btn")}</span>
-            </button>
-          )}
-
-          {stagedFiles.length > 0 && onOpenBackup && (
-            <button
-              type="button"
-              className="panel-header-btn-secondary"
-              onClick={onOpenBackup}
-              title={t("backup.action_open_modal")}
-            >
-              <Archive size={13} />
-              <span>{t("backup.action_open_modal")}</span>
-            </button>
-          )}
-
           {stagedFiles.length > 0 && (
             <button
               type="button"
@@ -149,6 +102,61 @@ export function WorkspacePanel({
           )}
         </div>
       </div>
+
+      {/* Row 2: Workspace Operations Action Toolbar (Pipeline, Rename, Undo, Backup) */}
+      {stagedFiles.length > 0 && (
+        <div className="workspace-action-toolbar-row">
+          <div className="workspace-toolbar-actions">
+            {onOpenPipeline && (
+              <button
+                type="button"
+                className="panel-header-btn-pipeline"
+                onClick={onOpenPipeline}
+                title={t("pipeline.action_open_modal")}
+              >
+                <Workflow size={13} />
+                <span>{t("pipeline.action_open_modal")}</span>
+              </button>
+            )}
+
+            {onOpenBulkRename && (
+              <button
+                type="button"
+                className="panel-header-btn-primary"
+                onClick={onOpenBulkRename}
+                title={t("workspace.bulk_rename_btn")}
+              >
+                <Sparkles size={13} />
+                <span>{t("workspace.bulk_rename_btn")}</span>
+              </button>
+            )}
+
+            {canUndo && onUndo && (
+              <button
+                type="button"
+                className="panel-header-btn-undo"
+                onClick={onUndo}
+                title={t("workspace.undo_rename_btn")}
+              >
+                <RotateCcw size={13} />
+                <span>{t("workspace.undo_rename_btn")}</span>
+              </button>
+            )}
+
+            {onOpenBackup && (
+              <button
+                type="button"
+                className="panel-header-btn-secondary"
+                onClick={onOpenBackup}
+                title={t("backup.action_open_modal")}
+              >
+                <Archive size={13} />
+                <span>{t("backup.action_open_modal")}</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="workspace-security-banner">
         <ShieldCheck size={14} className="banner-icon" />

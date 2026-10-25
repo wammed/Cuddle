@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Briefcase, ShieldCheck, Trash2, Sparkles, RotateCcw, Archive, Workflow } from "lucide-react";
+import { Briefcase, ShieldCheck, Trash2, Sparkles, RotateCcw, Archive, Workflow, FileCode } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
 import type { StagedItemDto } from "../types/StagedItemDto";
@@ -15,6 +15,7 @@ interface WorkspacePanelProps {
   onClearWorkspace: () => void;
   onUnstageItem?: (stageId: string) => void;
   onOpenBulkRename?: () => void;
+  onOpenChmod?: (items?: FileItem[]) => void;
   onUndo?: () => void;
   onOpenBackup?: () => void;
   onOpenPipeline?: () => void;
@@ -31,6 +32,7 @@ export function WorkspacePanel({
   onClearWorkspace,
   onUnstageItem,
   onOpenBulkRename,
+  onOpenChmod,
   onUndo,
   onOpenBackup,
   onOpenPipeline,
@@ -136,6 +138,18 @@ export function WorkspacePanel({
               </button>
             )}
 
+            {onOpenChmod && (
+              <button
+                type="button"
+                className="panel-header-btn-secondary"
+                onClick={() => onOpenChmod()}
+                title={t("chmod.action_open_modal")}
+              >
+                <FileCode size={13} />
+                <span>{t("chmod.action_open_modal")}</span>
+              </button>
+            )}
+
             {canUndo && onUndo && (
               <button
                 type="button"
@@ -184,6 +198,7 @@ export function WorkspacePanel({
           onSelect={onSelect}
           onUnstage={handleUnstage}
           onOpenPreview={onOpenPreview}
+          onOpenChmod={(item) => onOpenChmod ? onOpenChmod([item]) : undefined}
           cloneMethodMap={cloneMethodMap}
           statusMap={statusMap}
           isWorkspace

@@ -1,5 +1,6 @@
 pub mod backup;
 pub mod batch;
+pub mod chmod;
 pub mod config;
 pub mod diff;
 pub mod extractor;
@@ -284,6 +285,19 @@ fn launch_external_editor_vidir(
     custom_editor: Option<String>,
 ) -> Result<batch::BatchPlanDto, String> {
     batch::launch_external_editor(target_items, custom_editor)
+}
+
+#[tauri::command]
+fn generate_chmod_plan(
+    target_items: Vec<chmod::ChmodTargetInputDto>,
+    spec: chmod::ChmodModeSpec,
+) -> Result<chmod::ChmodPlanDto, String> {
+    chmod::generate_chmod_plan(target_items, spec)
+}
+
+#[tauri::command]
+fn execute_chmod_plan(plan: chmod::ChmodPlanDto) -> Result<chmod::ChmodExecutionResultDto, String> {
+    chmod::execute_chmod_plan(plan)
 }
 
 #[tauri::command]
@@ -576,6 +590,8 @@ pub fn run() {
             generate_vidir_text,
             parse_vidir_text,
             launch_external_editor_vidir,
+            generate_chmod_plan,
+            execute_chmod_plan,
             get_operation_history,
             clear_operation_history,
             get_default_backup_path,

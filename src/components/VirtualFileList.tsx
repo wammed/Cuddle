@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   Eye,
   Copy,
+  FileCode,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
@@ -26,6 +27,7 @@ interface VirtualFileListProps {
   onStage?: (item: FileItem) => void;
   onUnstage?: (item: FileItem) => void;
   onOpenPreview?: (item: FileItem) => void;
+  onOpenChmod?: (item: FileItem) => void;
   cloneMethodMap?: Record<string, "Reflink" | "StandardCopy">;
   statusMap?: Record<string, string>;
   emptyMessage?: string;
@@ -41,6 +43,7 @@ export function VirtualFileList({
   onStage,
   onUnstage,
   onOpenPreview,
+  onOpenChmod,
   cloneMethodMap,
   statusMap,
   emptyMessage,
@@ -94,6 +97,14 @@ export function VirtualFileList({
         label: t("context_menu.stage_item"),
         icon: <CornerDownRight size={14} className="text-cyan-400" />,
         onClick: () => onStage(item),
+      });
+    }
+
+    if (onOpenChmod) {
+      menuItems.push({
+        label: t("chmod.action_open_modal"),
+        icon: <FileCode size={14} className="text-amber-400" />,
+        onClick: () => onOpenChmod(item),
       });
     }
 

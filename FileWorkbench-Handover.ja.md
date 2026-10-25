@@ -475,6 +475,32 @@
 * **テスト検証：**
   * Vitest 51 件全件 100% パス（`BulkRenameModal.test.tsx` に vidir 連携テスト追加）、Cargo test 141 件全件 100% パス、TypeScript 型チェック / Vite ビルド完全成功。
 
+### 9.3 実装内容（Phase 9.2: 一括属性変更 chmod 8進数＆シンボリック）：完了
+* **バックエンドエンジン（`src-tauri/src/chmod.rs`, `src-tauri/src/lib.rs`）：**
+  * `parse_octal_mode`: 3桁/4桁の8進数（例: `644`, `0755`, `4755`）を厳格にパース。
+  * `parse_symbolic_mode`: POSIX chmod 互換のカンマ区切りシンボリック表現（例: `u+x`, `go-w`, `a+r`, `u=rwx,go=rx`、プレフィックス省略形式 `+x`, `-w`）を解釈。
+  * `compute_target_mode`: 現在のファイル属性（`st_mode`）に対して演算子（`+`, `-`, `=`）を適用して変更後パーミッションを算出。
+  * `has_special_permission_bits`: setuid (04000), setgid (02000), sticky (01000) の特殊ビットを判定し警告フラグをセット。
+  * `generate_chmod_plan`: Dry-run 事前検証プラン（変更前/変更後の8進数・シンボリック文字列、変更判定、特殊ビット判定、警告情報）を生成。
+  * `execute_chmod_plan`: 各アイテムの属性を変更し、失敗発生時は変更済みアイテムを逆順ロールバックして原子性を保護。完了後は SQLite WAL 操作履歴に記録。
+  * Tauri IPC コマンド `generate_chmod_plan`, `execute_chmod_plan` を登録。
+  * Rust 単体テスト 10 件を追加し、Cargo テスト全 151 件 100% パス。
+* **フロントエンド UI 統合（`ChmodModal.tsx`, `App.css`, 各種パネル）：**
+  * **モーダルダイアログ：** 8進数指定（`tab_octal`）とシンボリック指定（`tab_symbolic`）のタブ切り替え。
+  * **クイックプリセットボタン：**
+    * 8進数: `644`, `755`, `600`, `700`, `664`, `775`
+    * シンボリック: `+x`, `-x`, `u+x`, `go-w`, `a+r`
+  * **パーミッション・マトリクス：** 所有者・グループ・その他 × 読取・書込・実行（r/w/x）の双方向連動チェックボックス。
+  * **特殊ビット警告バナー：** 特殊ビット（setuid/setgid/sticky）が含まれる場合にアンバー色警告バナーを表示。
+  * **Dry-run 比較テーブル：** ファイル名、変更前（0644 / -rw-r--r--）、矢印、変更後（0755 / -rwxr-xr-x）、状態判定バッジ。
+  * **パネル・コンテキストメニュー統合：**
+    * `WorkspacePanel.tsx`: ヘッダーに「属性変更 (chmod)」ボタンを新設、右クリックメニューに項目追加。
+    * `FileBrowserPanel.tsx`: 右クリックコンテキストメニューから個別・一括属性変更を起動可能。
+* **多言語同期（`ja/translation.json`, `en/translation.json`）：**
+  * `chmod` セクションの全キー（タイトル、タブ、プリセット、マトリクス、警告、ステータス、ボタン等）を日英完全同期。
+* **テスト検証：**
+  * Vitest 57 件全件 100% パス（`ChmodModal.test.tsx` 6 件追加）、Cargo test 151 件全件 100% パス、TypeScript 型チェック / Vite ビルド完全成功。
+
 ---
 
 ## 7. 開発上の重要制約（Guardrails）

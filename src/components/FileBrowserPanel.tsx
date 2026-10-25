@@ -16,6 +16,7 @@ interface FileBrowserPanelProps {
   onNavigateParent?: () => void;
   onNavigatePath?: (path: string) => void;
   onOpenPreview?: (item: FileItem) => void;
+  onOpenChmod?: (item: FileItem) => void;
   hasParent?: boolean;
   isScanning: boolean;
   onRefresh: () => void;
@@ -33,6 +34,7 @@ export function FileBrowserPanel({
   onNavigateParent,
   onNavigatePath,
   onOpenPreview,
+  onOpenChmod,
   hasParent = false,
   isScanning,
   onRefresh,
@@ -154,6 +156,7 @@ export function FileBrowserPanel({
           onOpenDir={onOpenDir}
           onStage={onStage}
           onOpenPreview={onOpenPreview}
+          onOpenChmod={onOpenChmod}
           emptyMessage={t("browser.empty_folder")}
           density={density}
         />

@@ -473,6 +473,32 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
 * **Verification & Testing:**
   * 51 Vitest unit tests passing (100%), 141 Cargo unit tests passing (100%), TypeScript / Vite production build passing cleanly.
 
+### 9.3 Implementation Details (Phase 9.2: Batch Attribute Change chmod - Octal & Symbolic): Completed
+* **Backend Engine (`src-tauri/src/chmod.rs`, `src-tauri/src/lib.rs`):**
+  * `parse_octal_mode`: Strictly parses 3-digit and 4-digit octal permission strings (e.g., `644`, `0755`, `4755`).
+  * `parse_symbolic_mode`: Parses POSIX chmod compatible comma-separated clauses (`u+x`, `go-w`, `a+r`, `u=rwx,go=rx`) as well as shorthand forms (`+x`, `-w`).
+  * `compute_target_mode`: Applies operators (`+`, `-`, `=`) against existing `st_mode` to calculate target permissions.
+  * `has_special_permission_bits`: Detects setuid (`04000`), setgid (`02000`), and sticky bit (`01000`) and triggers safety alerts.
+  * `generate_chmod_plan`: Produces complete Dry-Run preview plan including before/after octal & symbolic strings, status flags, special bit detection, and warnings.
+  * `execute_chmod_plan`: Safely applies permissions to target files with reverse-order rollback on failure to maintain atomicity; commits result to SQLite WAL operation history.
+  * Exposed Tauri IPC commands: `generate_chmod_plan`, `execute_chmod_plan`.
+  * Added 10 Rust unit tests; all 151 Cargo unit tests passing 100%.
+* **Frontend UI Integration (`ChmodModal.tsx`, `App.css`, Panel components):**
+  * **Modal Dialog:** Tab switcher between Octal mode (`tab_octal`) and Symbolic mode (`tab_symbolic`).
+  * **Quick Presets:**
+    * Octal: `644`, `755`, `600`, `700`, `664`, `775`
+    * Symbolic: `+x`, `-x`, `u+x`, `go-w`, `a+r`
+  * **Interactive Permission Matrix:** 3x3 checkbox grid (Owner/Group/Others × Read/Write/Execute) bidirectionally synced with octal value.
+  * **Special Bits Warning Banner:** Prominent amber banner when setuid/setgid/sticky bits are detected.
+  * **Dry-Run Comparison Table:** Original mode (0644 / -rw-r--r--), target mode (0755 / -rwxr-xr-x), status badge, and item path.
+  * **Panel & Context Menu Integration:**
+    * `WorkspacePanel.tsx`: Added "Change Attributes (chmod)" action button in header; context menu integration.
+    * `FileBrowserPanel.tsx`: Added context menu action to trigger attribute change for individual/multiple files.
+* **Bilingual Synchronization (`ja/translation.json`, `en/translation.json`):**
+  * Added all `chmod.*` keys with full English and Japanese parity.
+* **Verification & Testing:**
+  * 57 Vitest unit tests passing (100%, added `ChmodModal.test.tsx` with 6 unit tests), 151 Cargo unit tests passing (100%), TypeScript and Vite production builds passing cleanly.
+
 ---
 
 ## 7. Development Guardrails

@@ -22,6 +22,8 @@ import { WorkspacePanel } from "./components/WorkspacePanel";
 import { DetailsSidebarPanel } from "./components/DetailsSidebarPanel";
 import { BottomTabPanel, type BottomTabId } from "./components/BottomTabPanel";
 import { BulkRenameModal } from "./components/BulkRenameModal";
+import { ChmodModal } from "./components/ChmodModal";
+import type { ChmodExecutionResultDto } from "./types/ChmodExecutionResultDto";
 import { ExitBackupModal } from "./components/ExitBackupModal";
 import { PipelineModal } from "./components/PipelineModal";
 import { SettingsModal } from "./components/SettingsModal";
@@ -48,6 +50,8 @@ export function App() {
   const [stagedItems, setStagedItems] = useState<StagedItemDto[]>([]);
   const [selectedItem, setSelectedItem] = useState<FileItem | null>(null);
   const [bulkRenameOpen, setBulkRenameOpen] = useState(false);
+  const [chmodOpen, setChmodOpen] = useState(false);
+  const [chmodTargets, setChmodTargets] = useState<(StagedItemDto | FileItem)[]>([]);
   const [exitBackupOpen, setExitBackupOpen] = useState(false);
   const [pipelineModalOpen, setPipelineModalOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -373,6 +377,36 @@ export function App() {
       }
     },
     [addHistory, addLog, checkCanUndo, loadHistory, showToast, t]
+  );
+
+  const handleOpenChmod = useCallback(
+    (items?: (StagedItemDto | FileItem)[]) => {
+      if (items && items.length > 0) {
+        setChmodTargets(items);
+      } else {
+        setChmodTargets(stagedItems.length > 0 ? stagedItems : stagedFiles);
+      }
+      setChmodOpen(true);
+    },
+    [stagedItems, stagedFiles]
+  );
+
+  const handleChmodSuccess = useCallback(
+    async (result: ChmodExecutionResultDto) => {
+      try {
+        const updatedList = await invoke<StagedItemDto[]>("list_staged_items");
+        setStagedItems(updatedList);
+        await scanDirectory(currentPath);
+        const successMsg = t("chmod.execute_success", { count: result.succeeded_count });
+        addHistory(`Changed attributes (chmod) on ${result.succeeded_count} items`);
+        addLog(`Chmod executed successfully: plan ${result.plan_id} (${result.succeeded_count} items changed)`);
+        showToast(successMsg);
+        await loadHistory();
+      } catch (err) {
+        addLog(`Failed to refresh after chmod: ${String(err)}`);
+      }
+    },
+    [addHistory, addLog, currentPath, loadHistory, scanDirectory, showToast, t]
   );
 
   const handleUndoBatch = async () => {
@@ -726,6 +760,7 @@ export function App() {
                       onNavigateParent={handleNavigateParent}
                       onNavigatePath={(p) => scanDirectory(p)}
                       onOpenPreview={handleOpenPreview}
+                      onOpenChmod={(item) => handleOpenChmod([item])}
                       hasParent={!!parentPath}
                       isScanning={isScanning}
                       onRefresh={() => scanDirectory(currentPath)}
@@ -746,6 +781,7 @@ export function App() {
                       onClearWorkspace={handleClearWorkspace}
                       onUnstageItem={handleUnstageItem}
                       onOpenBulkRename={() => setBulkRenameOpen(true)}
+                      onOpenChmod={(items) => handleOpenChmod(items)}
                       onOpenPipeline={() => setPipelineModalOpen(true)}
                       onUndo={handleUndoBatch}
                       onOpenBackup={() => setExitBackupOpen(true)}
@@ -830,6 +866,14 @@ export function App() {
           setBulkRenameOpen(false);
         }}
         onExecuteSuccess={handleBulkRenameSuccess}
+      />
+
+      {/* Batch Attribute Change Modal (Phase 9.2) */}
+      <ChmodModal
+        isOpen={chmodOpen}
+        onClose={() => setChmodOpen(false)}
+        items={chmodTargets.length > 0 ? chmodTargets : (stagedItems.length > 0 ? stagedItems : stagedFiles)}
+        onSuccess={handleChmodSuccess}
       />
 
       {/* Exit & Backup Modal (Phase 6.3) */}

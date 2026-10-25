@@ -1,5 +1,28 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Eye, History, Shield, Terminal, X, RotateCcw, GitCompare, AlertCircle, CheckCircle2, Upload, AlertTriangle, Trash2, Database, Wrench, Check, MinusCircle, RefreshCw } from "lucide-react";
+import {
+  Eye,
+  History,
+  Shield,
+  Terminal,
+  X,
+  RotateCcw,
+  GitCompare,
+  AlertCircle,
+  CheckCircle2,
+  Upload,
+  AlertTriangle,
+  GitBranch,
+  GitCommit,
+  RefreshCw,
+  FolderGit2,
+  FileText,
+  Sparkles,
+  Database,
+  Check,
+  MinusCircle,
+  Trash2,
+  Wrench,
+} from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
@@ -9,6 +32,10 @@ import type { StagedItemDto } from "../types/StagedItemDto";
 import type { FileDiffResultDto } from "../types/FileDiffResultDto";
 import type { OperationHistoryDto } from "../types/OperationHistoryDto";
 import type { ExternalToolStatusDto } from "../types/ExternalToolStatusDto";
+import type { GitStatusDto } from "../types/GitStatusDto";
+import { RichPreview } from "./RichPreview";
+
+export type BottomTabId = "preview" | "diff" | "history" | "git" | "security" | "logs";
 
 interface BottomTabPanelProps {
   selectedItem: FileItem | null;
@@ -22,6 +49,10 @@ interface BottomTabPanelProps {
   onResetStagedItem?: (stageId: string) => void;
   onReflectStagedItem?: (stageId: string) => Promise<void> | void;
   onClose: () => void;
+  currentPath?: string;
+  activeTab?: BottomTabId;
+  onTabChange?: (tab: BottomTabId) => void;
+  onTriggerPreview?: (item: FileItem) => void;
 }
 
 export function BottomTabPanel({
@@ -36,9 +67,22 @@ export function BottomTabPanel({
   onResetStagedItem,
   onReflectStagedItem,
   onClose,
+  currentPath,
+  activeTab: controlledActiveTab,
+  onTabChange,
+  onTriggerPreview,
 }: BottomTabPanelProps) {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<"preview" | "diff" | "history" | "security" | "logs">("preview");
+  const [internalActiveTab, setInternalActiveTab] = useState<BottomTabId>("preview");
+  const activeTab = controlledActiveTab !== undefined ? controlledActiveTab : internalActiveTab;
+
+  const handleSetActiveTab = (tab: BottomTabId) => {
+    setInternalActiveTab(tab);
+    if (onTabChange) {
+      onTabChange(tab);
+    }
+  };
+
   const [diffResult, setDiffResult] = useState<FileDiffResultDto | null>(null);
   const [isDiffLoading, setIsDiffLoading] = useState(false);
   const [showReflectModal, setShowReflectModal] = useState(false);
@@ -47,6 +91,10 @@ export function BottomTabPanel({
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
   const [externalTools, setExternalTools] = useState<ExternalToolStatusDto[]>([]);
   const [isToolsLoading, setIsToolsLoading] = useState(false);
+
+  // Git Status State
+  const [gitStatus, setGitStatus] = useState<GitStatusDto | null>(null);
+  const [isGitLoading, setIsGitLoading] = useState(false);
 
   const loadTools = useCallback(async () => {
     try {
@@ -60,11 +108,27 @@ export function BottomTabPanel({
     }
   }, []);
 
+  const loadGitStatus = useCallback(async () => {
+    try {
+      setIsGitLoading(true);
+      const targetPath = selectedItem?.raw_base64 || currentPath || ".";
+      const res = await invoke<GitStatusDto>("get_git_status", { pathBase64: targetPath });
+      setGitStatus(res);
+    } catch (err) {
+      console.error("Failed to load git status:", err);
+      setGitStatus(null);
+    } finally {
+      setIsGitLoading(false);
+    }
+  }, [selectedItem, currentPath]);
+
   useEffect(() => {
     if (activeTab === "security") {
       loadTools();
+    } else if (activeTab === "git") {
+      loadGitStatus();
     }
-  }, [activeTab, loadTools]);
+  }, [activeTab, loadTools, loadGitStatus]);
 
   const matchedStaged = useMemo(() => {
     // 1. If explicit selectedStageId exists in current stagedItems
@@ -326,7 +390,7 @@ export function BottomTabPanel({
           <button
             type="button"
             className={`bottom-tab-btn ${activeTab === "preview" ? "active" : ""}`}
-            onClick={() => setActiveTab("preview")}
+            onClick={() => handleSetActiveTab("preview")}
           >
             <Eye size={13} />
             <span>{t("panels.tab_preview")}</span>
@@ -336,7 +400,7 @@ export function BottomTabPanel({
           <button
             type="button"
             className={`bottom-tab-btn ${activeTab === "diff" ? "active" : ""}`}
-            onClick={() => setActiveTab("diff")}
+            onClick={() => handleSetActiveTab("diff")}
           >
             <GitCompare size={13} />
             <span>{t("panels.tab_diff")}</span>
@@ -349,7 +413,7 @@ export function BottomTabPanel({
           <button
             type="button"
             className={`bottom-tab-btn ${activeTab === "history" ? "active" : ""}`}
-            onClick={() => setActiveTab("history")}
+            onClick={() => handleSetActiveTab("history")}
           >
             <History size={13} />
             <span>{t("panels.tab_history")}</span>
@@ -358,21 +422,37 @@ export function BottomTabPanel({
             )}
           </button>
 
-          {/* 4. Security Tab */}
+          {/* 4. Git Info Tab */}
+          <button
+            type="button"
+            className={`bottom-tab-btn ${activeTab === "git" ? "active" : ""}`}
+            onClick={() => handleSetActiveTab("git")}
+          >
+            <GitBranch size={13} />
+            <span>{t("panels.tab_git")}</span>
+            {gitStatus?.is_repo && (
+              <span className={`tab-badge-accent ${gitStatus.is_clean ? "clean" : "dirty"}`}>
+                {gitStatus.branch || "HEAD"}
+                {!gitStatus.is_clean && "*"}
+              </span>
+            )}
+          </button>
+
+          {/* 5. Security & Tools Diagnostic Tab */}
           <button
             type="button"
             className={`bottom-tab-btn ${activeTab === "security" ? "active" : ""}`}
-            onClick={() => setActiveTab("security")}
+            onClick={() => handleSetActiveTab("security")}
           >
             <Shield size={13} />
             <span>{t("panels.tab_security")}</span>
           </button>
 
-          {/* 5. Logs Tab */}
+          {/* 6. Logs Tab */}
           <button
             type="button"
             className={`bottom-tab-btn ${activeTab === "logs" ? "active" : ""}`}
-            onClick={() => setActiveTab("logs")}
+            onClick={() => handleSetActiveTab("logs")}
           >
             <Terminal size={13} />
             <span>{t("panels.tab_logs")} ({logs.length})</span>
@@ -388,23 +468,36 @@ export function BottomTabPanel({
         {activeTab === "preview" && (
           <div className="tab-preview-content">
             {extractedInfo ? (
-              <div className="preview-extracted">
-                <div className="preview-meta-bar">
-                  <span>{extractedInfo.display_name}</span>
-                  <span className="pill-tag secure">{extractedInfo.encoding_used}</span>
-                  <span>{extractedInfo.extracted_chars} chars</span>
-                </div>
-                <pre className="preview-code-block">{extractedInfo.text || "(Empty content)"}</pre>
-              </div>
+              <RichPreview
+                filename={extractedInfo.display_name}
+                text={extractedInfo.text}
+                encoding={extractedInfo.encoding_used}
+                extractedChars={extractedInfo.extracted_chars}
+              />
             ) : selectedItem ? (
-              <div className="preview-item-info">
-                <p className="preview-placeholder-text">
-                  {selectedItem.display_name} ({selectedItem.size.toString()} bytes)
-                </p>
-                <p className="preview-hint-text">{t("workspace.original_protected")}</p>
+              <div className="preview-explicit-prompt">
+                <div className="preview-prompt-card">
+                  <FileText size={28} className="text-teal-400 mb-2" />
+                  <h4>{selectedItem.display_name}</h4>
+                  <p className="preview-guidance-text">
+                    {t("rich_preview.no_selection_hint")}
+                  </p>
+                  {onTriggerPreview && (
+                    <button
+                      type="button"
+                      className="panel-header-btn-primary preview-load-btn"
+                      onClick={() => onTriggerPreview(selectedItem)}
+                    >
+                      <Sparkles size={13} />
+                      <span>{t("context_menu.open_preview")}</span>
+                    </button>
+                  )}
+                </div>
               </div>
             ) : (
-              <p className="preview-empty-text">{t("details.no_selection")}</p>
+              <div className="preview-explicit-prompt">
+                <p className="preview-empty-text">{t("rich_preview.no_selection_hint")}</p>
+              </div>
             )}
           </div>
         )}
@@ -615,6 +708,159 @@ export function BottomTabPanel({
               </ul>
             ) : (
               <p className="tab-empty-text">{t("history.empty")}</p>
+            )}
+          </div>
+        )}
+
+        {activeTab === "git" && (
+          <div className="tab-git-content">
+            {isGitLoading ? (
+              <div className="git-loading-state">
+                <RefreshCw size={18} className="spinning text-teal-400" />
+                <span>{t("common.loading")}</span>
+              </div>
+            ) : !gitStatus?.is_repo ? (
+              <div className="git-not-repo-state">
+                <FolderGit2 size={32} className="text-slate-500 mb-2" />
+                <h4>{t("git.not_repo")}</h4>
+                <p className="text-muted text-xs font-mono">
+                  {currentPath || "~"}
+                </p>
+              </div>
+            ) : (
+              <div className="git-dashboard">
+                {/* 1. Branch & Sync Status Banner */}
+                <div className="git-summary-banner">
+                  <div className="git-branch-info">
+                    <span className="git-branch-badge">
+                      <GitBranch size={14} />
+                      <span className="font-mono">{gitStatus.branch || "HEAD"}</span>
+                    </span>
+                    {gitStatus.upstream && (
+                      <span className="git-upstream-label font-mono text-xs">
+                        &rarr; {gitStatus.upstream}
+                      </span>
+                    )}
+                    {gitStatus.ahead > 0 && (
+                      <span className="git-ahead-badge">
+                        &uarr; {t("git.ahead", { count: gitStatus.ahead })}
+                      </span>
+                    )}
+                    {gitStatus.behind > 0 && (
+                      <span className="git-behind-badge">
+                        &darr; {t("git.behind", { count: gitStatus.behind })}
+                      </span>
+                    )}
+                    <span className={`git-clean-pill ${gitStatus.is_clean ? "clean" : "dirty"}`}>
+                      {gitStatus.is_clean ? t("git.clean") : "Changes Present"}
+                    </span>
+                  </div>
+
+                  <div className="git-summary-actions">
+                    {gitStatus.latest_commit_hash && (
+                      <div className="git-latest-commit font-mono text-xs" title={gitStatus.latest_commit_message || ""}>
+                        <GitCommit size={13} className="text-slate-400" />
+                        <span className="commit-hash text-teal-400 font-bold">{gitStatus.latest_commit_hash}</span>
+                        <span className="commit-msg">{gitStatus.latest_commit_message}</span>
+                        <span className="commit-meta text-muted">({gitStatus.latest_commit_author}, {gitStatus.latest_commit_date})</span>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="panel-header-btn-subtle"
+                      onClick={loadGitStatus}
+                      title={t("git.refresh")}
+                    >
+                      <RefreshCw size={12} />
+                      <span>{t("git.refresh")}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Structured Change Categories Grid */}
+                <div className="git-sections-grid">
+                  {/* Category 1: Staged Changes */}
+                  <div className="git-section-card staged-card">
+                    <div className="git-section-header">
+                      <h5>{t("git.staged_changes")}</h5>
+                      <span className="git-count-badge staged font-mono">{gitStatus.staged_files.length}</span>
+                    </div>
+                    <div className="git-file-list">
+                      {gitStatus.staged_files.length === 0 ? (
+                        <p className="git-empty-hint">-</p>
+                      ) : (
+                        gitStatus.staged_files.map((file, i) => (
+                          <div key={i} className="git-file-row">
+                            <span className={`git-code-pill code-${file.status_code}`}>{file.status_code}</span>
+                            <span className="git-file-path font-mono" title={file.path}>{file.path}</span>
+                            {file.original_path && (
+                              <span className="git-orig-path text-muted font-mono">&larr; {file.original_path}</span>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Category 2: Unstaged Working Tree Changes */}
+                  <div className="git-section-card unstaged-card">
+                    <div className="git-section-header">
+                      <h5>{t("git.unstaged_changes")}</h5>
+                      <span className="git-count-badge unstaged font-mono">{gitStatus.unstaged_files.length}</span>
+                    </div>
+                    <div className="git-file-list">
+                      {gitStatus.unstaged_files.length === 0 ? (
+                        <p className="git-empty-hint">-</p>
+                      ) : (
+                        gitStatus.unstaged_files.map((file, i) => (
+                          <div key={i} className="git-file-row">
+                            <span className={`git-code-pill code-${file.status_code}`}>{file.status_code}</span>
+                            <span className="git-file-path font-mono" title={file.path}>{file.path}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Category 3: Untracked Files */}
+                  <div className="git-section-card untracked-card">
+                    <div className="git-section-header">
+                      <h5>{t("git.untracked_files")}</h5>
+                      <span className="git-count-badge untracked font-mono">{gitStatus.untracked_files.length}</span>
+                    </div>
+                    <div className="git-file-list">
+                      {gitStatus.untracked_files.length === 0 ? (
+                        <p className="git-empty-hint">-</p>
+                      ) : (
+                        gitStatus.untracked_files.map((file, i) => (
+                          <div key={i} className="git-file-row">
+                            <span className="git-code-pill code-untracked">?</span>
+                            <span className="git-file-path font-mono" title={file.path}>{file.path}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Category 4: Merge Conflicts */}
+                  {gitStatus.conflict_files.length > 0 && (
+                    <div className="git-section-card conflict-card">
+                      <div className="git-section-header">
+                        <h5>{t("git.conflicts")}</h5>
+                        <span className="git-count-badge conflict font-mono">{gitStatus.conflict_files.length}</span>
+                      </div>
+                      <div className="git-file-list">
+                        {gitStatus.conflict_files.map((file, i) => (
+                          <div key={i} className="git-file-row text-rose-400">
+                            <span className="git-code-pill code-conflict">!</span>
+                            <span className="git-file-path font-mono" title={file.path}>{file.path}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
           </div>
         )}

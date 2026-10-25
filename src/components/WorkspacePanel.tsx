@@ -3,6 +3,7 @@ import { Briefcase, ShieldCheck, Trash2, Sparkles, RotateCcw, Archive, Workflow 
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
 import type { StagedItemDto } from "../types/StagedItemDto";
+import type { Density } from "../types/Density";
 import { VirtualFileList } from "./VirtualFileList";
 
 interface WorkspacePanelProps {
@@ -17,6 +18,8 @@ interface WorkspacePanelProps {
   onUndo?: () => void;
   onOpenBackup?: () => void;
   onOpenPipeline?: () => void;
+  onOpenPreview?: (item: FileItem) => void;
+  density?: Density;
 }
 
 export function WorkspacePanel({
@@ -31,6 +34,8 @@ export function WorkspacePanel({
   onUndo,
   onOpenBackup,
   onOpenPipeline,
+  onOpenPreview,
+  density = "normal",
 }: WorkspacePanelProps) {
   const { t } = useTranslation();
 
@@ -178,10 +183,12 @@ export function WorkspacePanel({
           selectedId={selectedId}
           onSelect={onSelect}
           onUnstage={handleUnstage}
+          onOpenPreview={onOpenPreview}
           cloneMethodMap={cloneMethodMap}
           statusMap={statusMap}
           isWorkspace
           emptyMessage={t("workspace.empty_state")}
+          density={density}
         />
       </div>
 

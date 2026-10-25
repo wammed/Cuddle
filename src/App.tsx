@@ -20,13 +20,15 @@ import { FolderTreePanel } from "./components/FolderTreePanel";
 import { FileBrowserPanel } from "./components/FileBrowserPanel";
 import { WorkspacePanel } from "./components/WorkspacePanel";
 import { DetailsSidebarPanel } from "./components/DetailsSidebarPanel";
-import { BottomTabPanel } from "./components/BottomTabPanel";
+import { BottomTabPanel, type BottomTabId } from "./components/BottomTabPanel";
 import { BulkRenameModal } from "./components/BulkRenameModal";
 import { ExitBackupModal } from "./components/ExitBackupModal";
 import { PipelineModal } from "./components/PipelineModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { StartPage } from "./components/StartPage";
 import { applyTheme, getSavedThemeId } from "./utils/themePresets";
+import type { Density } from "./types/Density";
+import { applyDensity, getSavedDensity } from "./utils/density";
 import "./App.css";
 
 interface LandlockStatus {
@@ -51,6 +53,8 @@ export function App() {
   const [currentView, setCurrentView] = useState<"start" | "workbench">("workbench");
   const [canUndo, setCanUndo] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [density, setDensity] = useState<Density>(() => getSavedDensity());
+  const [bottomTab, setBottomTab] = useState<BottomTabId>("preview");
 
   const [landlock, setLandlock] = useState<LandlockStatus | null>(null);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
@@ -163,6 +167,8 @@ export function App() {
   }, [parentPath, scanDirectory]);
 
   useEffect(() => {
+    applyDensity(density);
+
     invoke<LandlockStatus>("get_landlock_status")
       .then((status) => {
         setLandlock(status);
@@ -560,6 +566,13 @@ export function App() {
     }
   };
 
+  const handleOpenPreview = useCallback(async (item: FileItem) => {
+    setSelectedItem(item);
+    setBottomVisible(true);
+    setBottomTab("preview");
+    await handleExtractText(item);
+  }, []);
+
   const handleResetLayout = () => {
     setSidebarVisible(true);
     setBottomVisible(true);
@@ -710,9 +723,11 @@ export function App() {
                       onStageAll={handleStageAll}
                       onNavigateParent={handleNavigateParent}
                       onNavigatePath={(p) => scanDirectory(p)}
+                      onOpenPreview={handleOpenPreview}
                       hasParent={!!parentPath}
                       isScanning={isScanning}
                       onRefresh={() => scanDirectory(currentPath)}
+                      density={density}
                     />
                   </Panel>
 
@@ -732,6 +747,8 @@ export function App() {
                       onOpenPipeline={() => setPipelineModalOpen(true)}
                       onUndo={handleUndoBatch}
                       onOpenBackup={() => setExitBackupOpen(true)}
+                      onOpenPreview={handleOpenPreview}
+                      density={density}
                     />
                   </Panel>
                 </Group>
@@ -753,6 +770,10 @@ export function App() {
                       onResetStagedItem={handleResetStagedItem}
                       onReflectStagedItem={handleReflectStagedItem}
                       onClose={() => setBottomVisible(false)}
+                      currentPath={currentPath}
+                      activeTab={bottomTab}
+                      onTabChange={setBottomTab}
+                      onTriggerPreview={handleOpenPreview}
                     />
                   </Panel>
                 </>
@@ -790,6 +811,11 @@ export function App() {
         landlockSupported={landlock?.supported ?? false}
         landlockAbi={landlock?.abi_version ?? null}
         configPath="~/.config/Cuddle/config.toml"
+        density={density}
+        onDensityChange={(d) => {
+          setDensity(d);
+          applyDensity(d);
+        }}
       />
 
       {/* Bulk Rename & Normalization Modal (Phase 5.1 & 5.2) */}

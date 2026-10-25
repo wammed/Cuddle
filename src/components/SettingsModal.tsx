@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { THEME_PRESETS, applyTheme, getSavedThemeId } from "../utils/themePresets";
 import type { ThemeCategory, ThemePreset } from "../types/ThemePreset";
+import type { Density } from "../types/Density";
+import { applyDensity, getSavedDensity } from "../utils/density";
 import { SupportedLanguage } from "../i18n";
 
 interface SettingsModalProps {
@@ -26,6 +28,8 @@ interface SettingsModalProps {
   landlockSupported: boolean;
   landlockAbi: string | null;
   configPath?: string;
+  density?: Density;
+  onDensityChange?: (density: Density) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -36,17 +40,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   landlockSupported,
   landlockAbi,
   configPath = "~/.config/Cuddle/config.toml",
+  density,
+  onDensityChange,
 }) => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<"appearance" | "general" | "workspace" | "shortcuts">("appearance");
   const [selectedCategory, setSelectedCategory] = useState<"all" | ThemeCategory>("all");
   const [currentThemeId, setCurrentThemeId] = useState<string>(() => getSavedThemeId());
+  const [currentDensity, setCurrentDensity] = useState<Density>(() => density || getSavedDensity());
 
   if (!isOpen) return null;
 
   const handleSelectTheme = (preset: ThemePreset) => {
     setCurrentThemeId(preset.id);
     applyTheme(preset.id);
+  };
+
+  const handleSelectDensity = (newDensity: Density) => {
+    setCurrentDensity(newDensity);
+    applyDensity(newDensity);
+    if (onDensityChange) {
+      onDensityChange(newDensity);
+    }
   };
 
   const filteredPresets = THEME_PRESETS.filter((p) => {
@@ -117,6 +132,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* TAB 1: Appearance & 30 Theme Presets */}
           {activeTab === "appearance" && (
             <div className="settings-section-content">
+              {/* Density Setting Section */}
+              <div className="settings-card settings-density-card">
+                <div className="density-meta-col">
+                  <h4 className="settings-section-title">{t("density.title")}</h4>
+                  <p className="settings-section-desc">{t("density.desc")}</p>
+                </div>
+                <div className="density-btn-group">
+                  {(["compact", "normal", "spacious"] as Density[]).map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      className={`density-pill-btn ${currentDensity === d ? "active" : ""}`}
+                      onClick={() => handleSelectDensity(d)}
+                    >
+                      {t(`density.${d}`)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Theme Categories Title */}
+              <div className="settings-theme-header-row">
+                <h4 className="settings-section-title">{t("settings.tab_appearance")}</h4>
+                <p className="settings-section-desc">{t("settings.active_theme_label")}: <span className="text-teal-400 font-mono font-bold">{currentThemeId}</span></p>
+              </div>
+
               {/* Category Pills */}
               <div className="theme-category-pills">
                 {[

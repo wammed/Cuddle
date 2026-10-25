@@ -498,13 +498,13 @@ describe("BottomTabPanel & Diff Operations (Phase 4.2)", () => {
     );
 
     // Initial tab is "preview", which shows the extracted text, not diff
-    expect(screen.getByText("This is a clean preview text independent of diff.")).toBeDefined();
+    expect(screen.getByText(/clean preview text independent of diff/)).toBeDefined();
     expect(screen.getByText("readme.txt")).toBeDefined();
     expect(screen.getByText("42 chars")).toBeDefined();
     expect(screen.queryByText("差分プレビュー (原本 vs 作業コピー)")).toBeNull();
   });
 
-  it("renders external tools status in security & settings tab (Phase 7.1)", async () => {
+  it("renders external tools status in security & tools diagnostic tab (Phase 7.1)", async () => {
     await act(async () => {
       await changeLanguage("ja");
     });
@@ -520,7 +520,7 @@ describe("BottomTabPanel & Diff Operations (Phase 4.2)", () => {
       />
     );
 
-    const securityTabBtn = screen.getByText("セキュリティ & 設定");
+    const securityTabBtn = screen.getByText("セキュリティ & ツール診断");
     await act(async () => {
       fireEvent.click(securityTabBtn);
     });
@@ -532,6 +532,33 @@ describe("BottomTabPanel & Diff Operations (Phase 4.2)", () => {
       expect(screen.getByText("利用可能")).toBeDefined();
       expect(screen.getByText("未インストール")).toBeDefined();
     });
+  });
+
+  it("renders Git status tab and switches to it", async () => {
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    render(
+      <BottomTabPanel
+        selectedItem={null}
+        extractedInfo={null}
+        appConfig={null}
+        logs={[]}
+        history={[]}
+        onClose={vi.fn()}
+      />
+    );
+
+    const gitTabBtn = screen.getByText("Git 情報");
+    expect(gitTabBtn).toBeDefined();
+
+    await act(async () => {
+      fireEvent.click(gitTabBtn);
+    });
+
+    // Git tab is active
+    expect(gitTabBtn.closest("button")?.className).toContain("active");
   });
 });
 

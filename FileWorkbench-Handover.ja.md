@@ -380,8 +380,30 @@
   * **CSSの堅牢化（`App.css`）：**
     * 全ボタンに `white-space: nowrap; flex-shrink: 0;` を徹底付与。
     * 各行の幅が狭い場合でも `flex-wrap: wrap` により自然に折り返され、ペイン幅が400px程度の狭いウィンドウ（FHDやコンパクトサイズ）でも絶対に崩れないレイアウトを確立。
+* **Git 情報タブ（Git Status Dashboard）（Phase 8.5）：**
+  * `src-tauri/src/git.rs` による高精度 Git ステータスバックエンド実装。
+  * `git rev-parse --show-toplevel`, `git status --porcelain=v2 --branch`, `git log -1` を直接引数配列起動（シェル介在なし）で高速実行。
+  * 生テキスト出力ではなく、構造化 DTO（`GitStatusDto`, `GitFileItemDto`）として取得。
+  * ブランチバッジ、Upstream 同期情報（Ahead / Behind）、クリーン判定、最新コミットカード（コミットハッシュ、メッセージ、作者、日時）、および 4 大カテゴリ（ステージ済み変更 `staged`、未ステージの変更 `unstaged`、未追跡ファイル `untracked`、マージ競合 `conflicts`）に項目分割して色分けバッジ（M, A, D, R, U, ?）でリッチ表示。
+  * `ts-rs` による TypeScript 型同期（`GitStatusDto.ts`, `GitFileItemDto.ts`）と Cargo ユニットテスト 6 件パス。
+* **タブ表示名の完全整合（Phase 8.5）：**
+  * 「セキュリティ & 設定」と混同されていた下部タブを、設計書に準拠した正式名称「セキュリティ & ツール診断」（英語: "Security & Tools Diagnostic"）へ完全に整合（日英辞書キー `panels.tab_security` 更新）。
+* **リッチプレビュー & 右クリックコンテキストメニュー（Phase 8.6）：**
+  * **明示的表示原則の厳守：** マウスホバーや左クリックによる意図しない自動抽出・自動表示を完全排除。一覧のファイル行を右クリックしてカスタムコンテキストメニューから「プレビューを表示」を選択した時のみ安全に発火。
+  * **シンタックスハイライト（`syntaxHighlight.ts`）：** 外部依存なしの高速ハイライター。行番号付きテーブル構成で、Rust, TypeScript, JavaScript, Python, Shell, SQL, CSS, JSON, TOML, YAML 等のキーワード、文字列、数値、コメント、型、関数を Prism-dark 配色で着色。
+  * **Markdown 簡易レンダリング：** 見出し（H1〜H4）、引用、箇条書き/番号付きリスト、インラインコード、コードブロック、太字、リンクを安全に HTML 変換・美麗レンダリング。
+  * **HTML プレビュー：** サンドボックス iframe レンダリングと生ソースコード表示をワンクリックで切り替え可能なトグルボタンを実装。
+  * **カスタムコンテキストメニュー（`ContextMenu.tsx`）：** サイバーダーク調の右クリックメニュー。プレビュー表示、ファイルパスコピー、作業領域投入、解除、削除を素早く実行可能。画面外はみ出し自動反転と Escape/外側クリック閉じる対応。
+* **情報密度の 3 段階設定（Phase 8.7）：**
+  * **3 段階の行高・サイズ構成：**
+    * コンパクト（`compact`: 32px / アイコン 14px / フォント 11px）
+    * 標準（`normal`: 42px / アイコン 16px / フォント 12px）
+    * ゆったり（`spacious`: 52px / アイコン 20px / フォント 13px）
+  * **システム連携（`density.ts`）：** CSS 変数（`--list-row-height`, `--list-icon-size`, `--list-font-size`, `--list-padding-y`）を動的更新し、`localStorage` に永続化。
+  * **仮想スクロール（`@tanstack/react-virtual`）追従：** 動的な行高見積もりにより、設定変更時にも一覧のスクロール位置が崩れず瞬時に反映。
+  * **設定モーダル（`SettingsModal.tsx`）：** 外観タブの先頭に直感的な 3 連ピルボタングループを設置。
 * **テスト検証：**
-  * Vitest 44 件全件 100% パス（`FileBrowserPanel.test.tsx` 新設、`WorkspacePanel.test.tsx` にツールバー動作検証を追加）、Cargo test 130 件全件 100% パス、Clippy 警告ゼロ、TypeScript/Vite ビルド成功。
+  * Vitest 45 件全件 100% パス（Git 情報タブ、セキュリティ＆ツール診断タブ名変更、リッチプレビュー、情報密度設定をカバー）、Cargo test 136 件全件 100% パス、TypeScript 型チェック / Vite ビルド完全成功。
 
 ---
 

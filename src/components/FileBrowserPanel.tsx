@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { FolderOpen, RefreshCw, CornerDownRight, ListPlus, ArrowUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
+import type { Density } from "../types/Density";
 import { VirtualFileList } from "./VirtualFileList";
 
 interface FileBrowserPanelProps {
@@ -14,9 +15,11 @@ interface FileBrowserPanelProps {
   onStageAll: () => void;
   onNavigateParent?: () => void;
   onNavigatePath?: (path: string) => void;
+  onOpenPreview?: (item: FileItem) => void;
   hasParent?: boolean;
   isScanning: boolean;
   onRefresh: () => void;
+  density?: Density;
 }
 
 export function FileBrowserPanel({
@@ -29,9 +32,11 @@ export function FileBrowserPanel({
   onStageAll,
   onNavigateParent,
   onNavigatePath,
+  onOpenPreview,
   hasParent = false,
   isScanning,
   onRefresh,
+  density = "normal",
 }: FileBrowserPanelProps) {
   const { t } = useTranslation();
   const [isEditingPath, setIsEditingPath] = useState(false);
@@ -148,7 +153,9 @@ export function FileBrowserPanel({
           onSelect={onSelect}
           onOpenDir={onOpenDir}
           onStage={onStage}
+          onOpenPreview={onOpenPreview}
           emptyMessage={t("browser.empty_folder")}
+          density={density}
         />
       </div>
 

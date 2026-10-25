@@ -380,8 +380,28 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
   * **CSS Hardening (`App.css`):**
     * Enforced `white-space: nowrap; flex-shrink: 0;` on all toolbar and action buttons.
     * Enabled graceful wrapping (`flex-wrap: wrap`) so headers remain stable down to 400px panel widths (compact and standard FHD displays).
+* **Git Status Dashboard Tab (Phase 8.5):**
+  * Implemented high-precision Git backend in `src-tauri/src/git.rs` executing `git rev-parse --show-toplevel`, `git status --porcelain=v2 --branch`, and `git log -1` via direct argument arrays without shell interpolation.
+  * Formatted output into structured DTOs (`GitStatusDto`, `GitFileItemDto`) with branch badge, upstream sync state (ahead / behind), clean repository status, latest commit card (hash, message, author, timestamp), and categorizes changed files into 4 clear cards: Staged (`staged`), Unstaged (`unstaged`), Untracked (`untracked`), and Conflicts (`conflicts`) with color-coded status pills (M, A, D, R, U, ?).
+  * Generated TypeScript bindings via `ts-rs` (`GitStatusDto.ts`, `GitFileItemDto.ts`) with 6 Cargo unit tests passing.
+* **Harmonized Bottom Tab Naming (Phase 8.5):**
+  * Resolved discrepancy where the tab was previously mislabeled "Security & Settings"; harmonized to the formal name specified in design documentation: "Security & Tools Diagnostic" (Japanese: "セキュリティ & ツール診断") across both `ja` and `en` translation dictionaries.
+* **Rich Preview & Right-Click Context Menu (Phase 8.6):**
+  * **Strict Explicit Preview Policy:** Completely eliminated hover-triggered or left-click-triggered file previewing to avoid inadvertent I/O. Previews are explicitly initiated via right-click custom context menu ("Show Preview" / "プレビューを表示") or via guided cards in the preview tab.
+  * **Syntax Highlighting (`syntaxHighlight.ts`):** Fast, zero-dependency code syntax highlighter featuring line numbers, tokenized coloring (keywords, strings, numbers, comments, functions, types, punctuation) across Rust, TypeScript, JavaScript, Python, Shell, SQL, CSS, JSON, TOML, and YAML under a dark Prism theme.
+  * **Safe Markdown Rendering:** Cleanly renders Markdown headings (H1-H4), blockquotes, bullet/numbered lists, inline code chips, syntax-highlighted code blocks, bold text, and hyperlinks.
+  * **HTML Live Preview:** Dual-mode preview switching between an isolated sandboxed iframe render and raw highlighted source code.
+  * **Custom Context Menu (`ContextMenu.tsx`):** Sleek cyber dark contextual menu offering "Show Preview", "Copy File Path", "Add to Workbench", "Unstage", and "Delete". Features automatic boundary flip and click-outside/Escape dismissal.
+* **3-Level Display Density Settings (Phase 8.7):**
+  * **Three Density Configurations:**
+    * Compact (`compact`: 32px row height / 14px icon / 11px font)
+    * Normal (`normal`: 42px row height / 16px icon / 12px font)
+    * Spacious (`spacious`: 52px row height / 20px icon / 13px font)
+  * **System Integration (`density.ts`):** Dynamically updates root CSS variables (`--list-row-height`, `--list-icon-size`, `--list-font-size`, `--list-padding-y`) and persists choices to `localStorage`.
+  * **Virtual Scrolling Integration:** Synchronized with `@tanstack/react-virtual` row height estimation for seamless, flicker-free list re-rendering.
+  * **Settings Modal Controls (`SettingsModal.tsx`):** Prominently placed 3-pill toggle button group at the top of the Appearance settings tab.
 * **Verification & Testing:**
-  * 44 Vitest unit/component tests passing (100%, newly added `FileBrowserPanel.test.tsx` and 2-row layout test in `WorkspacePanel.test.tsx`), 130 Cargo integration tests passing (100%), zero Clippy warnings, TypeScript/Vite production build passing cleanly.
+  * 45 Vitest unit/component tests passing (100%, covering Git tab, Security & Diagnostic label harmonization, Rich Preview, and Density settings), 136 Cargo unit tests passing (100%), zero Clippy warnings, TypeScript/Vite production build passing cleanly.
 
 ---
 

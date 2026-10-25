@@ -3,6 +3,7 @@ pub mod batch;
 pub mod config;
 pub mod diff;
 pub mod extractor;
+pub mod git;
 pub mod history;
 pub mod models;
 pub mod pipeline;
@@ -498,7 +499,8 @@ pub fn run() {
             run_builtin_text_transform,
             get_pipeline_presets,
             cancel_pipeline,
-            execute_pipeline_preset
+            execute_pipeline_preset,
+            git::get_git_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

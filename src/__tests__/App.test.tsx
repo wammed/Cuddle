@@ -227,7 +227,8 @@ describe("App component (6-Region Main Shell)", () => {
     });
 
     expect(screen.getByText("環境設定 & 外観")).toBeDefined();
-    expect(screen.getByText("外観 & テーマ (30種)")).toBeDefined();
+    expect(screen.getAllByText("外観 & テーマ (30種)").length).toBeGreaterThan(0);
+    expect(screen.getByText("情報密度（表示サイズ）")).toBeDefined();
   });
 
   it("toggles between workbench and start page", async () => {

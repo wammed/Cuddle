@@ -159,7 +159,8 @@
     "tab_preview": "プレビュー",
     "tab_diff": "差分表示",
     "tab_history": "操作履歴",
-    "tab_security": "セキュリティ & 設定",
+    "tab_git": "Git 情報",
+    "tab_security": "セキュリティ & ツール診断",
     "tab_logs": "実行ログ"
   },
   "browser": {
@@ -438,5 +439,43 @@
     "recent_locations": "クイックアクセス",
     "features_title": "主要機能・ワークフロー",
     "status_title": "セキュリティ＆システム稼働状態"
+  },
+  "git": {
+    "title": "Git リポジトリ状態",
+    "not_repo": "現在のディレクトリは Git リポジトリではありません",
+    "branch": "現在のブランチ",
+    "clean": "作業ツリーはクリーンです（未コミットの変更なし）",
+    "ahead": "{{count}} コミット先行",
+    "behind": "{{count}} コミット遅延",
+    "staged_changes": "ステージ済み変更 (Index)",
+    "unstaged_changes": "作業ツリー変更 (Working Tree)",
+    "untracked_files": "未追跡ファイル (Untracked)",
+    "conflicts": "マージ競合 (Conflicts)",
+    "latest_commit": "最新コミット",
+    "refresh": "Git 状態を再読み込み"
+  },
+  "density": {
+    "title": "情報密度（表示サイズ）",
+    "desc": "ファイル一覧の行の高さ、アイコンサイズ、文字間隔を切り替えます",
+    "compact": "コンパクト（32px）",
+    "normal": "標準（42px）",
+    "spacious": "ゆったり（52px）"
+  },
+  "rich_preview": {
+    "title": "リッチプレビュー",
+    "no_selection_hint": "一覧のファイルを右クリックして「プレビューを表示」を選択すると、Markdown・HTML・コードを閲覧できます",
+    "markdown_view": "Markdown レンダリング",
+    "html_view": "HTML プレビュー",
+    "code_view": "ソースコード",
+    "encoding": "エンコーディング",
+    "chars_count": "{{count}} 文字",
+    "loading": "プレビューを読み込み中...",
+    "error": "プレビューの読み込みに失敗しました"
+  },
+  "context_menu": {
+    "open_preview": "プレビューを表示",
+    "stage_item": "作業領域へコピー (ステージング)",
+    "unstage_item": "作業領域から解除",
+    "copy_path": "パスをコピー"
   }
 }

@@ -159,7 +159,8 @@
     "tab_preview": "Preview",
     "tab_diff": "Diff",
     "tab_history": "History",
-    "tab_security": "Security & Config",
+    "tab_git": "Git Status",
+    "tab_security": "Security & Tools Diagnostic",
     "tab_logs": "Execution Logs"
   },
   "browser": {
@@ -438,5 +439,43 @@
     "recent_locations": "Quick Access",
     "features_title": "Key Features & Workflows",
     "status_title": "Security & System Health"
+  },
+  "git": {
+    "title": "Git Repository Status",
+    "not_repo": "Current directory is not a Git repository",
+    "branch": "Current Branch",
+    "clean": "Working tree is clean (no uncommitted changes)",
+    "ahead": "{{count}} commit(s) ahead",
+    "behind": "{{count}} commit(s) behind",
+    "staged_changes": "Staged Changes (Index)",
+    "unstaged_changes": "Working Tree Changes",
+    "untracked_files": "Untracked Files",
+    "conflicts": "Merge Conflicts",
+    "latest_commit": "Latest Commit",
+    "refresh": "Refresh Git Status"
+  },
+  "density": {
+    "title": "Display Density",
+    "desc": "Adjust row height, icon size, and font spacing in file lists",
+    "compact": "Compact (32px)",
+    "normal": "Normal (42px)",
+    "spacious": "Spacious (52px)"
+  },
+  "rich_preview": {
+    "title": "Rich Preview",
+    "no_selection_hint": "Right-click a file in the browser or workspace and select 'Open Preview' to view Markdown, HTML, or code",
+    "markdown_view": "Markdown Rendered",
+    "html_view": "HTML Preview",
+    "code_view": "Source Code",
+    "encoding": "Encoding",
+    "chars_count": "{{count}} chars",
+    "loading": "Loading file preview...",
+    "error": "Failed to load file preview"
+  },
+  "context_menu": {
+    "open_preview": "Open Preview",
+    "stage_item": "Copy to Workspace (Stage)",
+    "unstage_item": "Unstage from Workspace",
+    "copy_path": "Copy Path"
   }
 }

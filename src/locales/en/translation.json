@@ -79,7 +79,8 @@
     "reset_success": "Reset to original state completed",
     "line_no": "Line",
     "original_badge": "Original (Read-Only Protected)",
-    "staged_badge": "Staged Copy (workspace-temp)"
+    "staged_badge": "Staged Copy (workspace-temp)",
+    "no_staged_items": "No files in workspace staging area. Stage a file from the browser to inspect diffs."
   },
   "reflection": {
     "reflect_btn": "Reflect to Original",
@@ -156,6 +157,7 @@
     "toggle_bottom": "Toggle Bottom Panel",
     "reset_layout": "Reset Layout",
     "tab_preview": "Preview",
+    "tab_diff": "Diff",
     "tab_history": "History",
     "tab_security": "Security & Config",
     "tab_logs": "Execution Logs"

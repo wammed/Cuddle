@@ -58,12 +58,49 @@
   --backdrop-blur: blur(16px);
   --transition-fast: 0.15s cubic-bezier(0.16, 1, 0.3, 1);
   --transition-normal: 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  color-scheme: dark;
+}
+
+html {
+  color-scheme: dark;
 }
 
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+/* Global Form Elements Default Dark Theme (Strict No-White-Background Rule) */
+input,
+select,
+textarea {
+  color-scheme: dark;
+  background-color: var(--bg-surface-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-xs);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent-brand);
+  box-shadow: 0 0 0 1px var(--accent-brand);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+}
+
+option {
+  background-color: #0c1322;
+  color: #f8fafc;
 }
 
 body {
@@ -2147,6 +2184,34 @@ body {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.rule-type-select,
+.rule-select,
+.config-select {
+  background: #070d18;
+  border: 1px solid var(--border-medium);
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: var(--radius-xs);
+  outline: none;
+  cursor: pointer;
+  transition: all var(--trans-fast);
+}
+
+.rule-type-select:focus,
+.rule-select:focus,
+.config-select:focus {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 1px #38bdf8;
+}
+
+.rule-type-select option,
+.rule-select option,
+.config-select option {
+  background-color: #0c1322;
+  color: #f8fafc;
 }
 
 .rule-input {

@@ -6,6 +6,7 @@ import type { FileItem } from "../types/FileItem";
 import type { StagedItemDto } from "../types/StagedItemDto";
 import type { FileDiffResultDto } from "../types/FileDiffResultDto";
 import type { OperationHistoryDto } from "../types/OperationHistoryDto";
+import type { ExtractedTextDto } from "../types/ExtractedTextDto";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockImplementation((cmd: string, args?: Record<string, unknown>) => {
@@ -151,6 +152,12 @@ describe("BottomTabPanel & Diff Operations (Phase 4.2)", () => {
       />
     );
 
+    // Switch to separated "差分表示" tab
+    const diffTab = screen.getByText("差分表示");
+    await act(async () => {
+      fireEvent.click(diffTab);
+    });
+
     await waitFor(() => {
       expect(screen.getByText("差分プレビュー (原本 vs 作業コピー)")).toBeDefined();
       expect(screen.getByText("+1 行 / -1 行")).toBeDefined();
@@ -185,6 +192,12 @@ describe("BottomTabPanel & Diff Operations (Phase 4.2)", () => {
       />
     );
 
+    // Switch to separated "Diff" tab
+    const diffTab = screen.getByText("Diff");
+    await act(async () => {
+      fireEvent.click(diffTab);
+    });
+
     await waitFor(() => {
       expect(screen.getByText("Diff Preview (Original vs Staging)")).toBeDefined();
       expect(screen.getByText("+1 line(s) / -1 line(s)")).toBeDefined();
@@ -210,6 +223,12 @@ describe("BottomTabPanel & Diff Operations (Phase 4.2)", () => {
         onClose={vi.fn()}
       />
     );
+
+    // Switch to "差分表示" tab
+    const diffTab = screen.getByText("差分表示");
+    await act(async () => {
+      fireEvent.click(diffTab);
+    });
 
     await waitFor(() => {
       expect(screen.getByText("原本へ変更を反映")).toBeDefined();
@@ -258,6 +277,12 @@ describe("BottomTabPanel & Diff Operations (Phase 4.2)", () => {
       />
     );
 
+    // Switch to "差分表示" tab
+    const diffTab = screen.getByText("差分表示");
+    await act(async () => {
+      fireEvent.click(diffTab);
+    });
+
     await waitFor(() => {
       expect(screen.getByText("原本と作業コピーの内容は完全に一致しています (変更なし)")).toBeDefined();
     });
@@ -288,12 +313,20 @@ describe("BottomTabPanel & Diff Operations (Phase 4.2)", () => {
       />
     );
 
+    // Switch to "差分表示" tab
+    const diffTab = screen.getByText("差分表示");
+    await act(async () => {
+      fireEvent.click(diffTab);
+    });
+
     await waitFor(() => {
       expect(screen.getByText("原本へ変更を反映")).toBeDefined();
     });
 
     // Open modal
-    fireEvent.click(screen.getByText("原本へ変更を反映"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("原本へ変更を反映"));
+    });
 
     // Click confirm reflect
     const confirmBtn = screen.getByText("原本への反映を実行");
@@ -413,6 +446,42 @@ describe("BottomTabPanel & Diff Operations (Phase 4.2)", () => {
     });
 
     expect(screen.getByText("操作履歴はありません")).toBeDefined();
+  });
+
+  it("displays text preview independently from diffs in preview tab", async () => {
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    const sampleExtracted: ExtractedTextDto = {
+      item_id: "item-readme",
+      raw_base64: "cmVhZG1lLnR4dA==",
+      display_name: "readme.txt",
+      extracted_chars: 42,
+      tier_used: "Tier1Direct",
+      encoding_used: "UTF-8",
+      truncated: false,
+      warning: null,
+      text: "This is a clean preview text independent of diff.",
+    };
+
+    render(
+      <BottomTabPanel
+        selectedItem={sampleItem}
+        extractedInfo={sampleExtracted}
+        appConfig={null}
+        logs={[]}
+        history={[]}
+        stagedItems={[sampleStaged]}
+        onClose={vi.fn()}
+      />
+    );
+
+    // Initial tab is "preview", which shows the extracted text, not diff
+    expect(screen.getByText("This is a clean preview text independent of diff.")).toBeDefined();
+    expect(screen.getByText("readme.txt")).toBeDefined();
+    expect(screen.getByText("42 chars")).toBeDefined();
+    expect(screen.queryByText("差分プレビュー (原本 vs 作業コピー)")).toBeNull();
   });
 });
 

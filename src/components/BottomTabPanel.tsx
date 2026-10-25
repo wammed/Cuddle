@@ -37,7 +37,7 @@ export function BottomTabPanel({
   onClose,
 }: BottomTabPanelProps) {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<"preview" | "history" | "security" | "logs">("preview");
+  const [activeTab, setActiveTab] = useState<"preview" | "diff" | "history" | "security" | "logs">("preview");
   const [diffResult, setDiffResult] = useState<FileDiffResultDto | null>(null);
   const [isDiffLoading, setIsDiffLoading] = useState(false);
   const [showReflectModal, setShowReflectModal] = useState(false);
@@ -301,6 +301,7 @@ export function BottomTabPanel({
 
       <div className="bottom-tabs-header">
         <div className="tab-buttons-group">
+          {/* 1. Preview Tab */}
           <button
             type="button"
             className={`bottom-tab-btn ${activeTab === "preview" ? "active" : ""}`}
@@ -308,11 +309,22 @@ export function BottomTabPanel({
           >
             <Eye size={13} />
             <span>{t("panels.tab_preview")}</span>
+          </button>
+
+          {/* 2. Diff Tab */}
+          <button
+            type="button"
+            className={`bottom-tab-btn ${activeTab === "diff" ? "active" : ""}`}
+            onClick={() => setActiveTab("diff")}
+          >
+            <GitCompare size={13} />
+            <span>{t("panels.tab_diff")}</span>
             {diffResult && diffResult.has_changes && (
               <span className="tab-badge-accent">+{diffResult.additions} -{diffResult.deletions}</span>
             )}
           </button>
 
+          {/* 3. History Tab */}
           <button
             type="button"
             className={`bottom-tab-btn ${activeTab === "history" ? "active" : ""}`}
@@ -325,6 +337,7 @@ export function BottomTabPanel({
             )}
           </button>
 
+          {/* 4. Security Tab */}
           <button
             type="button"
             className={`bottom-tab-btn ${activeTab === "security" ? "active" : ""}`}
@@ -334,6 +347,7 @@ export function BottomTabPanel({
             <span>{t("panels.tab_security")}</span>
           </button>
 
+          {/* 5. Logs Tab */}
           <button
             type="button"
             className={`bottom-tab-btn ${activeTab === "logs" ? "active" : ""}`}
@@ -352,7 +366,30 @@ export function BottomTabPanel({
       <div className="bottom-tab-content">
         {activeTab === "preview" && (
           <div className="tab-preview-content">
-            {/* 1. Staged Diff Preview */}
+            {extractedInfo ? (
+              <div className="preview-extracted">
+                <div className="preview-meta-bar">
+                  <span>{extractedInfo.display_name}</span>
+                  <span className="pill-tag secure">{extractedInfo.encoding_used}</span>
+                  <span>{extractedInfo.extracted_chars} chars</span>
+                </div>
+                <pre className="preview-code-block">{extractedInfo.text || "(Empty content)"}</pre>
+              </div>
+            ) : selectedItem ? (
+              <div className="preview-item-info">
+                <p className="preview-placeholder-text">
+                  {selectedItem.display_name} ({selectedItem.size.toString()} bytes)
+                </p>
+                <p className="preview-hint-text">{t("workspace.original_protected")}</p>
+              </div>
+            ) : (
+              <p className="preview-empty-text">{t("details.no_selection")}</p>
+            )}
+          </div>
+        )}
+
+        {activeTab === "diff" && (
+          <div className="tab-preview-content">
             {matchedStaged ? (
               <div className="preview-diff-container">
                 <div className="diff-header-bar">
@@ -463,24 +500,11 @@ export function BottomTabPanel({
                   <p className="diff-status-text">{t("diff.no_diff")}</p>
                 )}
               </div>
-            ) : extractedInfo ? (
-              <div className="preview-extracted">
-                <div className="preview-meta-bar">
-                  <span>{extractedInfo.display_name}</span>
-                  <span className="pill-tag secure">{extractedInfo.encoding_used}</span>
-                  <span>{extractedInfo.extracted_chars} chars</span>
-                </div>
-                <pre className="preview-code-block">{extractedInfo.text || "(Empty content)"}</pre>
-              </div>
-            ) : selectedItem ? (
-              <div className="preview-item-info">
-                <p className="preview-placeholder-text">
-                  {selectedItem.display_name} ({selectedItem.size.toString()} bytes)
-                </p>
-                <p className="preview-hint-text">{t("workspace.original_protected")}</p>
-              </div>
             ) : (
-              <p className="preview-empty-text">{t("details.no_selection")}</p>
+              <div className="diff-empty-banner">
+                <GitCompare size={16} className="text-muted" />
+                <span>{t("diff.no_staged_items")}</span>
+              </div>
             )}
           </div>
         )}

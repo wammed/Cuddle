@@ -79,7 +79,8 @@
     "reset_success": "原本状態へリセットしました",
     "line_no": "行",
     "original_badge": "原本 (読み取り専用保護)",
-    "staged_badge": "作業コピー (workspace-temp)"
+    "staged_badge": "作業コピー (workspace-temp)",
+    "no_staged_items": "作業領域にステージングされたファイルが存在しません。ファイルブラウザーから作業領域へ追加してください。"
   },
   "reflection": {
     "reflect_btn": "原本へ変更を反映",
@@ -156,6 +157,7 @@
     "toggle_bottom": "下部パネル切替",
     "reset_layout": "レイアウト初期化",
     "tab_preview": "プレビュー",
+    "tab_diff": "差分表示",
     "tab_history": "操作履歴",
     "tab_security": "セキュリティ & 設定",
     "tab_logs": "実行ログ"

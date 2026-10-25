@@ -273,5 +273,19 @@
     "status_failed": "Failed",
     "empty": "No operation history recorded",
     "record_count": "{{count}} records (capped at 50)"
+  },
+  "backup": {
+    "dialog_title": "Session Exit Backup & Safety Check",
+    "dialog_desc": "{{count}} staged file(s) exist in workspace-temp. Choose whether to save as an archive (tar.gz) or discard and exit.",
+    "dest_path_label": "Destination Archive Path (tar.gz)",
+    "dest_hint": "* You can edit the path to specify any custom location (parent directories created automatically)",
+    "reset_path": "Reset to Default Path",
+    "backup_btn": "Archive Backup & Exit",
+    "discard_btn": "Discard Working Copies & Exit",
+    "cancel_btn": "Continue Working",
+    "archiving": "Creating tar.gz Archive...",
+    "backup_success": "Saved backup archive: {{path}} ({{count}} files, {{size}})",
+    "backup_failed": "Failed to create backup",
+    "action_open_modal": "Backup / Exit"
   }
 }

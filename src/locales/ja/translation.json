@@ -273,5 +273,19 @@
     "status_failed": "失敗",
     "empty": "操作履歴はありません",
     "record_count": "{{count}} 件の記録 (上限 50 件)"
+  },
+  "backup": {
+    "dialog_title": "終了時バックアップ & 安全確認",
+    "dialog_desc": "作業領域（workspace-temp）に {{count}} 件の作業コピーが存在します。アーカイブ（tar.gz）として安全に保存するか、破棄して終了するかを選択してください。",
+    "dest_path_label": "保存先アーカイブパス (tar.gz)",
+    "dest_hint": "※ 入力欄を編集して任意の保存先パスを指定できます（ディレクトリは自動作成されます）",
+    "reset_path": "デフォルトパスに戻す",
+    "backup_btn": "アーカイブ保存して終了",
+    "discard_btn": "作業コピーを破棄して終了",
+    "cancel_btn": "作業を継続する",
+    "archiving": "アーカイブ作成中 (tar.gz)...",
+    "backup_success": "バックアップを保存しました: {{path}} ({{count}} 件, {{size}})",
+    "backup_failed": "バックアップの作成に失敗しました",
+    "action_open_modal": "バックアップ / 終了"
   }
 }

@@ -212,6 +212,16 @@
   * `ts-rs` automated TypeScript type synchronization (`StageStatus.ts` updated with `"Conflict"`)
   * Full bilingual dictionary expansion (`workspace.status_conflict`, `workspace.restored_session`, `workspace.conflict_alert`)
   * Automated testing: 102 Cargo tests 100% pass, 23 Vitest tests 100% pass, Clippy zero warnings, Vite build success
+* [x] **Phase 6.3 (Interactive Exit Dialog & Workspace tar.gz Archiving): Completed**
+  * Detection of unreflected staged items (`has_unreflected_staged_items`) and dynamic default backup destination generation (`get_default_backup_path`: `$XDG_DATA_HOME/Cuddle/backups/backup_YYYYMMDD_HHMMSS.tar.gz`)
+  * High-performance tar.gz archive generation engine (`create_workspace_backup`) bundling all staged files and `manifest.json` (original paths, staged file names, clone methods, timestamps) using `flate2` + `tar`
+  * User decision-gate compliance: default backup path with one-click reset alongside full custom path editing (automatic parent directory creation)
+  * Automatic logging into SQLite WAL operation history upon backup completion (`OperationType::Backup`)
+  * `ExitBackupModal.tsx` implementation: 3-way safe exit actions ("Archive & Exit", "Discard & Exit", "Continue Working"), error alerts, and destination input
+  * `WorkspacePanel.tsx` header integration: "Backup / Exit" action button (`Archive` icon)
+  * `ts-rs` automated TypeScript type synchronization (`BackupResultDto.ts`)
+  * Full bilingual dictionary expansion (`backup.*`) in English and Japanese
+  * Automated testing: 105 Cargo tests 100% pass, 31 Vitest tests 100% pass, Clippy zero warnings, Vite build success
 
 ---
 
@@ -228,31 +238,29 @@ All future development must strictly adhere to the following protocol:
    * **Color Themes:** Notify and form user consensus at the start of the final UI polishing phase (Phases 8–9).
    * **Pipeline Presets:** Notify and form user consensus at the recommended timing (Phase 7: Pipeline Runner).
 4. **Mandatory Manual Testing on Major Phase Transitions:**  
-   At major phase boundaries (e.g. Phase 1 → 2, Phase 2 → 3, Phase 3 → 4, Phase 4 → 5, Phase 5 → 6), the assistant must present a concrete manual verification checklist on real hardware/GUI/CLI and confirm functionality before proceeding to the next major phase.
+   At major phase boundaries (e.g. Phase 1 → 2, Phase 2 → 3, Phase 3 → 4, Phase 4 → 5, Phase 5 → 6, Phase 6 → 7), the assistant must present a concrete manual verification checklist on real hardware/GUI/CLI and confirm functionality before proceeding to the next major phase.
 
 ---
 
-## 6. Next Session Startup Guide (Phase 6 Tasks)
+## 6. Next Session Startup Guide (Phase 7 Tasks)
 
-Having completed Major Phase 5 (Advanced Bulk Operations & Normalization) manual verification, the project transitions to Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) **after user consensus on the pre-phase decision gate**.
+With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) fully implemented and verified via automated tests, the project transitions to Major Phase 7 (External Tool Integration & Pipeline Runner) **following real-hardware manual verification checklist confirmation and pre-phase decision gate consensus**.
 
-### 6.1 Phase 6.1 Architecture & Design Decisions (Operation History, Persistent Journal & Separation Model)
-* **Persistent Operation History & Journal:**
-  * Log operations (bulk rename, reflection, staging, resets) with timestamp, inode, operation type, paths, and execution status.
-  * Explicit determination of undoability (verifying whether backing data exists and is safe to revert).
-* **History Inspector UI:**
-  * Localized timeline view in the bottom "History" panel tab.
-  * Direct invocation of undo or restoration from history entries.
+### 7.1 Phase 7.1 Architecture & Design Decisions (External Command Execution Engine)
+* **Process Isolation & Landlock LSM / cgroups Confinement:**
+  * Execute external media/document utilities (ImageMagick, FFmpeg, pandoc) isolated with read-write access restricted strictly to `workspace-temp/`.
+  * Protective bounds on memory, CPU, and execution timeout (30 seconds).
+  * Argument array execution completely devoid of shell string interpolation (`sh -c`).
 
-### 6.2 Phase 6.2 Architecture & Design Decisions (Session Restoration Engine)
-* **Workspace Staging Session Manifest:**
-  * Persist active `workspace-temp/` staging states across application restarts or unexpected terminations.
-  * Validate external origin conflicts (TOCTOU) and auto-restore staged working copies upon app startup.
+### 7.2 Phase 7.2 Architecture & Design Decisions (Pipeline Presets & DAG Workflow)
+* **Pipeline Presets Consensus & Workflow Specification:**
+  * Curated, safe presets for image optimization (WebP conversion/resizing), metadata scrubbing (exiftool), document transformation (pandoc).
+  * Advance user consensus on default preset configurations prior to Phase 7 execution.
 
-### 6.3 Phase 6.3 Architecture & Design Decisions (Exit Confirmation & Safe Tar Archiving)
-* **Exit Guardrail Flow:**
-  * Intercept window closing when unreflected modified working copies exist.
-  * Safe options: "Archive & Exit (tar.zst/tar.gz)", "Discard & Exit", or "Cancel".
+### 7.3 Phase 7.3 Architecture & Design Decisions (Real-time Progress UI & Cancellation Controls)
+* **Streaming Asynchronous Feedback & UI Integration:**
+  * Real-time file processing status tracking (pending, running, succeeded, failed) via progress indicators.
+  * User-initiated cancellation mechanism.
 
 ---
 

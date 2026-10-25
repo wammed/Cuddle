@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod batch;
 pub mod config;
 pub mod diff;
@@ -274,6 +275,25 @@ fn clear_operation_history() -> Result<(), String> {
     mgr.clear_history()
 }
 
+#[tauri::command]
+fn get_default_backup_path() -> Result<String, String> {
+    backup::get_default_backup_path()
+}
+
+#[tauri::command]
+fn create_workspace_backup(destination_path: Option<String>) -> Result<backup::BackupResultDto, String> {
+    let mgr = workspace::get_workspace_manager();
+    let staged = mgr.list_staged();
+    backup::create_workspace_backup(destination_path, &staged)
+}
+
+#[tauri::command]
+fn has_unreflected_staged_items() -> bool {
+    let mgr = workspace::get_workspace_manager();
+    let staged = mgr.list_staged();
+    staged.iter().any(|item| item.status != workspace::StageStatus::Reflected)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -307,7 +327,10 @@ pub fn run() {
             can_undo_bulk_rename,
             undo_last_bulk_rename,
             get_operation_history,
-            clear_operation_history
+            clear_operation_history,
+            get_default_backup_path,
+            create_workspace_backup,
+            has_unreflected_staged_items
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

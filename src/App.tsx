@@ -12,6 +12,8 @@ import type { SystemPathsDto } from "./types/SystemPathsDto";
 import type { ResolvedPathDto } from "./types/ResolvedPathDto";
 import type { BatchExecutionResultDto } from "./types/BatchExecutionResultDto";
 import type { OperationHistoryDto } from "./types/OperationHistoryDto";
+import type { BackupResultDto } from "./types/BackupResultDto";
+import { formatBytes } from "./utils/format";
 import { Header } from "./components/Header";
 import { SearchPanel } from "./components/SearchPanel";
 import { FolderTreePanel } from "./components/FolderTreePanel";
@@ -20,6 +22,7 @@ import { WorkspacePanel } from "./components/WorkspacePanel";
 import { DetailsSidebarPanel } from "./components/DetailsSidebarPanel";
 import { BottomTabPanel } from "./components/BottomTabPanel";
 import { BulkRenameModal } from "./components/BulkRenameModal";
+import { ExitBackupModal } from "./components/ExitBackupModal";
 import "./App.css";
 
 interface LandlockStatus {
@@ -38,6 +41,7 @@ export function App() {
   const [stagedItems, setStagedItems] = useState<StagedItemDto[]>([]);
   const [selectedItem, setSelectedItem] = useState<FileItem | null>(null);
   const [bulkRenameOpen, setBulkRenameOpen] = useState(false);
+  const [exitBackupOpen, setExitBackupOpen] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -394,6 +398,24 @@ export function App() {
     }
   };
 
+  const handleBackupSuccess = async (result: BackupResultDto) => {
+    const successMsg = t("backup.backup_success", {
+      path: result.archive_path,
+      count: result.file_count,
+      size: formatBytes(Number(result.total_bytes)),
+    });
+    addHistory(`Created tar.gz workspace backup at "${result.archive_path}" (${result.file_count} files)`);
+    addLog(`Workspace backup completed successfully: ${result.archive_path}`);
+    showToast(successMsg);
+    await loadHistory();
+    await handleClearWorkspace();
+  };
+
+  const handleDiscardAndExit = async () => {
+    await handleClearWorkspace();
+    showToast(t("workspace.clear_all_btn"));
+  };
+
   const handleExtractText = async (item: FileItem) => {
     try {
       setExtractLoading(true);
@@ -555,6 +577,7 @@ export function App() {
                       onUnstageItem={handleUnstageItem}
                       onOpenBulkRename={() => setBulkRenameOpen(true)}
                       onUndo={handleUndoBatch}
+                      onOpenBackup={() => setExitBackupOpen(true)}
                     />
                   </Panel>
                 </Group>
@@ -615,11 +638,20 @@ export function App() {
         onExecuteSuccess={handleBulkRenameSuccess}
       />
 
+      {/* Exit & Backup Modal (Phase 6.3) */}
+      <ExitBackupModal
+        isOpen={exitBackupOpen}
+        stagedCount={stagedItems.length}
+        onClose={() => setExitBackupOpen(false)}
+        onDiscard={handleDiscardAndExit}
+        onBackupSuccess={handleBackupSuccess}
+      />
+
       <footer className="cuddle-global-statusbar">
         <div className="statusbar-left">
           <span className="status-label">Cuddle</span>
           <span className="status-sep">|</span>
-          <span>Phase 6.1 SQLite WAL Operation History &amp; Timeline Active</span>
+          <span>Phase 6.3 Workspace Backup &amp; Recovery Active</span>
         </div>
         <div className="statusbar-right">
           <span>Staged: {stagedFiles.length} files</span>

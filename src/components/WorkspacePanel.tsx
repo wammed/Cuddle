@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Briefcase, ShieldCheck, Trash2, Sparkles, RotateCcw } from "lucide-react";
+import { Briefcase, ShieldCheck, Trash2, Sparkles, RotateCcw, Archive } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
 import type { StagedItemDto } from "../types/StagedItemDto";
@@ -15,6 +15,7 @@ interface WorkspacePanelProps {
   onUnstageItem?: (stageId: string) => void;
   onOpenBulkRename?: () => void;
   onUndo?: () => void;
+  onOpenBackup?: () => void;
 }
 
 export function WorkspacePanel({
@@ -27,6 +28,7 @@ export function WorkspacePanel({
   onUnstageItem,
   onOpenBulkRename,
   onUndo,
+  onOpenBackup,
 }: WorkspacePanelProps) {
   const { t } = useTranslation();
 
@@ -105,6 +107,18 @@ export function WorkspacePanel({
             >
               <RotateCcw size={13} />
               <span>{t("workspace.undo_rename_btn")}</span>
+            </button>
+          )}
+
+          {stagedFiles.length > 0 && onOpenBackup && (
+            <button
+              type="button"
+              className="panel-header-btn-secondary"
+              onClick={onOpenBackup}
+              title={t("backup.action_open_modal")}
+            >
+              <Archive size={13} />
+              <span>{t("backup.action_open_modal")}</span>
             </button>
           )}
 

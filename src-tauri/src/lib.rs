@@ -1,3 +1,4 @@
+pub mod batch;
 pub mod config;
 pub mod diff;
 pub mod extractor;
@@ -234,6 +235,11 @@ fn reflect_staged_file(stage_id: String) -> Result<workspace::StagedItemDto, Str
     mgr.reflect_staged_file(&stage_id).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn generate_bulk_rename_plan(options: batch::BulkRenameOptions) -> Result<batch::BatchPlanDto, String> {
+    batch::generate_plan_from_options(options)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -260,7 +266,8 @@ pub fn run() {
             clear_staged_items,
             get_file_diff,
             reset_staged_file,
-            reflect_staged_file
+            reflect_staged_file,
+            generate_bulk_rename_plan
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

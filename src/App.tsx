@@ -16,6 +16,7 @@ import { FileBrowserPanel } from "./components/FileBrowserPanel";
 import { WorkspacePanel } from "./components/WorkspacePanel";
 import { DetailsSidebarPanel } from "./components/DetailsSidebarPanel";
 import { BottomTabPanel } from "./components/BottomTabPanel";
+import { BulkRenameModal } from "./components/BulkRenameModal";
 import "./App.css";
 
 interface LandlockStatus {
@@ -33,6 +34,7 @@ export function App() {
   const [stagedFiles, setStagedFiles] = useState<FileItem[]>([]);
   const [stagedItems, setStagedItems] = useState<StagedItemDto[]>([]);
   const [selectedItem, setSelectedItem] = useState<FileItem | null>(null);
+  const [bulkRenameOpen, setBulkRenameOpen] = useState(false);
 
   const [landlock, setLandlock] = useState<LandlockStatus | null>(null);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
@@ -389,6 +391,7 @@ export function App() {
                       onSelect={(item) => setSelectedItem(item)}
                       onClearWorkspace={handleClearWorkspace}
                       onUnstageItem={handleUnstageItem}
+                      onOpenBulkRename={() => setBulkRenameOpen(true)}
                     />
                   </Panel>
                 </Group>
@@ -435,11 +438,22 @@ export function App() {
         </Group>
       </main>
 
+      {/* Bulk Rename & Normalization Modal (Phase 5.1) */}
+      <BulkRenameModal
+        isOpen={bulkRenameOpen}
+        onClose={() => setBulkRenameOpen(false)}
+        items={stagedItems.length > 0 ? stagedItems : stagedFiles}
+        onConfirmPlan={(plan) => {
+          addLog(`Bulk rename dry-run plan confirmed: ${plan.batch_id} (${plan.changed_count} changed)`);
+          setBulkRenameOpen(false);
+        }}
+      />
+
       <footer className="cuddle-global-statusbar">
         <div className="statusbar-left">
           <span className="status-label">Cuddle</span>
           <span className="status-sep">|</span>
-          <span>Phase 4.3 Atomic Reflection &amp; TOCTOU Guard Active</span>
+          <span>Phase 5.1 Bulk Normalization &amp; Dry-run Engine Active</span>
         </div>
         <div className="statusbar-right">
           <span>Staged: {stagedFiles.length} files</span>

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Briefcase, ShieldCheck, Trash2 } from "lucide-react";
+import { Briefcase, ShieldCheck, Trash2, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
 import type { StagedItemDto } from "../types/StagedItemDto";
@@ -12,6 +12,7 @@ interface WorkspacePanelProps {
   onSelect: (item: FileItem) => void;
   onClearWorkspace: () => void;
   onUnstageItem?: (stageId: string) => void;
+  onOpenBulkRename?: () => void;
 }
 
 export function WorkspacePanel({
@@ -21,6 +22,7 @@ export function WorkspacePanel({
   onSelect,
   onClearWorkspace,
   onUnstageItem,
+  onOpenBulkRename,
 }: WorkspacePanelProps) {
   const { t } = useTranslation();
 
@@ -66,6 +68,18 @@ export function WorkspacePanel({
         </div>
 
         <div className="panel-header-actions">
+          {stagedFiles.length > 0 && onOpenBulkRename && (
+            <button
+              type="button"
+              className="panel-header-btn-primary"
+              onClick={onOpenBulkRename}
+              title={t("workspace.bulk_rename_btn")}
+            >
+              <Sparkles size={13} />
+              <span>{t("workspace.bulk_rename_btn")}</span>
+            </button>
+          )}
+
           {stagedFiles.length > 0 && (
             <button
               type="button"

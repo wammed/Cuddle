@@ -1,7 +1,4 @@
-// src/components/SettingsModal.tsx
-// Cuddle - Settings & 30-Theme Appearance Preference Modal
-
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Settings,
@@ -13,12 +10,50 @@ import {
   Keyboard,
   Check,
   FileCode,
+  Workflow,
+  Plus,
+  Trash2,
+  Copy,
+  CheckCircle2,
+  Terminal,
+  ShieldAlert,
+  Sparkles,
+  Edit2,
 } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import { THEME_PRESETS, applyTheme, getSavedThemeId } from "../utils/themePresets";
 import type { ThemeCategory, ThemePreset } from "../types/ThemePreset";
 import type { Density } from "../types/Density";
+import type { AppConfig } from "../types/AppConfig";
+import type { CustomPipelineDefDto } from "../types/CustomPipelineDefDto";
 import { applyDensity, getSavedDensity } from "../utils/density";
 import { SupportedLanguage } from "../i18n";
+
+const TOML_TEMPLATE_CODE = `# ==============================================================================
+# [[custom_pipelines]] - ユーザー作成パイプライン設定 (設計書 8.3 必須安全フロー)
+# ==============================================================================
+# {input}  : 作業コピーの絶対パス
+# {output} : 出力先ステージングパス (default_suffix / output_extension から自動生成)
+
+[[custom_pipelines]]
+id = "custom-webp-lossless"
+name = "WebP 可逆圧縮カスタムコンバータ"
+description = "cwebp を使用して PNG/JPEG を WebP に高品質変換 (品質 85)"
+executable = "cwebp"
+args = ["-q", "85", "{input}", "-o", "{output}"]
+supported_extensions = ["png", "jpg", "jpeg"]
+output_extension = "webp"
+default_suffix = "_web"
+
+[[custom_pipelines]]
+id = "custom-strip-metadata"
+name = "ExifTool メタデータ完全消去"
+description = "exiftool を用いて全 Exif/GPS メタデータを消去"
+executable = "exiftool"
+args = ["-all=", "-overwrite_original", "{input}"]
+supported_extensions = ["jpg", "jpeg", "png", "tiff", "webp"]
+default_suffix = "_clean"
+`;
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -44,10 +79,179 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onDensityChange,
 }) => {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<"appearance" | "general" | "workspace" | "shortcuts">("appearance");
+  const [activeTab, setActiveTab] = useState<"appearance" | "general" | "workspace" | "pipelines" | "shortcuts">("appearance");
   const [selectedCategory, setSelectedCategory] = useState<"all" | ThemeCategory>("all");
   const [currentThemeId, setCurrentThemeId] = useState<string>(() => getSavedThemeId());
   const [currentDensity, setCurrentDensity] = useState<Density>(() => density || getSavedDensity());
+
+  // AppConfig & Custom Pipelines State
+  const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
+  const [customPipelines, setCustomPipelines] = useState<CustomPipelineDefDto[]>([]);
+  const [copiedTemplate, setCopiedTemplate] = useState<boolean>(false);
+  const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Form inputs
+  const [formId, setFormId] = useState<string>("");
+  const [formName, setFormName] = useState<string>("");
+  const [formDesc, setFormDesc] = useState<string>("");
+  const [formExecutable, setFormExecutable] = useState<string>("");
+  const [formArgs, setFormArgs] = useState<string>("");
+  const [formExts, setFormExts] = useState<string>("");
+  const [formOutExt, setFormOutExt] = useState<string>("");
+  const [formSuffix, setFormSuffix] = useState<string>("");
+
+  useEffect(() => {
+    if (!isOpen) return;
+    invoke<AppConfig>("get_app_config")
+      .then((cfg) => {
+        setAppConfig(cfg);
+        if (cfg.custom_pipelines) {
+          setCustomPipelines(cfg.custom_pipelines);
+        }
+      })
+      .catch((err) => console.error("Failed to load app config:", err));
+  }, [isOpen]);
+
+  const handleCopyTemplate = async () => {
+    try {
+      await navigator.clipboard.writeText(TOML_TEMPLATE_CODE);
+      setCopiedTemplate(true);
+      setTimeout(() => setCopiedTemplate(false), 2500);
+    } catch (e) {
+      console.error("Clipboard copy failed:", e);
+    }
+  };
+
+  const handleOpenNewForm = () => {
+    setEditingId(null);
+    setFormId(`custom-tool-${Date.now().toString().slice(-4)}`);
+    setFormName("");
+    setFormDesc("");
+    setFormExecutable("");
+    setFormArgs("{input} -o {output}");
+    setFormExts("png, jpg, jpeg");
+    setFormOutExt("");
+    setFormSuffix("_custom");
+    setIsFormOpen(true);
+  };
+
+  const handleEditPipeline = (pipe: CustomPipelineDefDto) => {
+    setEditingId(pipe.id);
+    setFormId(pipe.id);
+    setFormName(pipe.name);
+    setFormDesc(pipe.description);
+    setFormExecutable(pipe.executable);
+    setFormArgs(pipe.args.join(" "));
+    setFormExts(pipe.supported_extensions.join(", "));
+    setFormOutExt(pipe.output_extension || "");
+    setFormSuffix(pipe.default_suffix || "");
+    setIsFormOpen(true);
+  };
+
+  const handleLoadPresetTemplate = (type: "webp" | "exif") => {
+    if (type === "webp") {
+      setFormId("custom-webp-lossless");
+      setFormName("WebP 可逆圧縮カスタムコンバータ");
+      setFormDesc("cwebp を使用して PNG/JPEG を WebP に高品質変換 (品質 85)");
+      setFormExecutable("cwebp");
+      setFormArgs("-q 85 {input} -o {output}");
+      setFormExts("png, jpg, jpeg");
+      setFormOutExt("webp");
+      setFormSuffix("_web");
+    } else {
+      setFormId("custom-strip-metadata");
+      setFormName("ExifTool メタデータ完全消去");
+      setFormDesc("exiftool を用いて全 Exif/GPS メタデータを消去");
+      setFormExecutable("exiftool");
+      setFormArgs("-all= -overwrite_original {input}");
+      setFormExts("jpg, jpeg, png, tiff, webp");
+      setFormOutExt("");
+      setFormSuffix("_clean");
+    }
+    setIsFormOpen(true);
+  };
+
+  const handleSavePipeline = async () => {
+    if (!formId.trim() || !formName.trim() || !formExecutable.trim()) {
+      alert("ID, 表示名, 実行バイナリは必須です / ID, Name, and Executable are required.");
+      return;
+    }
+
+    const argsList = formArgs
+      .trim()
+      .split(/\s+/)
+      .filter((a) => a.length > 0);
+
+    const extList = formExts
+      .split(/[,、\s]+/)
+      .map((e) => e.replace(/^\./, "").trim())
+      .filter((e) => e.length > 0);
+
+    const newDef: CustomPipelineDefDto = {
+      id: formId.trim(),
+      name: formName.trim(),
+      description: formDesc.trim(),
+      executable: formExecutable.trim(),
+      args: argsList,
+      supported_extensions: extList,
+      output_extension: formOutExt.trim() ? formOutExt.replace(/^\./, "").trim() : null,
+      default_suffix: formSuffix.trim() ? formSuffix.trim() : "_custom",
+    };
+
+    let updatedList: CustomPipelineDefDto[];
+    if (editingId) {
+      updatedList = customPipelines.map((p) => (p.id === editingId ? newDef : p));
+    } else {
+      // If already exists with same ID, replace it; otherwise append
+      const existsIndex = customPipelines.findIndex((p) => p.id === newDef.id);
+      if (existsIndex >= 0) {
+        updatedList = [...customPipelines];
+        updatedList[existsIndex] = newDef;
+      } else {
+        updatedList = [...customPipelines, newDef];
+      }
+    }
+
+    setCustomPipelines(updatedList);
+    setIsFormOpen(false);
+    setEditingId(null);
+
+    // Save to AppConfig in backend
+    if (appConfig) {
+      const newConfig: AppConfig = {
+        ...appConfig,
+        custom_pipelines: updatedList,
+      };
+      try {
+        await invoke("save_app_config", { config: newConfig });
+        setAppConfig(newConfig);
+      } catch (e) {
+        console.error("Failed to save config:", e);
+      }
+    }
+  };
+
+  const handleDeletePipeline = async (id: string) => {
+    if (!confirm(t("common.confirm") + " " + t("custom_pipelines.delete_btn") + "?")) {
+      return;
+    }
+    const updatedList = customPipelines.filter((p) => p.id !== id);
+    setCustomPipelines(updatedList);
+
+    if (appConfig) {
+      const newConfig: AppConfig = {
+        ...appConfig,
+        custom_pipelines: updatedList,
+      };
+      try {
+        await invoke("save_app_config", { config: newConfig });
+        setAppConfig(newConfig);
+      } catch (e) {
+        console.error("Failed to save config:", e);
+      }
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -116,6 +320,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           >
             <HardDrive size={14} />
             <span>{t("settings.tab_workspace")}</span>
+          </button>
+          <button
+            type="button"
+            className={`settings-tab-btn ${activeTab === "pipelines" ? "active" : ""}`}
+            onClick={() => setActiveTab("pipelines")}
+          >
+            <Workflow size={14} />
+            <span>{t("settings.tab_pipelines")}</span>
           </button>
           <button
             type="button"
@@ -323,7 +535,289 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           )}
 
-          {/* TAB 4: Shortcuts */}
+          {/* TAB 4: Custom Pipelines & Templates (Design 8.3 Safe Flow) */}
+          {activeTab === "pipelines" && (
+            <div className="settings-section-content">
+              {/* Safety Flow Explainer Banner */}
+              <div className="settings-card settings-safety-guide-card">
+                <div className="safety-guide-header">
+                  <ShieldAlert size={18} className="text-amber-400" />
+                  <div>
+                    <h5 className="safety-guide-title">{t("pipeline.safety_flow_badge")}</h5>
+                    <p className="safety-guide-desc">{t("custom_pipelines.desc")}</p>
+                  </div>
+                </div>
+                <div className="safety-flow-steps-pill">
+                  <span className="step-pill">1. {t("pipeline.step_risk_title")}</span>
+                  <span className="step-arrow">→</span>
+                  <span className="step-pill">2. {t("pipeline.step_dry_run_title")}</span>
+                  <span className="step-arrow">→</span>
+                  <span className="step-pill">3. {t("pipeline.step_review_title")}</span>
+                  <span className="step-arrow">→</span>
+                  <span className="step-pill active">4. {t("pipeline.step_exec_title")}</span>
+                </div>
+              </div>
+
+              {/* TOML Template Section */}
+              <div className="settings-card">
+                <div className="settings-card-header flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <Terminal size={16} className="text-teal-400" />
+                    <h5>{t("custom_pipelines.template_title")}</h5>
+                  </div>
+                  <button
+                    type="button"
+                    className="dialog-btn secondary small"
+                    onClick={handleCopyTemplate}
+                  >
+                    {copiedTemplate ? (
+                      <>
+                        <CheckCircle2 size={13} className="text-emerald-400" />
+                        <span>{t("custom_pipelines.template_copied")}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={13} />
+                        <span>{t("custom_pipelines.template_copy_btn")}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <p className="settings-card-desc">{t("custom_pipelines.template_desc")}</p>
+                <div className="toml-snippet-block">
+                  <pre className="font-mono text-xs">{TOML_TEMPLATE_CODE}</pre>
+                </div>
+              </div>
+
+              {/* Registered Pipelines Header & Actions */}
+              <div className="custom-pipelines-header-row">
+                <div>
+                  <h4 className="settings-section-title">
+                    {t("custom_pipelines.registered_list", { count: customPipelines.length })}
+                  </h4>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="dialog-btn secondary small"
+                    onClick={() => handleLoadPresetTemplate("webp")}
+                    title={t("custom_pipelines.load_template_webp")}
+                  >
+                    <Sparkles size={12} className="text-cyan-400" />
+                    <span>{t("custom_pipelines.load_template_webp")}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="dialog-btn secondary small"
+                    onClick={() => handleLoadPresetTemplate("exif")}
+                    title={t("custom_pipelines.load_template_exif")}
+                  >
+                    <Sparkles size={12} className="text-amber-400" />
+                    <span>{t("custom_pipelines.load_template_exif")}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="dialog-btn primary small"
+                    onClick={handleOpenNewForm}
+                  >
+                    <Plus size={13} />
+                    <span>{t("custom_pipelines.add_new_btn")}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Form Card (When Opened) */}
+              {isFormOpen && (
+                <div className="settings-card custom-pipeline-form-card">
+                  <div className="settings-card-header">
+                    <Workflow size={16} className="text-teal-400" />
+                    <h5>{editingId ? t("custom_pipelines.edit_btn") : t("custom_pipelines.add_new_btn")}</h5>
+                  </div>
+                  <div className="form-grid-2col">
+                    <div className="form-field-group">
+                      <label>{t("custom_pipelines.field_id")} *</label>
+                      <input
+                        type="text"
+                        className="form-text-input font-mono"
+                        placeholder="custom-my-tool"
+                        value={formId}
+                        onChange={(e) => setFormId(e.target.value)}
+                        disabled={!!editingId}
+                      />
+                    </div>
+                    <div className="form-field-group">
+                      <label>{t("custom_pipelines.field_name")} *</label>
+                      <input
+                        type="text"
+                        className="form-text-input"
+                        placeholder="ツール表示名"
+                        value={formName}
+                        onChange={(e) => setFormName(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-field-group">
+                    <label>{t("custom_pipelines.field_desc")}</label>
+                    <input
+                      type="text"
+                      className="form-text-input"
+                      placeholder="処理内容の説明"
+                      value={formDesc}
+                      onChange={(e) => setFormDesc(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-grid-2col">
+                    <div className="form-field-group">
+                      <label>{t("custom_pipelines.field_executable")} *</label>
+                      <input
+                        type="text"
+                        className="form-text-input font-mono"
+                        placeholder="cwebp / ffmpeg / exiftool / /usr/local/bin/mytool"
+                        value={formExecutable}
+                        onChange={(e) => setFormExecutable(e.target.value)}
+                      />
+                    </div>
+                    <div className="form-field-group">
+                      <label>{t("custom_pipelines.field_args")} *</label>
+                      <input
+                        type="text"
+                        className="form-text-input font-mono"
+                        placeholder="-q 80 {input} -o {output}"
+                        value={formArgs}
+                        onChange={(e) => setFormArgs(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-grid-3col">
+                    <div className="form-field-group">
+                      <label>{t("custom_pipelines.field_exts")}</label>
+                      <input
+                        type="text"
+                        className="form-text-input font-mono"
+                        placeholder="png, jpg, jpeg"
+                        value={formExts}
+                        onChange={(e) => setFormExts(e.target.value)}
+                      />
+                    </div>
+                    <div className="form-field-group">
+                      <label>{t("custom_pipelines.field_out_ext")}</label>
+                      <input
+                        type="text"
+                        className="form-text-input font-mono"
+                        placeholder="webp (空欄なら同一拡張子)"
+                        value={formOutExt}
+                        onChange={(e) => setFormOutExt(e.target.value)}
+                      />
+                    </div>
+                    <div className="form-field-group">
+                      <label>{t("custom_pipelines.field_suffix")}</label>
+                      <input
+                        type="text"
+                        className="form-text-input font-mono"
+                        placeholder="_clean / _web"
+                        value={formSuffix}
+                        onChange={(e) => setFormSuffix(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-actions-row">
+                    <button
+                      type="button"
+                      className="dialog-btn secondary small"
+                      onClick={() => setIsFormOpen(false)}
+                    >
+                      {t("common.cancel")}
+                    </button>
+                    <button
+                      type="button"
+                      className="dialog-btn primary small"
+                      onClick={handleSavePipeline}
+                    >
+                      <Check size={13} />
+                      <span>{t("custom_pipelines.save_btn")}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Registered Pipelines List */}
+              {customPipelines.length === 0 ? (
+                <div className="empty-state-notice">
+                  <p>{t("custom_pipelines.empty")}</p>
+                </div>
+              ) : (
+                <div className="custom-pipelines-grid">
+                  {customPipelines.map((pipe) => (
+                    <div key={pipe.id} className="custom-pipeline-item-card">
+                      <div className="pipe-card-header">
+                        <div className="pipe-title-wrap">
+                          <span className="pipe-name">{pipe.name}</span>
+                          <code className="pipe-id-badge font-mono">{pipe.id}</code>
+                        </div>
+                        <div className="pipe-card-actions">
+                          <button
+                            type="button"
+                            className="pipe-action-btn edit"
+                            onClick={() => handleEditPipeline(pipe)}
+                            title={t("custom_pipelines.edit_btn")}
+                          >
+                            <Edit2 size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            className="pipe-action-btn delete"
+                            onClick={() => handleDeletePipeline(pipe.id)}
+                            title={t("custom_pipelines.delete_btn")}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <p className="pipe-desc">{pipe.description}</p>
+
+                      <div className="pipe-details-row">
+                        <div className="detail-item">
+                          <span className="label">Binary:</span>
+                          <code className="val font-mono">{pipe.executable}</code>
+                        </div>
+                        <div className="detail-item">
+                          <span className="label">Args:</span>
+                          <code className="val font-mono">{pipe.args.join(" ")}</code>
+                        </div>
+                        <div className="detail-item">
+                          <span className="label">Exts:</span>
+                          <span className="val font-mono">
+                            {pipe.supported_extensions.length > 0
+                              ? pipe.supported_extensions.join(", ")
+                              : "* (All)"}
+                          </span>
+                        </div>
+                        {pipe.output_extension && (
+                          <div className="detail-item">
+                            <span className="label">Out:</span>
+                            <span className="val font-mono">.{pipe.output_extension}</span>
+                          </div>
+                        )}
+                        {pipe.default_suffix && (
+                          <div className="detail-item">
+                            <span className="label">Suffix:</span>
+                            <span className="val font-mono">{pipe.default_suffix}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 5: Shortcuts */}
           {activeTab === "shortcuts" && (
             <div className="settings-section-content">
               <div className="shortcuts-table-container">

@@ -400,8 +400,23 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
   * **System Integration (`density.ts`):** Dynamically updates root CSS variables (`--list-row-height`, `--list-icon-size`, `--list-font-size`, `--list-padding-y`) and persists choices to `localStorage`.
   * **Virtual Scrolling Integration:** Synchronized with `@tanstack/react-virtual` row height estimation for seamless, flicker-free list re-rendering.
   * **Settings Modal Controls (`SettingsModal.tsx`):** Prominently placed 3-pill toggle button group at the top of the Appearance settings tab.
+* **User-Created Pipelines & Mandatory Design 8.3 Safety Flow (Phase 8.8):**
+  * **Configuration File & Settings Menu Templates (`config.template.toml`, `SettingsModal.tsx`):**
+    * Added `[[custom_pipelines]]` template sections in `config.template.toml` with detailed explanations of `{input}` (working copy absolute path) and `{output}` (staged destination path) placeholders, with examples for WebP lossless compression and ExifTool metadata stripping.
+    * Added a dedicated "Custom Pipelines" tab to `SettingsModal.tsx` featuring 1-click TOML template clipboard copying, preset auto-fill buttons (WebP / ExifTool), inline creation & editing forms, deletion, and immediate persistence via `save_app_config`.
+  * **Pipeline Modal Integration (`PipelineModal.tsx`):**
+    * Added "Custom" (`custom`) category filter pill.
+    * Integrated custom pipeline definitions from `AppConfig` into the preset browser with distinct amber `ShieldAlert` safety badges.
+  * **Mandatory Design 8.3 Safety Flow Wizard:**
+    * Directly executing user-defined pipelines without verification is strictly blocked; a mandatory 2-step confirmation and pre-flight Dry-Run wizard is enforced:
+      * **Step 1: [Risk Explanation]** Displays the executable binary, expanded argument template, target file counts, and Linux Landlock LSM kernel isolation constraints protecting original files.
+      * **1st Confirmation:** User reviews constraints and clicks "1st Confirmation: Start Dry-Run Verification".
+      * **Step 2: [Dry-Run Pre-flight]** Backend executes `validate_custom_pipeline_dry_run` to verify binary existence in PATH, argument expansions, destination filename collision detection, supported file extensions, and disk space guardrails (>= 1.5x).
+      * **Step 3: [Results & Risk Re-presentation]** Shows resolved binary path, interactive table of input files -> expanded commands -> proposed outputs, conflict warnings, and re-presents kernel-level protection guarantees.
+      * **2nd Confirmation:** "2nd Confirmation: Execute under Landlock Isolation" activates only when Dry-Run succeeds with zero fatal conflicts.
+      * **Step 4: [Execution under Landlock]** Executes the custom tool inside isolated sandboxed processes with original directory write blocking, real-time progress events, and cancellation support.
 * **Verification & Testing:**
-  * 45 Vitest unit/component tests passing (100%, covering Git tab, Security & Diagnostic label harmonization, Rich Preview, and Density settings), 136 Cargo unit tests passing (100%), zero Clippy warnings, TypeScript/Vite production build passing cleanly.
+  * 45 Vitest tests passing (100%), 139 Cargo unit tests passing (100%), TypeScript / Vite production build passing cleanly.
 
 ---
 

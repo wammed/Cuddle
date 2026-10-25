@@ -457,6 +457,69 @@ async fn execute_pipeline_preset(
     Ok(res)
 }
 
+#[tauri::command]
+fn validate_custom_pipeline_dry_run(
+    pipeline: config::CustomPipelineDefDto,
+    stage_ids: Vec<String>,
+) -> Result<pipeline::CustomPipelineDryRunResultDto, models::AppErrorDto> {
+    let mgr = workspace::get_workspace_manager();
+    pipeline::PipelineRunner::dry_run_custom_pipeline(&pipeline, &stage_ids, &mgr)
+}
+
+#[tauri::command]
+async fn execute_custom_pipeline(
+    app: tauri::AppHandle,
+    pipeline: config::CustomPipelineDefDto,
+    stage_ids: Vec<String>,
+    job_id: Option<String>,
+) -> Result<pipeline::PipelineExecutionResultDto, models::AppErrorDto> {
+    use tauri::Emitter;
+
+    let mgr = workspace::get_workspace_manager();
+    let app_handle = app.clone();
+    let pipeline_clone = pipeline.clone();
+
+    let res = tokio::task::spawn_blocking(move || {
+        let callback = Box::new(move |event: pipeline::PipelineProgressEvent| {
+            let _ = app_handle.emit("pipeline-progress", event);
+        });
+        pipeline::PipelineRunner::execute_custom_pipeline_with_progress(
+            &pipeline_clone,
+            &stage_ids,
+            &mgr,
+            job_id,
+            Some(callback),
+        )
+    })
+    .await
+    .map_err(|e| models::AppErrorDto::new("TaskJoinError", e.to_string()))??;
+
+    // Record into SQLite persistent history
+    let hist_mgr = history::get_history_manager();
+    let _ = hist_mgr.record_operation(&history::NewHistoryEntry {
+        operation_id: uuid::Uuid::new_v4().to_string(),
+        operation_type: "CustomPipeline".to_string(),
+        display_name: format!("Custom: {}", pipeline.name),
+        original_path: None,
+        staged_path: None,
+        inode: None,
+        status: if res.is_cancelled {
+            "Cancelled".to_string()
+        } else if res.failure_count == 0 {
+            "Success".to_string()
+        } else {
+            "Failed".to_string()
+        },
+        can_undo: false,
+        details: Some(format!(
+            "Executed custom pipeline '{}' on {} items ({} success, {} failed)",
+            pipeline.name, res.total_count, res.success_count, res.failure_count
+        )),
+    });
+
+    Ok(res)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -500,6 +563,8 @@ pub fn run() {
             get_pipeline_presets,
             cancel_pipeline,
             execute_pipeline_preset,
+            validate_custom_pipeline_dry_run,
+            execute_custom_pipeline,
             git::get_git_status
         ])
         .run(tauri::generate_context!())

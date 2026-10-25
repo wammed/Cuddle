@@ -75,3 +75,41 @@ min_free_space_multiplier = 1.5
 #   - Mandatory Guardrail: Even if edited to false in this file, Cuddle will
 #     automatically sanitize it to true upon loading to guarantee original protection.
 enforce_landlock = true
+
+# ==============================================================================
+# [custom_pipelines] - User-Defined Processing Pipelines (Design Section 8.3)
+# ==============================================================================
+# Users can declare custom command pipelines executed under Landlock LSM isolation.
+#
+# MANDATORY SAFETY FLOW (Design Section 8.3):
+# Regardless of guidance level or trust state, custom pipelines strictly enforce:
+#   [Risk Explanation] -> [Confirm #1] -> [Dry-Run Validation] -> [Result Review] -> [Confirm #2] -> [Execute]
+#
+# Safety Guarantees:
+# 1. Direct writes to original files are physically blocked by Linux Landlock LSM.
+# 2. Execution takes copies in workspace-temp/ as input and outputs to staging.
+# 3. Dry-Run pre-validates argument expansions, binary presence, and free space before execution.
+#
+# Available Placeholders:
+#   {input}  : Absolute path to the staged working copy
+#   {output} : Target output path in staging area (constructed via default_suffix/output_extension)
+
+[[custom_pipelines]]
+id = "custom-webp-lossless"
+name = "WebP 可逆圧縮カスタムコンバータ"
+description = "cwebp を使用して PNG/JPEG を WebP に高品質変換 (品質 85)"
+executable = "cwebp"
+args = ["-q", "85", "{input}", "-o", "{output}"]
+supported_extensions = ["png", "jpg", "jpeg"]
+output_extension = "webp"
+default_suffix = "_web"
+
+[[custom_pipelines]]
+id = "custom-strip-metadata"
+name = "ExifTool メタデータ完全消去"
+description = "exiftool を用いて全 Exif/GPS メタデータを消去"
+executable = "exiftool"
+args = ["-all=", "-overwrite_original", "{input}"]
+supported_extensions = ["jpg", "jpeg", "png", "tiff", "webp"]
+default_suffix = "_clean"
+

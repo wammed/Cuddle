@@ -3,4 +3,4 @@
 /**
  * Category of a pipeline preset.
  */
-export type PipelineCategory = "Image" | "Media" | "Text" | "Document" | "File" | "Dev";
+export type PipelineCategory = "Image" | "Media" | "Text" | "Document" | "File" | "Dev" | "Custom";

@@ -21,12 +21,80 @@ pub enum ConfigError {
 }
 
 /// Root configuration structure for Cuddle.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
 #[ts(export, export_to = "../../src/types/")]
 pub struct AppConfig {
     pub app: AppSection,
     pub workspace: WorkspaceSection,
     pub security: SecuritySection,
+    #[serde(default = "get_default_custom_pipeline_templates")]
+    pub custom_pipelines: Vec<CustomPipelineDefDto>,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            app: AppSection::default(),
+            workspace: WorkspaceSection::default(),
+            security: SecuritySection::default(),
+            custom_pipelines: get_default_custom_pipeline_templates(),
+        }
+    }
+}
+
+/// User-defined pipeline definition following Design Section 8.3 mandatory safe flow.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "../../src/types/")]
+pub struct CustomPipelineDefDto {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub executable: String,
+    pub args: Vec<String>,
+    pub supported_extensions: Vec<String>,
+    pub output_extension: Option<String>,
+    pub default_suffix: String,
+}
+
+pub fn get_default_custom_pipeline_templates() -> Vec<CustomPipelineDefDto> {
+    vec![
+        CustomPipelineDefDto {
+            id: "custom-webp-lossless".to_string(),
+            name: "WebP 可逆圧縮カスタムコンバータ".to_string(),
+            description: "cwebp を使用して PNG/JPEG を WebP に高品質変換".to_string(),
+            executable: "cwebp".to_string(),
+            args: vec![
+                "-q".to_string(),
+                "85".to_string(),
+                "{input}".to_string(),
+                "-o".to_string(),
+                "{output}".to_string(),
+            ],
+            supported_extensions: vec!["png".to_string(), "jpg".to_string(), "jpeg".to_string()],
+            output_extension: Some("webp".to_string()),
+            default_suffix: "_web".to_string(),
+        },
+        CustomPipelineDefDto {
+            id: "custom-strip-metadata".to_string(),
+            name: "ExifTool メタデータ完全消去".to_string(),
+            description: "exiftool を用いて全 Exif/GPS メタデータを消去".to_string(),
+            executable: "exiftool".to_string(),
+            args: vec![
+                "-all=".to_string(),
+                "-overwrite_original".to_string(),
+                "{input}".to_string(),
+            ],
+            supported_extensions: vec![
+                "jpg".to_string(),
+                "jpeg".to_string(),
+                "png".to_string(),
+                "tiff".to_string(),
+                "webp".to_string(),
+            ],
+            output_extension: None,
+            default_suffix: "_clean".to_string(),
+        },
+    ]
 }
 
 /// General application preferences.
@@ -282,5 +350,6 @@ enforce_landlock = false
         let _ = AppSection::export(&cfg);
         let _ = WorkspaceSection::export(&cfg);
         let _ = SecuritySection::export(&cfg);
+        let _ = CustomPipelineDefDto::export(&cfg);
     }
 }

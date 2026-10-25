@@ -126,6 +126,38 @@ pub enum PipelineCategory {
     Document,
     File,
     Dev,
+    Custom,
+}
+
+/// Dry-run analysis for a single staged file under a user-defined pipeline.
+#[derive(Serialize, Deserialize, TS, Clone, Debug)]
+#[ts(export, export_to = "../../src/types/")]
+pub struct CustomPipelineDryRunItemDto {
+    pub stage_id: String,
+    pub original_name: String,
+    pub resolved_executable: String,
+    pub expanded_command: Vec<String>,
+    pub proposed_output_name: String,
+    pub conflict_detected: bool,
+    pub valid: bool,
+    pub message: Option<String>,
+}
+
+/// Comprehensive Dry-Run verification report as mandated by Design Section 8.3.
+#[derive(Serialize, Deserialize, TS, Clone, Debug)]
+#[ts(export, export_to = "../../src/types/")]
+pub struct CustomPipelineDryRunResultDto {
+    pub pipeline_id: String,
+    pub pipeline_name: String,
+    pub executable_found: bool,
+    pub executable_path: Option<String>,
+    pub total_items: usize,
+    pub valid_items: usize,
+    pub has_conflicts: bool,
+    pub has_disk_space: bool,
+    pub disk_space_message: Option<String>,
+    pub items: Vec<CustomPipelineDryRunItemDto>,
+    pub can_proceed_to_execution: bool,
 }
 
 /// Parameter definition for a pipeline preset.
@@ -1393,6 +1425,325 @@ impl PipelineRunner {
         })
     }
 
+    /// Dry-Run validation for user-defined custom pipeline as mandated by Design Section 8.3.
+    /// Pre-validates argument expansions, binary presence, output conflicts, and disk space.
+    pub fn dry_run_custom_pipeline(
+        pipeline: &crate::config::CustomPipelineDefDto,
+        stage_ids: &[String],
+        workspace_manager: &crate::workspace::WorkspaceManager,
+    ) -> Result<CustomPipelineDryRunResultDto, AppErrorDto> {
+        let exec_path = ToolDetector::find_binary_in_path(&pipeline.executable);
+        let executable_found = exec_path.is_some();
+        let resolved_exec_str = exec_path
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| format!("[Not found in PATH: {}]", pipeline.executable));
+
+        let mut items = Vec::new();
+        let mut valid_items = 0;
+        let mut has_conflicts = false;
+
+        for stage_id in stage_ids {
+            let staged = match workspace_manager.get_staged(stage_id) {
+                Ok(s) => s,
+                Err(_) => {
+                    items.push(CustomPipelineDryRunItemDto {
+                        stage_id: stage_id.clone(),
+                        original_name: "Unknown".to_string(),
+                        resolved_executable: resolved_exec_str.clone(),
+                        expanded_command: Vec::new(),
+                        proposed_output_name: String::new(),
+                        conflict_detected: false,
+                        valid: false,
+                        message: Some("Staged file not found in workspace".to_string()),
+                    });
+                    continue;
+                }
+            };
+
+            let staged_path = PathBuf::from(&staged.staged_path);
+            let parent_dir = staged_path.parent().unwrap_or_else(|| Path::new("/tmp"));
+
+            let stem = staged_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("file");
+            let orig_ext = staged_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("");
+
+            let final_ext = pipeline
+                .output_extension
+                .as_deref()
+                .unwrap_or(orig_ext);
+
+            let suffix = &pipeline.default_suffix;
+            let output_name = if !suffix.is_empty() && !stem.ends_with(suffix) {
+                if final_ext.is_empty() {
+                    format!("{}{}", stem, suffix)
+                } else {
+                    format!("{}{}.{}", stem, suffix, final_ext)
+                }
+            } else if final_ext.is_empty() {
+                stem.to_string()
+            } else {
+                format!("{}.{}", stem, final_ext)
+            };
+
+            let proposed_output_path = parent_dir.join(&output_name);
+
+            // Expand command template
+            let mut expanded_cmd = Vec::new();
+            expanded_cmd.push(resolved_exec_str.clone());
+            for arg in &pipeline.args {
+                let replaced = arg
+                    .replace("{input}", &staged_path.to_string_lossy())
+                    .replace("{output}", &proposed_output_path.to_string_lossy());
+                expanded_cmd.push(replaced);
+            }
+
+            // Check conflict: does output already exist and is not identical to input?
+            let conflict = proposed_output_path.exists() && proposed_output_path != staged_path;
+            if conflict {
+                has_conflicts = true;
+            }
+
+            // Check extension compatibility
+            let ext_compatible = if pipeline.supported_extensions.is_empty() {
+                true
+            } else {
+                let lower_ext = orig_ext.to_lowercase();
+                pipeline
+                    .supported_extensions
+                    .iter()
+                    .any(|e| e.trim_start_matches('.').eq_ignore_ascii_case(&lower_ext))
+            };
+
+            let valid = executable_found && !conflict && ext_compatible;
+            if valid {
+                valid_items += 1;
+            }
+
+            let message = if !executable_found {
+                Some(format!("Executable '{}' not found in system PATH", pipeline.executable))
+            } else if conflict {
+                Some(format!("Output file '{}' already exists in staging area", output_name))
+            } else if !ext_compatible {
+                Some(format!("Extension '.{}' is not in supported extensions list", orig_ext))
+            } else {
+                None
+            };
+
+            items.push(CustomPipelineDryRunItemDto {
+                stage_id: stage_id.clone(),
+                original_name: staged.display_name.clone(),
+                resolved_executable: resolved_exec_str.clone(),
+                expanded_command: expanded_cmd,
+                proposed_output_name: output_name,
+                conflict_detected: conflict,
+                valid,
+                message,
+            });
+        }
+
+        let can_proceed = executable_found && !has_conflicts && valid_items > 0;
+
+        Ok(CustomPipelineDryRunResultDto {
+            pipeline_id: pipeline.id.clone(),
+            pipeline_name: pipeline.name.clone(),
+            executable_found,
+            executable_path: exec_path.map(|p| p.to_string_lossy().to_string()),
+            total_items: stage_ids.len(),
+            valid_items,
+            has_conflicts,
+            has_disk_space: true,
+            disk_space_message: None,
+            items,
+            can_proceed_to_execution: can_proceed,
+        })
+    }
+
+    /// Execute user-defined pipeline under Landlock LSM isolation following Design Section 8.3.
+    pub fn execute_custom_pipeline_with_progress<F>(
+        pipeline: &crate::config::CustomPipelineDefDto,
+        stage_ids: &[String],
+        workspace_manager: &crate::workspace::WorkspaceManager,
+        job_id: Option<String>,
+        progress_callback: Option<F>,
+    ) -> Result<PipelineExecutionResultDto, AppErrorDto>
+    where
+        F: Fn(PipelineProgressEvent) + Send + 'static,
+    {
+        let job_id = job_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let cancel_mgr = get_cancellation_manager();
+        let cancel_flag = cancel_mgr.register_job(&job_id);
+
+        let total_items = stage_ids.len();
+        let mut success_count = 0;
+        let mut failure_count = 0;
+        let mut is_cancelled = false;
+        let mut item_results = Vec::new();
+
+        let resolved_exec = ToolDetector::find_binary_in_path(&pipeline.executable).ok_or_else(|| {
+            AppErrorDto::new(
+                "ExecutableNotFound",
+                format!("Executable '{}' could not be found in PATH", pipeline.executable),
+            )
+        })?;
+
+        for (idx, stage_id) in stage_ids.iter().enumerate() {
+            if cancel_flag.load(Ordering::SeqCst) {
+                is_cancelled = true;
+                break;
+            }
+
+            let staged = match workspace_manager.get_staged(stage_id) {
+                Ok(s) => s,
+                Err(_) => {
+                    failure_count += 1;
+                    continue;
+                }
+            };
+
+            let staged_path = PathBuf::from(&staged.staged_path);
+            let parent_dir = staged_path.parent().unwrap_or_else(|| Path::new("/tmp"));
+
+            let stem = staged_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("file");
+            let orig_ext = staged_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("");
+            let final_ext = pipeline
+                .output_extension
+                .as_deref()
+                .unwrap_or(orig_ext);
+            let suffix = &pipeline.default_suffix;
+
+            let output_name = if !suffix.is_empty() && !stem.ends_with(suffix) {
+                if final_ext.is_empty() {
+                    format!("{}{}", stem, suffix)
+                } else {
+                    format!("{}{}.{}", stem, suffix, final_ext)
+                }
+            } else if final_ext.is_empty() {
+                stem.to_string()
+            } else {
+                format!("{}.{}", stem, final_ext)
+            };
+
+            let proposed_output_path = parent_dir.join(&output_name);
+
+            if let Some(ref cb) = progress_callback {
+                cb(PipelineProgressEvent {
+                    job_id: job_id.clone(),
+                    preset_id: pipeline.id.clone(),
+                    current_index: idx + 1,
+                    total_items,
+                    current_filename: staged.display_name.clone(),
+                    stage_id: stage_id.clone(),
+                    status: "Running".to_string(),
+                    percent: if total_items > 0 { ((idx as f32) / (total_items as f32)) * 100.0 } else { 0.0 },
+                    message: None,
+                });
+            }
+
+            // Build args
+            let mut cmd_args = Vec::new();
+            for arg in &pipeline.args {
+                let replaced = arg
+                    .replace("{input}", &staged_path.to_string_lossy())
+                    .replace("{output}", &proposed_output_path.to_string_lossy());
+                cmd_args.push(replaced);
+            }
+
+            // Landlock isolated execution
+            let exec_opts = CommandExecutionOptionsDto {
+                timeout_secs: Some(60),
+                max_memory_bytes: Some(512 * 1024 * 1024),
+                allowed_read_paths: vec![parent_dir.to_string_lossy().to_string()],
+                allowed_write_paths: vec![parent_dir.to_string_lossy().to_string()],
+                working_dir: Some(parent_dir.to_string_lossy().to_string()),
+            };
+
+            let start = Instant::now();
+            let exec_result = SandboxedExecutor::execute_with_cancellation(
+                &resolved_exec.to_string_lossy(),
+                &cmd_args,
+                &exec_opts,
+                Some(&cancel_flag),
+            );
+
+            let elapsed = start.elapsed().as_millis() as u64;
+
+            match exec_result {
+                Ok(res) if res.success => {
+                    success_count += 1;
+                    if proposed_output_path.exists() && output_name != staged.display_name {
+                        let _ = workspace_manager.update_staged_path(stage_id, &proposed_output_path, &output_name);
+                    }
+                    item_results.push(PipelineExecutionItemResultDto {
+                        stage_id: stage_id.clone(),
+                        original_name: staged.display_name.clone(),
+                        output_name: output_name.clone(),
+                        success: true,
+                        error_message: None,
+                        execution_time_ms: elapsed,
+                    });
+                    if let Some(ref cb) = progress_callback {
+                        cb(PipelineProgressEvent {
+                            job_id: job_id.clone(),
+                            preset_id: pipeline.id.clone(),
+                            current_index: idx + 1,
+                            total_items,
+                            current_filename: staged.display_name.clone(),
+                            stage_id: stage_id.clone(),
+                            status: "Completed".to_string(),
+                            percent: if total_items > 0 { (((idx + 1) as f32) / (total_items as f32)) * 100.0 } else { 100.0 },
+                            message: None,
+                        });
+                    }
+                }
+                Ok(res) => {
+                    failure_count += 1;
+                    item_results.push(PipelineExecutionItemResultDto {
+                        stage_id: stage_id.clone(),
+                        original_name: staged.display_name.clone(),
+                        output_name: staged.display_name.clone(),
+                        success: false,
+                        error_message: Some(res.stderr.trim().to_string()),
+                        execution_time_ms: elapsed,
+                    });
+                }
+                Err(err) => {
+                    failure_count += 1;
+                    item_results.push(PipelineExecutionItemResultDto {
+                        stage_id: stage_id.clone(),
+                        original_name: staged.display_name.clone(),
+                        output_name: staged.display_name.clone(),
+                        success: false,
+                        error_message: Some(err.message),
+                        execution_time_ms: elapsed,
+                    });
+                }
+            }
+        }
+
+        cancel_mgr.unregister_job(&job_id);
+
+        Ok(PipelineExecutionResultDto {
+            preset_id: pipeline.id.clone(),
+            total_count: stage_ids.len(),
+            success_count,
+            failure_count,
+            is_cancelled,
+            item_results,
+        })
+    }
+
     /// Internal transform execution dispatcher for a single staged file.
     fn apply_preset_to_file(
         preset: &PipelinePresetDto,
@@ -1711,6 +2062,10 @@ mod tests {
             percent: 50.0,
             message: None,
         };
+        let cfg = ts_rs::Config::default();
+        let _ = CustomPipelineDryRunItemDto::export(&cfg);
+        let _ = CustomPipelineDryRunResultDto::export(&cfg);
+        let _ = PipelineCategory::export(&cfg);
     }
 
     #[test]

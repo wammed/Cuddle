@@ -3,6 +3,8 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use std::time::SystemTime;
 use chrono::{DateTime, Local};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -119,6 +121,15 @@ pub struct BatchExecutionResultDto {
     pub is_rolled_back: bool,
     pub error_message: Option<String>,
     pub affected_items: Vec<PlannedOperationDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/types/")]
+pub struct BatchJournalEntry {
+    pub batch_id: String,
+    pub executed_at_ms: i64,
+    pub operations: Vec<PlannedOperationDto>,
+    pub is_undone: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -521,9 +532,17 @@ pub fn generate_plan_from_options(options: BulkRenameOptions) -> Result<BatchPla
 
 /// Executes a two-phase bulk rename plan with atomic rollback on any failure.
 /// Phase 1: Parks each target file into a temporary intermediate UUID file.
-/// Phase 2: Moves each temporary file into its final target path.
-/// If any error occurs at any phase, all moved files are reverted in reverse order.
+/// Executes a two-phase bulk rename plan with atomic rollback on any failure.
+/// Records successful operations into the rollback journal for one-click undo.
 pub fn execute_batch_rename(plan: BatchPlanDto) -> Result<BatchExecutionResultDto, String> {
+    execute_batch_rename_internal(plan, true)
+}
+
+/// Internal execution engine supporting optional journal recording.
+pub fn execute_batch_rename_internal(
+    plan: BatchPlanDto,
+    record_in_journal: bool,
+) -> Result<BatchExecutionResultDto, String> {
     if !plan.is_executable {
         return Err("Cannot execute plan: batch contains conflicts or validation errors".to_string());
     }
@@ -617,6 +636,22 @@ pub fn execute_batch_rename(plan: BatchPlanDto) -> Result<BatchExecutionResultDt
     }
 
     let count = affected_items.len();
+
+    // Record in journal if requested
+    if record_in_journal && count > 0 {
+        let now_ms = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+
+        get_journal_manager().record_batch(BatchJournalEntry {
+            batch_id: plan.batch_id.clone(),
+            executed_at_ms: now_ms,
+            operations: affected_items.clone(),
+            is_undone: false,
+        });
+    }
+
     Ok(BatchExecutionResultDto {
         batch_id: plan.batch_id,
         success: true,
@@ -628,6 +663,106 @@ pub fn execute_batch_rename(plan: BatchPlanDto) -> Result<BatchExecutionResultDt
         affected_items,
     })
 }
+
+/// Rollback Journal Manager to allow atomic undo of bulk rename operations
+pub struct BatchJournalManager {
+    history: Mutex<Vec<BatchJournalEntry>>,
+}
+
+impl Default for BatchJournalManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl BatchJournalManager {
+    pub fn new() -> Self {
+        Self {
+            history: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub fn record_batch(&self, entry: BatchJournalEntry) {
+        let mut hist = self.history.lock().unwrap();
+        hist.push(entry);
+    }
+
+    pub fn can_undo(&self) -> bool {
+        let hist = self.history.lock().unwrap();
+        hist.iter().any(|entry| !entry.is_undone)
+    }
+
+    pub fn undo_last(&self) -> Result<BatchExecutionResultDto, String> {
+        let mut hist = self.history.lock().unwrap();
+        let last_idx = hist
+            .iter()
+            .rposition(|entry| !entry.is_undone)
+            .ok_or_else(|| "No bulk rename operation available to undo".to_string())?;
+
+        let entry = &hist[last_idx];
+
+        // Construct reverse BatchPlanDto
+        let undo_batch_id = format!("undo_{}", entry.batch_id);
+        let mut reverse_ops = Vec::with_capacity(entry.operations.len());
+
+        for op in &entry.operations {
+            let orig_path_p = Path::new(&op.original_path);
+            let orig_name = orig_path_p
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+
+            reverse_ops.push(PlannedOperationDto {
+                item_id: op.item_id.clone(),
+                original_path: op.target_path.clone(), // Current path on disk is target_path
+                display_name: op.proposed_name.clone(), // Current name on disk
+                raw_base64: op.raw_base64.clone(),
+                proposed_name: orig_name,              // Revert to original name
+                target_path: op.original_path.clone(), // Revert to original path
+                status: OperationStatus::Ok,
+                message: None,
+            });
+        }
+
+        let reverse_plan = BatchPlanDto {
+            batch_id: undo_batch_id,
+            operations: reverse_ops,
+            total_count: entry.operations.len(),
+            changed_count: entry.operations.len(),
+            conflict_count: 0,
+            error_count: 0,
+            is_executable: true,
+        };
+
+        // Execute reverse rename without re-recording it into the journal
+        let result = execute_batch_rename_internal(reverse_plan, false)?;
+
+        // Mark entry as undone
+        hist[last_idx].is_undone = true;
+
+        Ok(result)
+    }
+
+    pub fn clear(&self) {
+        let mut hist = self.history.lock().unwrap();
+        hist.clear();
+    }
+}
+
+pub fn get_journal_manager() -> &'static BatchJournalManager {
+    static INSTANCE: OnceLock<BatchJournalManager> = OnceLock::new();
+    INSTANCE.get_or_init(BatchJournalManager::new)
+}
+
+pub fn can_undo_batch() -> bool {
+    get_journal_manager().can_undo()
+}
+
+pub fn undo_last_batch() -> Result<BatchExecutionResultDto, String> {
+    get_journal_manager().undo_last()
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -867,11 +1002,83 @@ mod tests {
     }
 
     #[test]
+    fn test_batch_rename_and_atomic_undo() {
+        let temp_dir = std::env::temp_dir().join(format!("cuddle_undo_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let p1 = temp_dir.join("alpha.txt");
+        let p2 = temp_dir.join("beta.txt");
+        std::fs::write(&p1, "alpha-data").unwrap();
+        std::fs::write(&p2, "beta-data").unwrap();
+
+        let plan = BatchPlanDto {
+            batch_id: "undo-lifecycle-batch".to_string(),
+            operations: vec![
+                PlannedOperationDto {
+                    item_id: "1".to_string(),
+                    original_path: p1.to_string_lossy().to_string(),
+                    display_name: "alpha.txt".to_string(),
+                    raw_base64: "dummy1".to_string(),
+                    proposed_name: "ALPHA_RENAMED.txt".to_string(),
+                    target_path: temp_dir.join("ALPHA_RENAMED.txt").to_string_lossy().to_string(),
+                    status: OperationStatus::Ok,
+                    message: None,
+                },
+                PlannedOperationDto {
+                    item_id: "2".to_string(),
+                    original_path: p2.to_string_lossy().to_string(),
+                    display_name: "beta.txt".to_string(),
+                    raw_base64: "dummy2".to_string(),
+                    proposed_name: "BETA_RENAMED.txt".to_string(),
+                    target_path: temp_dir.join("BETA_RENAMED.txt").to_string_lossy().to_string(),
+                    status: OperationStatus::Ok,
+                    message: None,
+                },
+            ],
+            total_count: 2,
+            changed_count: 2,
+            conflict_count: 0,
+            error_count: 0,
+            is_executable: true,
+        };
+
+        // 1. Execute rename
+        let res = execute_batch_rename(plan).expect("Initial rename must succeed");
+        assert_eq!(res.succeeded_count, 2);
+
+        // Verify renamed files exist on disk
+        let p1_renamed = temp_dir.join("ALPHA_RENAMED.txt");
+        let p2_renamed = temp_dir.join("BETA_RENAMED.txt");
+        assert!(p1_renamed.exists());
+        assert!(p2_renamed.exists());
+        assert!(!p1.exists());
+        assert!(!p2.exists());
+
+        // 2. Check can_undo
+        assert!(can_undo_batch());
+
+        // 3. Execute undo
+        let undo_res = undo_last_batch().expect("Undo must succeed");
+        assert_eq!(undo_res.succeeded_count, 2);
+
+        // Verify original files are completely restored
+        assert!(p1.exists(), "Original alpha.txt must be restored");
+        assert!(p2.exists(), "Original beta.txt must be restored");
+        assert!(!p1_renamed.exists());
+        assert!(!p2_renamed.exists());
+        assert_eq!(std::fs::read_to_string(&p1).unwrap(), "alpha-data");
+        assert_eq!(std::fs::read_to_string(&p2).unwrap(), "beta-data");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
     fn test_export_typescript_bindings_batch() {
         let _ = std::fs::create_dir_all("../src/types");
         let cfg = ts_rs::Config::default();
         BatchPlanDto::export(&cfg).expect("Failed to export BatchPlanDto");
         BatchExecutionResultDto::export(&cfg).expect("Failed to export BatchExecutionResultDto");
+        BatchJournalEntry::export(&cfg).expect("Failed to export BatchJournalEntry");
         RenameRule::export(&cfg).expect("Failed to export RenameRule");
         NormalizationForm::export(&cfg).expect("Failed to export NormalizationForm");
         SequencePosition::export(&cfg).expect("Failed to export SequencePosition");

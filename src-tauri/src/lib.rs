@@ -245,6 +245,16 @@ fn execute_bulk_rename(plan: batch::BatchPlanDto) -> Result<batch::BatchExecutio
     batch::execute_batch_rename(plan)
 }
 
+#[tauri::command]
+fn can_undo_bulk_rename() -> bool {
+    batch::can_undo_batch()
+}
+
+#[tauri::command]
+fn undo_last_bulk_rename() -> Result<batch::BatchExecutionResultDto, String> {
+    batch::undo_last_batch()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -273,7 +283,9 @@ pub fn run() {
             reset_staged_file,
             reflect_staged_file,
             generate_bulk_rename_plan,
-            execute_bulk_rename
+            execute_bulk_rename,
+            can_undo_bulk_rename,
+            undo_last_bulk_rename
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

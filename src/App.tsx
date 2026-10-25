@@ -9,6 +9,7 @@ import type { ExtractedTextDto } from "./types/ExtractedTextDto";
 import type { StagedItemDto } from "./types/StagedItemDto";
 import type { SystemPathsDto } from "./types/SystemPathsDto";
 import type { ResolvedPathDto } from "./types/ResolvedPathDto";
+import type { BatchExecutionResultDto } from "./types/BatchExecutionResultDto";
 import { Header } from "./components/Header";
 import { SearchPanel } from "./components/SearchPanel";
 import { FolderTreePanel } from "./components/FolderTreePanel";
@@ -35,6 +36,7 @@ export function App() {
   const [stagedItems, setStagedItems] = useState<StagedItemDto[]>([]);
   const [selectedItem, setSelectedItem] = useState<FileItem | null>(null);
   const [bulkRenameOpen, setBulkRenameOpen] = useState(false);
+  const [canUndo, setCanUndo] = useState(false);
 
   const [landlock, setLandlock] = useState<LandlockStatus | null>(null);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
@@ -68,6 +70,15 @@ export function App() {
     changeLanguage(nextLang);
     addLog(`Language switched to ${nextLang}`);
   };
+
+  const checkCanUndo = useCallback(async () => {
+    try {
+      const available = await invoke<boolean>("can_undo_bulk_rename");
+      setCanUndo(available);
+    } catch {
+      setCanUndo(false);
+    }
+  }, []);
 
   // Scans a directory via Tauri IPC
   const scanDirectory = useCallback(
@@ -121,6 +132,8 @@ export function App() {
       .then((cfg) => setAppConfig(cfg))
       .catch((err) => console.error(err));
 
+    checkCanUndo();
+
     // Get system paths and start scanning from Home
     invoke<SystemPathsDto>("get_system_paths")
       .then((paths) => {
@@ -130,7 +143,7 @@ export function App() {
       .catch(() => {
         scanDirectory(".");
       });
-  }, [scanDirectory, addLog]);
+  }, [scanDirectory, addLog, checkCanUndo]);
 
   const handleStageFile = async (item: FileItem) => {
     try {
@@ -210,6 +223,7 @@ export function App() {
       setStagedItems([]);
       addHistory("Cleared all items from workspace-temp/");
       addLog("Cleared workspace-temp/ staging area");
+      await checkCanUndo();
     } catch (err) {
       addLog(`Failed to clear workspace: ${String(err)}`);
     }
@@ -262,12 +276,46 @@ export function App() {
         );
         addHistory(`Executed two-phase bulk rename on ${result.succeeded_count} items in workspace-temp/`);
         addLog(`Bulk rename executed successfully: batch ${result.batch_id} (${result.succeeded_count} items renamed)`);
+        await checkCanUndo();
       } catch (err) {
         addLog(`Failed to refresh staged items after bulk rename: ${String(err)}`);
       }
     },
-    [addHistory, addLog]
+    [addHistory, addLog, checkCanUndo]
   );
+
+  const handleUndoBatch = async () => {
+    try {
+      const result = await invoke<BatchExecutionResultDto>("undo_last_bulk_rename");
+      if (result.success) {
+        const updatedList = await invoke<StagedItemDto[]>("list_staged_items");
+        setStagedItems(updatedList);
+        setStagedFiles((prev) =>
+          prev.map((f) => {
+            const match = updatedList.find(
+              (u) => u.stage_id === f.item_id || u.original_item_id === f.item_id || u.raw_base64 === f.raw_base64
+            );
+            if (match) {
+              return {
+                ...f,
+                display_name: match.display_name,
+                raw_base64: match.staged_raw_base64,
+              };
+            }
+            return f;
+          })
+        );
+        addHistory(t("workspace.undo_success", { count: result.succeeded_count }));
+        addLog(`Bulk rename undone: restored ${result.succeeded_count} files (batch ${result.batch_id})`);
+      } else {
+        addLog(`Undo failed: ${result.error_message || t("workspace.undo_failed")}`);
+      }
+      await checkCanUndo();
+    } catch (err) {
+      addLog(`Failed to undo bulk rename: ${String(err)}`);
+      await checkCanUndo();
+    }
+  };
 
   const handleExtractText = async (item: FileItem) => {
     try {
@@ -417,10 +465,12 @@ export function App() {
                       stagedFiles={stagedFiles}
                       stagedItems={stagedItems}
                       selectedId={selectedItem?.item_id ?? null}
+                      canUndo={canUndo}
                       onSelect={(item) => setSelectedItem(item)}
                       onClearWorkspace={handleClearWorkspace}
                       onUnstageItem={handleUnstageItem}
                       onOpenBulkRename={() => setBulkRenameOpen(true)}
+                      onUndo={handleUndoBatch}
                     />
                   </Panel>
                 </Group>

@@ -45,7 +45,10 @@
     "staging_path": "作業コピー配置先",
     "staged_time": "ステージング日時",
     "stage_all": "すべて作業領域へ",
-    "bulk_rename_btn": "一括リネーム & 正規化"
+    "bulk_rename_btn": "一括リネーム & 正規化",
+    "undo_rename_btn": "直前のリネームを元に戻す",
+    "undo_success": "一括リネームを取り消しました: {{count}} 件のファイルを元に戻しました",
+    "undo_failed": "リネームの取り消しに失敗しました"
   },
   "warnings": {
     "external_storage": "対象ファイルは外部ストレージまたはホームディレクトリ外にあります。原本の直接変更は禁止されています。",

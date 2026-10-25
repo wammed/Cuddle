@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Briefcase, ShieldCheck, Trash2, Sparkles } from "lucide-react";
+import { Briefcase, ShieldCheck, Trash2, Sparkles, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
 import type { StagedItemDto } from "../types/StagedItemDto";
@@ -9,20 +9,24 @@ interface WorkspacePanelProps {
   stagedFiles: FileItem[];
   stagedItems?: StagedItemDto[];
   selectedId: string | null;
+  canUndo?: boolean;
   onSelect: (item: FileItem) => void;
   onClearWorkspace: () => void;
   onUnstageItem?: (stageId: string) => void;
   onOpenBulkRename?: () => void;
+  onUndo?: () => void;
 }
 
 export function WorkspacePanel({
   stagedFiles,
   stagedItems = [],
   selectedId,
+  canUndo = false,
   onSelect,
   onClearWorkspace,
   onUnstageItem,
   onOpenBulkRename,
+  onUndo,
 }: WorkspacePanelProps) {
   const { t } = useTranslation();
 
@@ -77,6 +81,18 @@ export function WorkspacePanel({
             >
               <Sparkles size={13} />
               <span>{t("workspace.bulk_rename_btn")}</span>
+            </button>
+          )}
+
+          {canUndo && onUndo && (
+            <button
+              type="button"
+              className="panel-header-btn-undo"
+              onClick={onUndo}
+              title={t("workspace.undo_rename_btn")}
+            >
+              <RotateCcw size={13} />
+              <span>{t("workspace.undo_rename_btn")}</span>
             </button>
           )}
 

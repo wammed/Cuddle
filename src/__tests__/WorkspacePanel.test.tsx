@@ -148,4 +148,45 @@ describe("WorkspacePanel & Staging Operations (Phase 4.1)", () => {
     expect(screen.getByText("No files staged in workspace-temp")).toBeDefined();
     expect(screen.getByText("0 staged copy(ies)")).toBeDefined();
   });
+
+  it("renders undo button when canUndo is true and invokes callback on click", async () => {
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    const handleUndo = vi.fn();
+
+    const { rerender } = render(
+      <WorkspacePanel
+        stagedFiles={sampleStagedFiles}
+        stagedItems={sampleStagedItems}
+        selectedId={null}
+        canUndo={false}
+        onSelect={vi.fn()}
+        onClearWorkspace={vi.fn()}
+        onUndo={handleUndo}
+      />
+    );
+
+    expect(screen.queryByText("直前のリネームを元に戻す")).toBeNull();
+
+    rerender(
+      <WorkspacePanel
+        stagedFiles={sampleStagedFiles}
+        stagedItems={sampleStagedItems}
+        selectedId={null}
+        canUndo={true}
+        onSelect={vi.fn()}
+        onClearWorkspace={vi.fn()}
+        onUndo={handleUndo}
+      />
+    );
+
+    const undoBtn = screen.getByText("直前のリネームを元に戻す");
+    expect(undoBtn).toBeDefined();
+
+    fireEvent.click(undoBtn);
+    expect(handleUndo).toHaveBeenCalledTimes(1);
+  });
 });
+

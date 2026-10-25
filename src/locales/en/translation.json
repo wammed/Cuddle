@@ -45,7 +45,10 @@
     "staging_path": "Staging Destination",
     "staged_time": "Staged At",
     "stage_all": "Stage All",
-    "bulk_rename_btn": "Bulk Rename & Normalize"
+    "bulk_rename_btn": "Bulk Rename & Normalize",
+    "undo_rename_btn": "Undo Last Rename",
+    "undo_success": "Undid bulk rename: restored {{count}} files",
+    "undo_failed": "Failed to undo rename"
   },
   "warnings": {
     "external_storage": "Target file is on external storage or outside home directory. In-place changes are forbidden.",

@@ -424,8 +424,25 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
     * Introduced a clean `gap: 6px` between action buttons and optimized button dimensions to `25px × 25px` with dedicated color accents for Preview (teal) and Staging/Copy (sky blue) and hover scaling.
     * Added uniform `padding-right: 12px` gutter across Filename, Size, MTime, and INODE columns, completely eliminating cramped layouts.
     * Integrated responsive button dimensions (22px / 25px / 28px) and column widths (62px / 72px / 82px) corresponding to the 3-level density settings (compact, normal, spacious).
+* **Font Family & Font Size Settings Menu (Phase 8.10):**
+  * **Typography Management Foundation (`src/utils/typography.ts`):**
+    * Unified typography management module covering UI Font Family (Sans-serif), Monospace Code Font (Monospace / Paths), and Base Font Size / Scale (11px to 18px / 79% to 129%).
+    * **UI Font Presets (6 presets):** Default (Inter / Noto Sans), Modern (Inter / Noto Sans JP), System Native (Segoe UI / Roboto), Japanese Gothic (BIZ UDP / Yu Gothic), Rounded Gothic (M PLUS Rounded), Custom Font.
+    * **Monospace Font Presets (7 presets):** Default (JetBrains / Fira / Cascadia), JetBrains Mono, Fira Code, Cascadia Code, Japanese Mono (BIZ UDGothic), Symbols Nerd Font, Custom Font.
+    * **Custom Font Direct Input:** Accepts arbitrary locally installed font names with guaranteed fallback font stack protection.
+    * **Dynamic CSS Variable Injection & Persistence:** Injects `--font-sans`, `--font-mono`, `--app-base-font-size`, and `--font-size-scale` into `:root` in real time and persists to `localStorage` (`cuddle-typography-settings`). Restored automatically upon application startup.
+    * **Instant Reset:** One-click reset to factory defaults (Inter 14px / JetBrains Mono).
+  * **Settings Modal UI Integration (`SettingsModal.tsx`):**
+    * Added dedicated Typography Card (`.settings-typography-card`) within the Appearance tab.
+    * Base font size slider (11px to 18px) alongside quick-select pill buttons (11px, 12px, 13px, 14px, 15px, 16px, 18px).
+    * Preset pill button selectors and custom font text inputs for both UI and Monospace fonts.
+    * Live preview specimen card displaying both UI text sample and monospace code block sample with immediate visual reflection.
+  * **Bilingual Dictionary Synchronization (`typography.*`):**
+    * Full parity across Japanese and English locales (`ja/translation.json`, `en/translation.json`).
+  * **Design Cohesion (Zero White Backgrounds):**
+    * Dark velvet cyber background (`#06090e`, `rgba(0,0,0,0.4)`) with cyber teal (`#2dd4bf`) accents maintained.
 * **Verification & Testing:**
-  * 45 Vitest tests passing (100%), 139 Cargo unit tests passing (100%), TypeScript / Vite production build passing cleanly.
+    * 50 Vitest tests passing (100%, added `Typography.test.ts`), 139 Cargo unit tests passing (100%), TypeScript / Vite production build passing cleanly.
 
 ---
 

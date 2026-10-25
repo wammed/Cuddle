@@ -29,6 +29,7 @@ import { StartPage } from "./components/StartPage";
 import { applyTheme, getSavedThemeId } from "./utils/themePresets";
 import type { Density } from "./types/Density";
 import { applyDensity, getSavedDensity } from "./utils/density";
+import { applyTypographySettings, getSavedTypographySettings } from "./utils/typography";
 import "./App.css";
 
 interface LandlockStatus {
@@ -168,6 +169,7 @@ export function App() {
 
   useEffect(() => {
     applyDensity(density);
+    applyTypographySettings(getSavedTypographySettings());
 
     invoke<LandlockStatus>("get_landlock_status")
       .then((status) => {

@@ -521,5 +521,31 @@
     "stage_item": "作業領域へコピー (ステージング)",
     "unstage_item": "作業領域から解除",
     "copy_path": "パスをコピー"
+  },
+  "typography": {
+    "title": "フォント・タイポグラフィ設定",
+    "desc": "UI 全体のフォントファミリー、等幅コードフォント、基準フォントサイズを動的にカスタマイズします",
+    "font_size_label": "基準フォントサイズ",
+    "ui_font_label": "UI フォントファミリー (Sans-serif)",
+    "mono_font_label": "等幅コードフォント (Monospace / Paths)",
+    "font_preset_default": "標準 (Inter / Noto Sans)",
+    "font_preset_modern": "モダン (Inter / Noto Sans JP)",
+    "font_preset_system": "システム標準 (System Native)",
+    "font_preset_gothic": "和文ゴシック (BIZ UDP / 游ゴシック)",
+    "font_preset_rounded": "丸ゴシック (M PLUS Rounded)",
+    "font_preset_custom": "カスタム指定 (Custom)",
+    "mono_preset_default": "標準 (JetBrains / Fira / Cascadia)",
+    "mono_preset_jetbrains": "JetBrains Mono",
+    "mono_preset_fira": "Fira Code",
+    "mono_preset_cascadia": "Cascadia Code",
+    "mono_preset_japanesemono": "和文等幅 (BIZ UDGothic)",
+    "mono_preset_nerd": "Symbols Nerd Font",
+    "mono_preset_custom": "カスタム指定 (Custom)",
+    "custom_ui_placeholder": "UIフォント名を入力 (例: Noto Sans CJK JP, Meiryo, Roboto)",
+    "custom_mono_placeholder": "等幅フォント名を入力 (例: Hack, Inconsolata, Cascadia Mono)",
+    "preview_label": "ライブプレビュー見本",
+    "preview_ui_sample": "原本保護型ファイル作業環境 Cuddle - 高速・安全な一括処理 (The quick brown fox jumps over the lazy dog 1234567890)",
+    "preview_mono_sample": "fn process_batch(path: &Path) -> Result<usize, AppError> { let v = 0x7F; /* /home/susie/docs */ }",
+    "reset_btn": "フォント設定を初期値に戻す"
   }
 }

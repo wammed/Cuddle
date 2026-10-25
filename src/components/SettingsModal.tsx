@@ -19,6 +19,8 @@ import {
   ShieldAlert,
   Sparkles,
   Edit2,
+  Type,
+  RotateCcw,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { THEME_PRESETS, applyTheme, getSavedThemeId } from "../utils/themePresets";
@@ -27,6 +29,15 @@ import type { Density } from "../types/Density";
 import type { AppConfig } from "../types/AppConfig";
 import type { CustomPipelineDefDto } from "../types/CustomPipelineDefDto";
 import { applyDensity, getSavedDensity } from "../utils/density";
+import {
+  TypographySettings,
+  UI_FONT_PRESETS,
+  MONO_FONT_PRESETS,
+  FONT_SIZE_STEPS,
+  applyTypographySettings,
+  getSavedTypographySettings,
+  resetTypographySettings,
+} from "../utils/typography";
 import { SupportedLanguage } from "../i18n";
 
 const TOML_TEMPLATE_CODE = `# ==============================================================================
@@ -83,6 +94,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<"all" | ThemeCategory>("all");
   const [currentThemeId, setCurrentThemeId] = useState<string>(() => getSavedThemeId());
   const [currentDensity, setCurrentDensity] = useState<Density>(() => density || getSavedDensity());
+  const [typography, setTypography] = useState<TypographySettings>(() => getSavedTypographySettings());
 
   // AppConfig & Custom Pipelines State
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
@@ -103,6 +115,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
+    setTypography(getSavedTypographySettings());
     invoke<AppConfig>("get_app_config")
       .then((cfg) => {
         setAppConfig(cfg);
@@ -268,6 +281,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
+  const handleUpdateTypography = (updates: Partial<TypographySettings>) => {
+    setTypography((prev) => {
+      const next = { ...prev, ...updates };
+      applyTypographySettings(next);
+      return next;
+    });
+  };
+
+  const handleResetTypography = () => {
+    const def = resetTypographySettings();
+    setTypography(def);
+  };
+
   const filteredPresets = THEME_PRESETS.filter((p) => {
     if (selectedCategory === "all") return true;
     return p.category === selectedCategory;
@@ -361,6 +387,128 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       {t(`density.${d}`)}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* Typography & Font Settings Section */}
+              <div className="settings-card settings-typography-card">
+                <div className="typo-card-header">
+                  <div className="typo-header-title">
+                    <Type size={18} className="text-teal-400" />
+                    <div>
+                      <h5>{t("typography.title")}</h5>
+                      <p>{t("typography.desc")}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="panel-header-btn typo-reset-btn"
+                    onClick={handleResetTypography}
+                    title={t("typography.reset_btn")}
+                  >
+                    <RotateCcw size={13} />
+                    <span style={{ fontSize: "11px", marginLeft: "4px" }}>{t("typography.reset_btn")}</span>
+                  </button>
+                </div>
+
+                {/* 1. Base Font Size */}
+                <div className="typo-section-block">
+                  <div className="typo-section-heading">
+                    <span className="typo-label">{t("typography.font_size_label")}</span>
+                    <span className="typo-val-badge">
+                      {typography.fontSize}px ({Math.round((typography.fontSize / 14) * 100)}%)
+                    </span>
+                  </div>
+                  <div className="typo-size-slider-row">
+                    <input
+                      type="range"
+                      className="typo-range-slider"
+                      min={11}
+                      max={18}
+                      step={1}
+                      value={typography.fontSize}
+                      onChange={(e) => handleUpdateTypography({ fontSize: Number(e.target.value) })}
+                    />
+                    <div className="typo-size-pills">
+                      {FONT_SIZE_STEPS.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          className={`typo-size-pill-btn ${typography.fontSize === s ? "active" : ""}`}
+                          onClick={() => handleUpdateTypography({ fontSize: s })}
+                        >
+                          {s}px
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. UI Font Family (Sans-serif) */}
+                <div className="typo-section-block">
+                  <div className="typo-section-heading">
+                    <span className="typo-label">{t("typography.ui_font_label")}</span>
+                  </div>
+                  <div className="typo-font-pills">
+                    {UI_FONT_PRESETS.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className={`typo-font-pill-btn ${typography.uiFontPreset === p.id ? "active" : ""}`}
+                        onClick={() => handleUpdateTypography({ uiFontPreset: p.id })}
+                      >
+                        {t(p.labelKey, p.fallbackName)}
+                      </button>
+                    ))}
+                  </div>
+                  {typography.uiFontPreset === "custom" && (
+                    <input
+                      type="text"
+                      className="typo-custom-input"
+                      placeholder={t("typography.custom_ui_placeholder")}
+                      value={typography.customUiFont}
+                      onChange={(e) => handleUpdateTypography({ customUiFont: e.target.value })}
+                    />
+                  )}
+                </div>
+
+                {/* 3. Monospace Code Font Family */}
+                <div className="typo-section-block">
+                  <div className="typo-section-heading">
+                    <span className="typo-label">{t("typography.mono_font_label")}</span>
+                  </div>
+                  <div className="typo-font-pills">
+                    {MONO_FONT_PRESETS.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className={`typo-font-pill-btn ${typography.monoFontPreset === p.id ? "active" : ""}`}
+                        onClick={() => handleUpdateTypography({ monoFontPreset: p.id })}
+                      >
+                        {t(p.labelKey, p.fallbackName)}
+                      </button>
+                    ))}
+                  </div>
+                  {typography.monoFontPreset === "custom" && (
+                    <input
+                      type="text"
+                      className="typo-custom-input"
+                      placeholder={t("typography.custom_mono_placeholder")}
+                      value={typography.customMonoFont}
+                      onChange={(e) => handleUpdateTypography({ customMonoFont: e.target.value })}
+                    />
+                  )}
+                </div>
+
+                {/* 4. Live Preview Box */}
+                <div className="typo-preview-card">
+                  <span className="typo-preview-label">{t("typography.preview_label")}</span>
+                  <div className="typo-preview-ui-sample">
+                    {t("typography.preview_ui_sample")}
+                  </div>
+                  <div className="typo-preview-mono-sample">
+                    {t("typography.preview_mono_sample")}
+                  </div>
                 </div>
               </div>
 

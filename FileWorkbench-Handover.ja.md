@@ -426,8 +426,25 @@
     * ボタン間に `gap: 6px` を付与し、ボタンサイズを `25px × 25px` に適正化。ホバースケールとプレビュー（ティール色）、ステージング（シアン色）の個別カラーリングを実装。
     * ファイル名・サイズ・日時・INODE カラムの各右側に `padding-right: 12px` のガター（余白）を統一設定し、隣接カラムとの詰まり感を完全に解消。
     * 表示密度（コンパクト／標準／ゆったり）に応じてボタンサイズ（22px / 25px / 28px）と列幅（62px / 72px / 82px）が滑らかに連動するレスポンシブスタイルを確立。
+* **フォントファミリーとフォントサイズの設定メニュー（Phase 8.10）：**
+  * **タイポグラフィ管理基盤（`src/utils/typography.ts`）：**
+    * UI フォントファミリー（Sans-serif）、等幅コードフォント（Monospace / Paths）、基準フォントサイズ（11px〜18px / 79%〜129%）の統合管理インターフェースを実装。
+    * **UI フォントプリセット（6種）：** 標準（Inter / Noto Sans）、モダン（Inter / Noto Sans JP）、システム標準（System Native）、和文ゴシック（BIZ UDP / 游ゴシック）、丸ゴシック（M PLUS Rounded）、カスタム指定（Custom）。
+    * **等幅フォントプリセット（7種）：** 標準（JetBrains / Fira / Cascadia）、JetBrains Mono、Fira Code、Cascadia Code、和文等幅（BIZ UDGothic）、Symbols Nerd Font、カスタム指定（Custom）。
+    * **カスタムフォント直接入力：** 任意のフォントファミリー名（ローカルインストール済みフォント）を入力可能。システムの安全なフォールバックスタックを自動補完。
+    * **動的 CSS 変数注入 & 永続化：** `--font-sans`, `--font-mono`, `--app-base-font-size`, `--font-size-scale` を `:root` に即時反映し、`localStorage`（`cuddle-typography-settings`）に永続化。アプリ起動時に自動復元。
+    * **ワンクリック初期化（Reset）：** 初期値（Inter 14px / JetBrains Mono）への瞬時リセット機能。
+  * **設定モーダル UI 統合（`SettingsModal.tsx`）：**
+    * 「外観（Appearance）」タブ内に専用カード（`.settings-typography-card`）を設置。
+    * 基準フォントサイズスライダー（11px〜18px）およびクイック選択ピルボタン（11px, 12px, 13px, 14px, 15px, 16px, 18px）。
+    * UI フォントおよび等幅フォントのプリセットピルボタンとカスタム入力欄。
+    * リアルタイムライブプレビュー枠（UI テキスト見本 ＆ 等幅コード見本）を配備し、フォントファミリーやサイズの変更が即座に視覚確認可能。
+  * **完全バイリンガル辞書同期（`typography.*`）：**
+    * 日英（`ja/translation.json`, `en/translation.json`）の全ラベル・説明・プレースホルダーを完全同期。
+  * **デザイン統一（白背景完全禁止）：**
+    * 深海サイバーダーク背景（`#06090e`, `rgba(0,0,0,0.4)`）とサイバーティール（`#2dd4bf`）のアクセントを維持。
 * **テスト検証：**
-  * Vitest 45 件全件 100% パス、Cargo test 139 件全件 100% パス、TypeScript 型チェック / Vite ビルド完全成功。
+  * Vitest 50 件全件 100% パス（タイポグラフィ単体テスト `Typography.test.ts` を新設）、Cargo test 139 件全件 100% パス、TypeScript 型チェック / Vite ビルド完全成功。
 
 ---
 

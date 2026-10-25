@@ -521,5 +521,31 @@
     "stage_item": "Copy to Workspace (Stage)",
     "unstage_item": "Unstage from Workspace",
     "copy_path": "Copy Path"
+  },
+  "typography": {
+    "title": "Typography & Font Settings",
+    "desc": "Dynamically customize application UI font family, monospace code font, and base font size / scale",
+    "font_size_label": "Base Font Size",
+    "ui_font_label": "UI Font Family (Sans-serif)",
+    "mono_font_label": "Monospace Code Font (Monospace / Paths)",
+    "font_preset_default": "Default (Inter / Noto Sans)",
+    "font_preset_modern": "Modern (Inter / Noto Sans JP)",
+    "font_preset_system": "System Native (Segoe UI / Roboto)",
+    "font_preset_gothic": "Japanese Gothic (BIZ UDP / Yu Gothic)",
+    "font_preset_rounded": "Rounded Gothic (M PLUS Rounded)",
+    "font_preset_custom": "Custom Font",
+    "mono_preset_default": "Default (JetBrains / Fira / Cascadia)",
+    "mono_preset_jetbrains": "JetBrains Mono",
+    "mono_preset_fira": "Fira Code",
+    "mono_preset_cascadia": "Cascadia Code",
+    "mono_preset_japanesemono": "Japanese Mono (BIZ UDGothic)",
+    "mono_preset_nerd": "Symbols Nerd Font",
+    "mono_preset_custom": "Custom Font",
+    "custom_ui_placeholder": "Enter UI font name (e.g. Noto Sans CJK JP, Meiryo, Roboto)",
+    "custom_mono_placeholder": "Enter monospace font name (e.g. Hack, Inconsolata, Cascadia Mono)",
+    "preview_label": "Live Font Preview",
+    "preview_ui_sample": "Original-protected file workbench Cuddle - Rapid & reliable batch processing (The quick brown fox jumps over the lazy dog 1234567890)",
+    "preview_mono_sample": "fn process_batch(path: &Path) -> Result<usize, AppError> { let v = 0x7F; /* /home/susie/docs */ }",
+    "reset_btn": "Reset Fonts to Default"
   }
 }

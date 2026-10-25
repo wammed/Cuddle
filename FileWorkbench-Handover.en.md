@@ -415,6 +415,15 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
       * **Step 3: [Results & Risk Re-presentation]** Shows resolved binary path, interactive table of input files -> expanded commands -> proposed outputs, conflict warnings, and re-presents kernel-level protection guarantees.
       * **2nd Confirmation:** "2nd Confirmation: Execute under Landlock Isolation" activates only when Dry-Run succeeds with zero fatal conflicts.
       * **Step 4: [Execution under Landlock]** Executes the custom tool inside isolated sandboxed processes with original directory write blocking, real-time progress events, and cancellation support.
+* **Context Menu Portal Rendering & Action Button Spacing Optimization (Phase 8.9):**
+  * **Unclipped Context Menu Portal (`ContextMenu.tsx`):**
+    * Migrated context menu rendering to `ReactDOM.createPortal(..., document.body)` to eliminate container clipping caused by `overflow: hidden` and `transform: translateY(...)` within `VirtualFileList` and `.browser-table-body`.
+    * Implemented smart flip logic (`y - menuHeight`) to automatically open upward when near the viewport bottom (near `BottomTabPanel`), as well as horizontal flip (`x - menuWidth`) near the right edge, paired with `z-index: 99999` to ensure top-layer visibility.
+  * **Generous Spacing for Action Buttons (Preview / Copy / Stage) (`App.css`, `VirtualFileList.tsx`):**
+    * Expanded action column width (`col-header.col-actions`, `row-col-actions`) from `32px` to `72px` (more than double).
+    * Introduced a clean `gap: 6px` between action buttons and optimized button dimensions to `25px × 25px` with dedicated color accents for Preview (teal) and Staging/Copy (sky blue) and hover scaling.
+    * Added uniform `padding-right: 12px` gutter across Filename, Size, MTime, and INODE columns, completely eliminating cramped layouts.
+    * Integrated responsive button dimensions (22px / 25px / 28px) and column widths (62px / 72px / 82px) corresponding to the 3-level density settings (compact, normal, spacious).
 * **Verification & Testing:**
   * 45 Vitest tests passing (100%), 139 Cargo unit tests passing (100%), TypeScript / Vite production build passing cleanly.
 

@@ -252,10 +252,46 @@
   * メモリ・CPU・実行時間タイムアウト（30秒等）の上限保護。
   * シェル文字列展開（`sh -c`）を完全排除した引数配列実行。
 
-### 7.2 Phase 7.2 の目的と設計方針（パイプラインプリセット & DAG ワークフロー）
-* **パイプラインプリセットの通知合意とワークフロー定義：**
-  * 画像最適化（WebP変換・リサイズ）、メタデータ除去（exiftool）、文書変換（pandoc）等の安全なプリセット提供。
-  * フェーズ着手前にパイプラインプリセットの初期仕様についてユーザーと合意形成を実施。
+### 7.2 Phase 7.2 の目的と設計方針（30種パイプラインプリセット & DAG ワークフロー）
+* **合意済み 30 種パイプラインプリセット体系：**
+  * **画像・ビジュアル処理系（1〜8）：**
+    1. Web配信用軽量化（Exif削除 $\rightarrow$ 1920px縮小 $\rightarrow$ WebP品質80 $\rightarrow$ `_web`付与）
+    2. SNS・OGPカード生成（1200x630クロップ $\rightarrow$ 余白パディング $\rightarrow$ JPEG品質85）
+    3. アプリアイコン・ファビコンパック（正方形クロップ $\rightarrow$ 16/32/180/512pxマルチ出力 $\rightarrow$ PNG）
+    4. 透かし入りプレビュー画像出力（1200px縮小 $\rightarrow$ 右下30%透かし合成 $\rightarrow$ JPEG）
+    5. UIアセット用Retina縮小セット（@2x入力 $\rightarrow$ 50%縮小@1x生成 $\rightarrow$ `name@2x.png`/`name.png`）
+    6. ドット絵・スプライト拡大（ニアレストネイバー400%拡大 $\rightarrow$ 透過PNG保持）
+    7. 印刷入稿用CMYK/高解像度化（300DPI $\rightarrow$ sRGB to CMYK $\rightarrow$ 非可逆なしTIFF）
+    8. 写真の白黒アーティスティック加工（グレースケール $\rightarrow$ S字トーンカーブ $\rightarrow$ ノイズ微量付加 $\rightarrow$ JPEG）
+  * **音声・動画・リッチメディア系（9〜13）：**
+    9. 動画からWeb用GIFアニメ生成（区間トリム $\rightarrow$ 幅480px $\rightarrow$ パレット最適化 $\rightarrow$ GIF）
+    10. ポッドキャスト配信向けマスタリング（ラウドネス-16 LUFS $\rightarrow$ 無音トリム $\rightarrow$ 128kbps MP3 $\rightarrow$ ID3タグ）
+    11. 音声抽出・文字起こし前処理（映像破棄 $\rightarrow$ モノラル $\rightarrow$ 16kHz サンプリング $\rightarrow$ WAV）
+    12. スマホ動画のSNS用縦型成型（9:16センタリングクロップ $\rightarrow$ H.264/AAC $\rightarrow$ FastStart）
+    13. 高解像度動画のDiscord/Slack共有用圧縮（720pダウン $\rightarrow$ 2パス目標8MB以内 $\rightarrow$ MP4）
+  * **テキスト・ログ・データ整形系（14〜20 / 内部Rust高速エンジン対応）：**
+    14. 公開用ログの機密情報マスキング（IP/メール/APIキー置換 $\rightarrow$ 日付プレフィックス）
+    15. 基幹システムCSVのUTF-8クレンジング（Shift_JIS to UTF-8 $\rightarrow$ CRLF to LF $\rightarrow$ トリム）
+    16. JSONデータのフォーマット・圧縮（構文検証 $\rightarrow$ Minify空白改行除去 $\rightarrow$ `.min.json`）
+    17. TSV・CSV相互変換＆ヘッダー小文字化（タブ/カンマ変換 $\rightarrow$ スネークケース $\rightarrow$ エスケープ）
+    18. Markdown技術文書の整形・リンター（全角半角正規化 $\rightarrow$ 表組み空行フォーマット）
+    19. SQLダンプファイルの軽量化（コメント空行削除 $\rightarrow$ INSERTバルク結合 $\rightarrow$ gzip圧縮）
+    20. 字幕ファイル（SRT）タイムコードシフト・成型（タイムコード一括オフセット $\rightarrow$ タグ除去 $\rightarrow$ UTF-8）
+  * **ドキュメント・PDF処理系（21〜24）：**
+    21. スキャン書類の可読性向上＆白黒二値化（Deskew傾き補正 $\rightarrow$ グレースケール $\rightarrow$ 適応的二値化 $\rightarrow$ PDF）
+    22. 複数PDFの一括統合＆しおり生成（A4統一 $\rightarrow$ ファイル名順結合 $\rightarrow$ 目次アウトライン付与）
+    23. 配布用PDFのセキュリティ適用（メタデータ消去 $\rightarrow$ 印刷・コピー制限パスワード $\rightarrow$ 圧縮保存）
+    24. PDFからの画像一括抽出（埋め込みラスタ抽出 $\rightarrow$ 重複ハッシュチェック $\rightarrow$ 連番出力）
+  * **ファイル管理・整理・リネーム系（25〜27）：**
+    25. 写真・動画の撮影日時ディレクトリ自動仕分け（Exif日時読み取り $\rightarrow$ `YYYYMMDD_HHMMSS` $\rightarrow$ `YYYY/MM/`仕分け）
+    26. ダウンロード散乱ファイルの一括正規化（URLエンコード記号除去 $\rightarrow$ スペースをハイフン化 $\rightarrow$ 小文字化）
+    27. 連番アセットのゼロパディング揃え（末尾数値検出 $\rightarrow$ 4桁ゼロ埋め `img_0001.png` $\rightarrow$ 衝突回避）
+  * **開発・配布・セキュリティ系（28〜30）：**
+    28. ソースコード配布用クリーンパッケージ（`.git`/`node_modules`除外 $\rightarrow$ 改行LF統一 $\rightarrow$ ZIP）
+    29. 改ざん検知用チェックサムファイル同梱アーカイブ（SHA-256ハッシュ算出 $\rightarrow$ `checksums.txt` $\rightarrow$ tar.gz）
+    30. 機密ファイルの暗号化バックアップ（tar化 $\rightarrow$ AES-256暗号化 $\rightarrow$ `.enc`付与）
+* **ツール可用性プローブ（Tool Availability Probe）：**
+  * 各プリセットの必要ツール（`magick`, `ffmpeg`, `qpdf`, `pdfimages`, `exiftool` 等）の `$PATH` 実在を検知し、未インストール時は分かりやすい案内を表示。純Rust完結プリセット（14〜20, 26〜29）は外部ツール不要で即時利用可能。
 
 ### 7.3 Phase 7.3 の目的と設計方針（リアルタイム進捗 UI & キャンセル制御）
 * **非同期ストリーミング通知と UI 統合：**

@@ -252,10 +252,46 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
   * Protective bounds on memory, CPU, and execution timeout (30 seconds).
   * Argument array execution completely devoid of shell string interpolation (`sh -c`).
 
-### 7.2 Phase 7.2 Architecture & Design Decisions (Pipeline Presets & DAG Workflow)
-* **Pipeline Presets Consensus & Workflow Specification:**
-  * Curated, safe presets for image optimization (WebP conversion/resizing), metadata scrubbing (exiftool), document transformation (pandoc).
-  * Advance user consensus on default preset configurations prior to Phase 7 execution.
+### 7.2 Phase 7.2 Architecture & Design Decisions (30 Pipeline Presets & DAG Workflow)
+* **Agreed 30 Pipeline Presets Taxonomy:**
+  * **Images & Visual Processing (1–8):**
+    1. Web Distribution Optimization (Strip Exif $\rightarrow$ Resize to max 1920px $\rightarrow$ WebP Q80 $\rightarrow$ Append `_web`)
+    2. Social & OGP Card Generation (1200x630 crop $\rightarrow$ Padding $\rightarrow$ JPEG Q85)
+    3. App Icon & Favicon Pack (Square crop $\rightarrow$ Multi-resolution 16/32/180/512px $\rightarrow$ PNG)
+    4. Watermarked Preview Generation (1200px downscale $\rightarrow$ Bottom-right 30% watermark composite $\rightarrow$ JPEG)
+    5. Retina Asset Set (Input @2x $\rightarrow$ 50% scale @1x generation $\rightarrow$ `name@2x.png` / `name.png`)
+    6. Pixel Art / Sprite Sheet Upscaling (Nearest-neighbor 400% enlargement $\rightarrow$ Transparent PNG)
+    7. High-Res CMYK Print Prep (300 DPI metadata $\rightarrow$ sRGB to CMYK conversion $\rightarrow$ Lossless TIFF)
+    8. Artistic Monochrome Film Effect (Grayscale $\rightarrow$ S-curve contrast $\rightarrow$ Subtle film grain $\rightarrow$ JPEG)
+  * **Audio, Video & Rich Media (9–13):**
+    9. Web Animated GIF from Video (Time segment trim $\rightarrow$ Width 480px $\rightarrow$ Palette optimization $\rightarrow$ GIF)
+    10. Podcast Audio Mastering (Loudness normalization -16 LUFS $\rightarrow$ Silence trimming $\rightarrow$ 128kbps MP3 $\rightarrow$ ID3 tags)
+    11. Audio Extraction & Transcription Prep (Strip video $\rightarrow$ Downmix mono $\rightarrow$ 16kHz sampling $\rightarrow$ WAV)
+    12. Smartphone Video SNS Reformat (9:16 center crop $\rightarrow$ H.264/AAC encode $\rightarrow$ FastStart optimization)
+    13. Discord/Slack File Size Shrink (720p downscale $\rightarrow$ 2-pass bitrate control targeting < 8MB $\rightarrow$ MP4)
+  * **Text, Logs & Data Cleansing (14–20 / Pure Rust In-Memory Engine):**
+    14. Public Log Sanitization (Mask IP addresses $\rightarrow$ Mask emails $\rightarrow$ Mask API tokens $\rightarrow$ Date prefix)
+    15. Legacy CSV UTF-8 Cleansing (Shift_JIS to UTF-8 $\rightarrow$ CRLF to LF $\rightarrow$ Trim column whitespace)
+    16. JSON Formatting & Minification (JSON syntax validation $\rightarrow$ Whitespace/newline stripping $\rightarrow$ `.min.json`)
+    17. TSV/CSV Conversion & Header Snake_case (Delimiter conversion $\rightarrow$ Header snake_casing $\rightarrow$ Quote escaping)
+    18. Markdown Tech Spec Linter/Formatter (Fullwidth/halfwidth normalization $\rightarrow$ Table & blank line cleanup)
+    19. SQL Dump Minification (Strip comments & blank lines $\rightarrow$ Combine bulk INSERT statements $\rightarrow$ gzip)
+    20. Subtitle (SRT) Timecode Shift & Clean (Batch timecode offset $\rightarrow$ Tag cleanup $\rightarrow$ UTF-8 without BOM)
+  * **Documents & PDF Workflows (21–24):**
+    21. Scanned Document Enhancement & Binarization (Auto-deskew $\rightarrow$ Grayscale $\rightarrow$ Adaptive binarization $\rightarrow$ PDF)
+    22. Multi-PDF Merge & Table of Contents (Uniform A4 size $\rightarrow$ Filename sequence merge $\rightarrow$ Document bookmarks)
+    23. Secure Document PDF Distribution (Scrub metadata $\rightarrow$ Apply print/copy permission passwords $\rightarrow$ Linearized PDF)
+    24. PDF Raster Image Extractor (Extract embedded images $\rightarrow$ Deduplicate SHA hashes $\rightarrow$ Sequential export)
+  * **File Organization & Smart Renaming (25–27):**
+    25. Camera Media Auto-Directory Sorting (Extract Exif timestamp $\rightarrow$ `YYYYMMDD_HHMMSS` $\rightarrow$ Sort into `YYYY/MM/`)
+    26. Cluttered Downloads Normalizer (Decode URL encodings $\rightarrow$ Spaces to hyphens $\rightarrow$ Lowercase conversion)
+    27. Asset Zero-Padding Sequencer (Detect numeric tail $\rightarrow$ 4-digit zero padding `img_0001.png` $\rightarrow$ Conflict collision avoidance)
+  * **Development, Distribution & Security (28–30):**
+    28. Clean Source Distribution Packaging (Exclude `.git`, `node_modules`, `.DS_Store` $\rightarrow$ LF conversion $\rightarrow$ ZIP)
+    29. Tamper-Evident Checksum Archive (Generate SHA-256 for all staged items $\rightarrow$ Bundle `checksums.txt` $\rightarrow$ tar.gz)
+    30. Encrypted Archive Backup (Tar bundling $\rightarrow$ AES-256 encryption $\rightarrow$ Output `.enc`)
+* **Tool Availability Probe:**
+  * Dynamic detection of required tools (`magick`, `ffmpeg`, `qpdf`, `pdfimages`, `exiftool`) in `$PATH`. Clean guidance and fallback for missing tools. Pure-Rust presets (14–20, 26–29) work instantly without external prerequisites.
 
 ### 7.3 Phase 7.3 Architecture & Design Decisions (Real-time Progress UI & Cancellation Controls)
 * **Streaming Asynchronous Feedback & UI Integration:**

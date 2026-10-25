@@ -3,6 +3,7 @@ pub mod batch;
 pub mod chmod;
 pub mod config;
 pub mod diff;
+pub mod export_tar;
 pub mod extractor;
 pub mod git;
 pub mod history;
@@ -13,6 +14,7 @@ pub mod sandbox;
 pub mod scanner;
 pub mod search_filename;
 pub mod search_fulltext;
+pub mod timestamp;
 pub mod workspace;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
@@ -298,6 +300,33 @@ fn generate_chmod_plan(
 #[tauri::command]
 fn execute_chmod_plan(plan: chmod::ChmodPlanDto) -> Result<chmod::ChmodExecutionResultDto, String> {
     chmod::execute_chmod_plan(plan)
+}
+
+#[tauri::command]
+fn generate_timestamp_plan(
+    target_items: Vec<timestamp::TimestampTargetInputDto>,
+    mode: timestamp::TimestampModeSpec,
+) -> Result<timestamp::TimestampPlanDto, String> {
+    Ok(timestamp::generate_timestamp_plan(target_items, mode))
+}
+
+#[tauri::command]
+fn execute_timestamp_plan(
+    plan: timestamp::TimestampPlanDto,
+) -> Result<timestamp::TimestampExecutionResultDto, String> {
+    let hist_mgr = history::get_history_manager();
+    Ok(timestamp::execute_timestamp_plan(plan, Some(&hist_mgr)))
+}
+
+#[tauri::command]
+fn export_workspace_tar(
+    options: export_tar::TarExportOptionsDto,
+) -> Result<export_tar::TarExportResultDto, String> {
+    let mgr = workspace::get_workspace_manager();
+    let staged = mgr.list_staged();
+    let hist_mgr = history::get_history_manager();
+    export_tar::export_workspace_to_tar(&staged, &options, Some(&hist_mgr))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -592,6 +621,9 @@ pub fn run() {
             launch_external_editor_vidir,
             generate_chmod_plan,
             execute_chmod_plan,
+            generate_timestamp_plan,
+            execute_timestamp_plan,
+            export_workspace_tar,
             get_operation_history,
             clear_operation_history,
             get_default_backup_path,

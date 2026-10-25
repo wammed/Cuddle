@@ -496,8 +496,50 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
     * `FileBrowserPanel.tsx`: Added context menu action to trigger attribute change for individual/multiple files.
 * **Bilingual Synchronization (`ja/translation.json`, `en/translation.json`):**
   * Added all `chmod.*` keys with full English and Japanese parity.
+### 9.4 Implementation Details (Phase 9.3: Batch File Timestamps & Workspace tar/tar.gz Export): Completed
+* **Backend Engine (`src-tauri/src/timestamp.rs`, `src-tauri/src/export_tar.rs`, `src-tauri/src/lib.rs`):**
+  * **Batch Timestamp Change (`timestamp.rs`):**
+    * High-precision file timestamp management via `filetime = "0.2"` and `kamadak-exif = "0.6"`.
+    * **4 Modification Modes (`TimestampModeSpec`):**
+      1. Current System Time (`CurrentTime` / touch)
+      2. Absolute Datetime (`Absolute` / supports `YYYY-MM-DD HH:mm:ss` and major ISO formats)
+      3. Relative Time Shift (`RelativeOffset` / offset in seconds, positive for future, negative for past)
+      4. EXIF Shooting Datetime Sync (`ExifSync` / extracts `DateTimeOriginal` from JPEG/TIFF Exif metadata and updates mtime)
+    * `generate_timestamp_plan`: Computes a comprehensive Dry-Run verification plan (`TimestampPlanDto`) including current mtime, planned mtime, change status, and warnings.
+    * `execute_timestamp_plan`: Safely updates modification timestamps (mtime) with automatic reverse-order rollback on failure to maintain batch atomicity; logs operation to SQLite WAL history (`OperationType::Timestamp`).
+    * Exposed Tauri IPC commands: `generate_timestamp_plan`, `execute_timestamp_plan`.
+  * **Workspace tar / tar.gz Export (`export_tar.rs`):**
+    * Exports working files from `workspace-temp/` into standalone archives without touching originals.
+    * **2 Archive Formats (`TarExportFormat`):** Gzip-compressed tar (`TarGz`: `.tar.gz` / recommended) and uncompressed POSIX tar (`Tar`: `.tar`).
+    * **3 Export Scopes (`TarExportScope`):**
+      1. Modified files only (`ModifiedOnly`: default recommended)
+      2. All staged workspace files (`AllStaged`)
+      3. Selected files only (`SelectedOnly`)
+    * Automatically creates parent directories, calculates uncompressed vs archive byte sizes, and records archive creation to SQLite WAL history (`OperationType::TarExport`).
+    * Exposed Tauri IPC command: `export_workspace_tar`.
+  * TypeScript types auto-generated via `ts-rs` (`TimestampModeSpec.ts`, `PlannedTimestampItemDto.ts`, `TimestampPlanDto.ts`, `TimestampExecutionResultDto.ts`, `TarExportFormat.ts`, `TarExportScope.ts`, `TarExportOptionsDto.ts`, `TarExportResultDto.ts`).
+  * Added 16 Rust unit tests; all 167 Cargo unit tests passing 100%.
+* **Frontend UI Integration (`TimestampModal.tsx`, `TarExportModal.tsx`, `App.css`, Panels):**
+  * **Timestamp Modal (`TimestampModal.tsx`):**
+    * 4-mode tab switcher (Touch / Absolute / Relative Shift / EXIF Sync).
+    * Quick shift preset buttons (+1h, -1h, +30m, -30m, +1d, -1d).
+    * Dry-run preview table (item name, original timestamp, arrow, target timestamp, status badge).
+    * Fixed-bottom action bar, rollback notice, and feedback banners.
+  * **Tar Export Modal (`TarExportModal.tsx`):**
+    * Scope selection cards (Modified only / All staged / Selected only, with live count badges).
+    * Format selection cards (.tar.gz / .tar, automatically updates destination filename extension).
+    * Destination path input with reset generator and parent directory auto-create note.
+    * Post-export summary banner with compressed size and uncompressed size statistics.
+  * **Unified Aesthetics (Zero White Backgrounds):**
+    * Midnight Teal / Cyber Dark theme integration across all dialog cards, inputs, and tables.
+  * **Panel Integrations:**
+    * `WorkspacePanel.tsx`: Added "Change Timestamps (touch)" (`Clock` icon) and "Export tar" (`FolderArchive` icon) toolbar buttons.
+    * `VirtualFileList.tsx`: Added "Change Timestamps (touch)" to context menu.
+    * `FileBrowserPanel.tsx`: Context menu support for touch/timestamp modification.
+* **Bilingual Synchronization (`ja/translation.json`, `en/translation.json`):**
+  * Full parity across Japanese and English locales for all `timestamp.*` and `tar_export.*` keys.
 * **Verification & Testing:**
-  * 57 Vitest unit tests passing (100%, added `ChmodModal.test.tsx` with 6 unit tests), 151 Cargo unit tests passing (100%), TypeScript and Vite production builds passing cleanly.
+  * 65 Vitest unit tests passing (100%, added `TimestampModal.test.tsx` and `TarExportModal.test.tsx`), 167 Cargo unit tests passing (100%), TypeScript and Vite production builds passing cleanly.
 
 ---
 

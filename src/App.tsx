@@ -24,6 +24,10 @@ import { BottomTabPanel, type BottomTabId } from "./components/BottomTabPanel";
 import { BulkRenameModal } from "./components/BulkRenameModal";
 import { ChmodModal } from "./components/ChmodModal";
 import type { ChmodExecutionResultDto } from "./types/ChmodExecutionResultDto";
+import { TimestampModal } from "./components/TimestampModal";
+import type { TimestampExecutionResultDto } from "./types/TimestampExecutionResultDto";
+import { TarExportModal } from "./components/TarExportModal";
+import type { TarExportResultDto } from "./types/TarExportResultDto";
 import { ExitBackupModal } from "./components/ExitBackupModal";
 import { PipelineModal } from "./components/PipelineModal";
 import { SettingsModal } from "./components/SettingsModal";
@@ -52,6 +56,9 @@ export function App() {
   const [bulkRenameOpen, setBulkRenameOpen] = useState(false);
   const [chmodOpen, setChmodOpen] = useState(false);
   const [chmodTargets, setChmodTargets] = useState<(StagedItemDto | FileItem)[]>([]);
+  const [timestampOpen, setTimestampOpen] = useState(false);
+  const [timestampTargets, setTimestampTargets] = useState<(StagedItemDto | FileItem)[]>([]);
+  const [tarExportOpen, setTarExportOpen] = useState(false);
   const [exitBackupOpen, setExitBackupOpen] = useState(false);
   const [pipelineModalOpen, setPipelineModalOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -409,6 +416,54 @@ export function App() {
     [addHistory, addLog, currentPath, loadHistory, scanDirectory, showToast, t]
   );
 
+  const handleOpenTimestamp = useCallback(
+    (items?: (StagedItemDto | FileItem)[]) => {
+      if (items && items.length > 0) {
+        setTimestampTargets(items);
+      } else {
+        setTimestampTargets(stagedItems.length > 0 ? stagedItems : stagedFiles);
+      }
+      setTimestampOpen(true);
+    },
+    [stagedItems, stagedFiles]
+  );
+
+  const handleTimestampSuccess = useCallback(
+    async (result: TimestampExecutionResultDto) => {
+      try {
+        const updatedList = await invoke<StagedItemDto[]>("list_staged_items");
+        setStagedItems(updatedList);
+        await scanDirectory(currentPath);
+        const successMsg = t("timestamp.execute_success", { count: result.succeeded_count });
+        addHistory(`Changed timestamps on ${result.succeeded_count} items`);
+        addLog(`Timestamp executed: plan ${result.plan_id} (${result.succeeded_count} items changed)`);
+        showToast(successMsg);
+        await loadHistory();
+      } catch (err) {
+        addLog(`Failed to refresh after timestamp update: ${String(err)}`);
+      }
+    },
+    [addHistory, addLog, currentPath, loadHistory, scanDirectory, showToast, t]
+  );
+
+  const handleTarExportSuccess = useCallback(
+    async (result: TarExportResultDto) => {
+      try {
+        const successMsg = t("tar_export.export_success", {
+          count: result.file_count,
+          path: result.archive_path,
+        });
+        addHistory(`Exported archive (${result.file_count} files) to ${result.archive_path}`);
+        addLog(`Tar exported successfully: ${result.archive_path} (${result.file_count} files)`);
+        showToast(successMsg);
+        await loadHistory();
+      } catch (err) {
+        addLog(`Failed to refresh after tar export: ${String(err)}`);
+      }
+    },
+    [addHistory, addLog, loadHistory, showToast, t]
+  );
+
   const handleUndoBatch = async () => {
     try {
       const result = await invoke<BatchExecutionResultDto>("undo_last_bulk_rename");
@@ -761,6 +816,7 @@ export function App() {
                       onNavigatePath={(p) => scanDirectory(p)}
                       onOpenPreview={handleOpenPreview}
                       onOpenChmod={(item) => handleOpenChmod([item])}
+                      onOpenTimestamp={(item) => handleOpenTimestamp([item])}
                       hasParent={!!parentPath}
                       isScanning={isScanning}
                       onRefresh={() => scanDirectory(currentPath)}
@@ -782,6 +838,8 @@ export function App() {
                       onUnstageItem={handleUnstageItem}
                       onOpenBulkRename={() => setBulkRenameOpen(true)}
                       onOpenChmod={(items) => handleOpenChmod(items)}
+                      onOpenTimestamp={(items) => handleOpenTimestamp(items)}
+                      onOpenTarExport={() => setTarExportOpen(true)}
                       onOpenPipeline={() => setPipelineModalOpen(true)}
                       onUndo={handleUndoBatch}
                       onOpenBackup={() => setExitBackupOpen(true)}
@@ -874,6 +932,23 @@ export function App() {
         onClose={() => setChmodOpen(false)}
         items={chmodTargets.length > 0 ? chmodTargets : (stagedItems.length > 0 ? stagedItems : stagedFiles)}
         onSuccess={handleChmodSuccess}
+      />
+
+      {/* Batch Timestamp Change Modal (Phase 9.3) */}
+      <TimestampModal
+        isOpen={timestampOpen}
+        onClose={() => setTimestampOpen(false)}
+        items={timestampTargets.length > 0 ? timestampTargets : (stagedItems.length > 0 ? stagedItems : stagedFiles)}
+        onSuccess={handleTimestampSuccess}
+      />
+
+      {/* Workspace Tar Export Modal (Phase 9.3) */}
+      <TarExportModal
+        isOpen={tarExportOpen}
+        onClose={() => setTarExportOpen(false)}
+        stagedItems={stagedFiles}
+        selectedIds={selectedItem ? [selectedItem.item_id] : []}
+        onSuccess={handleTarExportSuccess}
       />
 
       {/* Exit & Backup Modal (Phase 6.3) */}

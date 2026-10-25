@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Briefcase, ShieldCheck, Trash2, Sparkles, RotateCcw, Archive, Workflow, FileCode } from "lucide-react";
+import { Briefcase, ShieldCheck, Trash2, Sparkles, RotateCcw, Archive, Workflow, FileCode, Clock, FolderArchive } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
 import type { StagedItemDto } from "../types/StagedItemDto";
@@ -16,6 +16,8 @@ interface WorkspacePanelProps {
   onUnstageItem?: (stageId: string) => void;
   onOpenBulkRename?: () => void;
   onOpenChmod?: (items?: FileItem[]) => void;
+  onOpenTimestamp?: (items?: FileItem[]) => void;
+  onOpenTarExport?: () => void;
   onUndo?: () => void;
   onOpenBackup?: () => void;
   onOpenPipeline?: () => void;
@@ -33,6 +35,8 @@ export function WorkspacePanel({
   onUnstageItem,
   onOpenBulkRename,
   onOpenChmod,
+  onOpenTimestamp,
+  onOpenTarExport,
   onUndo,
   onOpenBackup,
   onOpenPipeline,
@@ -150,6 +154,18 @@ export function WorkspacePanel({
               </button>
             )}
 
+            {onOpenTimestamp && (
+              <button
+                type="button"
+                className="panel-header-btn-secondary"
+                onClick={() => onOpenTimestamp()}
+                title={t("timestamp.action_open_modal")}
+              >
+                <Clock size={13} />
+                <span>{t("timestamp.action_open_modal")}</span>
+              </button>
+            )}
+
             {canUndo && onUndo && (
               <button
                 type="button"
@@ -159,6 +175,18 @@ export function WorkspacePanel({
               >
                 <RotateCcw size={13} />
                 <span>{t("workspace.undo_rename_btn")}</span>
+              </button>
+            )}
+
+            {onOpenTarExport && (
+              <button
+                type="button"
+                className="panel-header-btn-secondary"
+                onClick={onOpenTarExport}
+                title={t("tar_export.action_open_modal")}
+              >
+                <FolderArchive size={13} />
+                <span>{t("tar_export.action_open_modal")}</span>
               </button>
             )}
 
@@ -199,6 +227,7 @@ export function WorkspacePanel({
           onUnstage={handleUnstage}
           onOpenPreview={onOpenPreview}
           onOpenChmod={(item) => onOpenChmod ? onOpenChmod([item]) : undefined}
+          onOpenTimestamp={(item) => onOpenTimestamp ? onOpenTimestamp([item]) : undefined}
           cloneMethodMap={cloneMethodMap}
           statusMap={statusMap}
           isWorkspace

@@ -43,6 +43,8 @@ chrono = { version = "0.4", features = ["serde"] }
 rusqlite = { version = "0.41.0", features = ["bundled"] }
 tar = "0.4"
 flate2 = "1.0"
+filetime = "0.2"
+kamadak-exif = "0.6"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

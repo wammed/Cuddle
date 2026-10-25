@@ -498,8 +498,50 @@
     * `FileBrowserPanel.tsx`: 右クリックコンテキストメニューから個別・一括属性変更を起動可能。
 * **多言語同期（`ja/translation.json`, `en/translation.json`）：**
   * `chmod` セクションの全キー（タイトル、タブ、プリセット、マトリクス、警告、ステータス、ボタン等）を日英完全同期。
+### 9.4 実装内容（Phase 9.3: タイムスタンプ一括変更 & ワークスペース tar/tar.gz エクスポート）：完了
+* **バックエンドエンジン（`src-tauri/src/timestamp.rs`, `src-tauri/src/export_tar.rs`, `src-tauri/src/lib.rs`）：**
+  * **タイムスタンプ一括変更（`timestamp.rs`）：**
+    * `filetime = "0.2"` および `kamadak-exif = "0.6"` による高精度タイムスタンプ制御。
+    * **4つの変更モード（`TimestampModeSpec`）：**
+      1. 現在時刻（`CurrentTime` / touch）
+      2. 絶対日時指定（`Absolute` / `YYYY-MM-DD HH:mm:ss` 等の主要フォーマット対応）
+      3. 相対時間シフト（`RelativeOffset` / 秒数指定、正数で未来、負数で過去へシフト）
+      4. EXIF 撮影日時同期（`ExifSync` / 写真ファイルの Exif `DateTimeOriginal` メタデータを抽出し mtime へ反映）
+    * `generate_timestamp_plan`: 変更前 mtime、変更予定 mtime、変更判定、警告を含む Dry-run 検証計画（`TimestampPlanDto`）を生成。
+    * `execute_timestamp_plan`: 各アイテムの更新日時（mtime）を変更。エラー発生時は変更済みアイテムを逆順ロールバックして原子性を保護し、完了後に SQLite WAL 操作履歴（`OperationType::Timestamp`）へ自動記録。
+    * Tauri IPC コマンド `generate_timestamp_plan`, `execute_timestamp_plan` を公開・登録。
+  * **ワークスペース tar / tar.gz エクスポート（`export_tar.rs`）：**
+    * 作業コピー領域（`workspace-temp/`）内のファイルを原本に影響を与えずアーカイブ出力。
+    * **2つの出力形式（`TarExportFormat`）：** gzip 圧縮（`TarGz`: `.tar.gz` / 推奨）および非圧縮 POSIX tar（`Tar`: `.tar`）。
+    * **3つのエクスポート対象（`TarExportScope`）：**
+      1. 変更されたファイルのみ（`ModifiedOnly`: デフォルト推奨）
+      2. ステージング全ファイル（`AllStaged`）
+      3. 選択中のファイルのみ（`SelectedOnly`）
+    * 出力先親ディレクトリの自動作成、元サイズとアーカイブサイズの集計、SQLite WAL 操作履歴（`OperationType::TarExport`）への自動記録。
+    * Tauri IPC コマンド `export_workspace_tar` を公開・登録。
+  * `ts-rs` による TypeScript 型自動生成（`TimestampModeSpec.ts`, `PlannedTimestampItemDto.ts`, `TimestampPlanDto.ts`, `TimestampExecutionResultDto.ts`, `TarExportFormat.ts`, `TarExportScope.ts`, `TarExportOptionsDto.ts`, `TarExportResultDto.ts`）。
+  * 単体テスト 16 件を追加し、Cargo テスト全 167 件 100% パス。
+* **フロントエンド UI 統合（`TimestampModal.tsx`, `TarExportModal.tsx`, `App.css`, 各種パネル）：**
+  * **タイムスタンプモーダル（`TimestampModal.tsx`）：**
+    * 4モード切り替えタブ（現在時刻 / 絶対指定 / 相対シフト / EXIF同期）。
+    * クイックシフトボタン（+1時間, -1時間, +30分, -30分, +1日, -1日）。
+    * Dry-run 比較テーブル（ファイル名、変更前日時、矢印、変更後日時、判定バッジ）。
+    * 下部固定アクションバー、ロールバック通知、成功・エラーバナー。
+  * **tar エクスポートモーダル（`TarExportModal.tsx`）：**
+    * エクスポート対象カード選択（変更のみ / 全ステージング / 選択中のみ、各件数バッジ付き）。
+    * アーカイブ形式カード選択（.tar.gz 推奨 / .tar、選択連動で出力ファイル名拡張子を自動同期）。
+    * 出力先パス入力枠（再生成ボタン付き、親ディレクトリ自動作成注記）。
+    * 完了時の成果物サイズ・元サイズ・ファイル数サマリー表示。
+  * **デザイン統一（白背景完全禁止）：**
+    * Midnight Teal / Cyber Dark テーマ統一（深海ダーク背景、ティール／シアン境界、ネオングリーン成功バナー）。
+  * **パネル連携：**
+    * `WorkspacePanel.tsx`: ヘッダーツールバーに「日時変更 (touch)」（`Clock` アイコン）および「tar エクスポート」（`FolderArchive` アイコン）を配備。
+    * `VirtualFileList.tsx`: 右クリックコンテキストメニューに「日時変更 (touch)」項目を追加。
+    * `FileBrowserPanel.tsx`: 右クリックコンテキストメニューから個別・一括日時変更を起動可能。
+* **多言語同期（`ja/translation.json`, `en/translation.json`）：**
+  * `timestamp` および `tar_export` セクションの全キー（タイトル、タブ、説明、プレースホルダー、ステータス、ボタン等）を日英完全同期。
 * **テスト検証：**
-  * Vitest 57 件全件 100% パス（`ChmodModal.test.tsx` 6 件追加）、Cargo test 151 件全件 100% パス、TypeScript 型チェック / Vite ビルド完全成功。
+  * Vitest 65 件全件 100% パス（`TimestampModal.test.tsx`, `TarExportModal.test.tsx` 追加）、Cargo test 167 件全件 100% パス、TypeScript 型チェック / Vite ビルド完全成功。
 
 ---
 

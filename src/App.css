@@ -1651,7 +1651,8 @@ body {
 
 .reflect-confirm-dialog {
   width: 90%;
-  max-width: 520px;
+  max-width: 540px;
+  max-height: 85vh;
   background: rgba(15, 23, 42, 0.95);
   border: 1px solid rgba(245, 158, 11, 0.35);
   border-radius: var(--radius-sm);
@@ -1662,6 +1663,7 @@ body {
 }
 
 .reflect-confirm-dialog .dialog-header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1688,6 +1690,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow-y: auto;
+  max-height: calc(85vh - 120px);
 }
 
 .dialog-warning-text {
@@ -1775,6 +1779,7 @@ body {
 }
 
 .reflect-confirm-dialog .dialog-footer {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: flex-end;

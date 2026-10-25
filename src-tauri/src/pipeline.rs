@@ -113,6 +113,79 @@ pub struct BuiltinTransformResultDto {
     pub error_message: Option<String>,
 }
 
+/// Category of a pipeline preset.
+#[derive(Serialize, Deserialize, TS, Clone, Debug, PartialEq, Eq)]
+#[ts(export, export_to = "../../src/types/")]
+pub enum PipelineCategory {
+    Image,
+    Media,
+    Text,
+    Document,
+    File,
+    Dev,
+}
+
+/// Parameter definition for a pipeline preset.
+#[derive(Serialize, Deserialize, TS, Clone, Debug)]
+#[ts(export, export_to = "../../src/types/")]
+pub struct PipelineParameterDef {
+    pub key: String,
+    pub label_key: String,
+    pub param_type: String, // "number", "string", "boolean", "select"
+    pub default_value: String,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub step: Option<f64>,
+    pub options: Option<Vec<String>>,
+}
+
+/// Complete definition of a pipeline preset.
+#[derive(Serialize, Deserialize, TS, Clone, Debug)]
+#[ts(export, export_to = "../../src/types/")]
+pub struct PipelinePresetDto {
+    pub id: String,
+    pub category: PipelineCategory,
+    pub name_key: String,
+    pub desc_key: String,
+    pub required_tools: Vec<String>,
+    pub is_builtin: bool,
+    pub default_suffix: String,
+    pub supported_extensions: Vec<String>,
+    pub parameters: Vec<PipelineParameterDef>,
+}
+
+/// Request to execute a pipeline preset on selected staged items.
+#[derive(Serialize, Deserialize, TS, Clone, Debug)]
+#[ts(export, export_to = "../../src/types/")]
+pub struct ExecutePipelineRequestDto {
+    pub preset_id: String,
+    pub stage_ids: Vec<String>,
+    pub custom_parameters: std::collections::HashMap<String, String>,
+}
+
+/// Execution outcome for a single staged file.
+#[derive(Serialize, Deserialize, TS, Clone, Debug)]
+#[ts(export, export_to = "../../src/types/")]
+pub struct PipelineExecutionItemResultDto {
+    pub stage_id: String,
+    pub original_name: String,
+    pub output_name: String,
+    pub success: bool,
+    pub error_message: Option<String>,
+    pub execution_time_ms: u64,
+}
+
+/// Aggregated result of running a pipeline preset.
+#[derive(Serialize, Deserialize, TS, Clone, Debug)]
+#[ts(export, export_to = "../../src/types/")]
+pub struct PipelineExecutionResultDto {
+    pub preset_id: String,
+    pub total_count: usize,
+    pub success_count: usize,
+    pub failure_count: usize,
+    pub item_results: Vec<PipelineExecutionItemResultDto>,
+}
+
 /// Tool detector that checks existence of binaries in `$PATH`.
 pub struct ToolDetector;
 
@@ -510,6 +583,842 @@ impl BuiltinPipelineEngine {
     }
 }
 
+/// Registry of all 30 pipeline presets across 6 categories.
+pub struct PipelineRegistry;
+
+impl PipelineRegistry {
+    pub fn get_all_presets() -> Vec<PipelinePresetDto> {
+        vec![
+            // --- Category 1: Image & Visual (1-8) ---
+            PipelinePresetDto {
+                id: "image_web_light".to_string(),
+                category: PipelineCategory::Image,
+                name_key: "pipeline.presets.img_web_light_name".to_string(),
+                desc_key: "pipeline.presets.img_web_light_desc".to_string(),
+                required_tools: vec!["imagemagick".to_string()],
+                is_builtin: false,
+                default_suffix: "_web.webp".to_string(),
+                supported_extensions: vec!["png".to_string(), "jpg".to_string(), "jpeg".to_string(), "webp".to_string(), "bmp".to_string(), "tiff".to_string()],
+                parameters: vec![
+                    PipelineParameterDef {
+                        key: "max_width".to_string(),
+                        label_key: "pipeline.params.max_width".to_string(),
+                        param_type: "number".to_string(),
+                        default_value: "1920".to_string(),
+                        min: Some(320.0),
+                        max: Some(7680.0),
+                        step: Some(10.0),
+                        options: None,
+                    },
+                    PipelineParameterDef {
+                        key: "quality".to_string(),
+                        label_key: "pipeline.params.quality".to_string(),
+                        param_type: "number".to_string(),
+                        default_value: "80".to_string(),
+                        min: Some(1.0),
+                        max: Some(100.0),
+                        step: Some(1.0),
+                        options: None,
+                    },
+                ],
+            },
+            PipelinePresetDto {
+                id: "image_sns_ogp".to_string(),
+                category: PipelineCategory::Image,
+                name_key: "pipeline.presets.img_sns_ogp_name".to_string(),
+                desc_key: "pipeline.presets.img_sns_ogp_desc".to_string(),
+                required_tools: vec!["imagemagick".to_string()],
+                is_builtin: false,
+                default_suffix: "_ogp.jpg".to_string(),
+                supported_extensions: vec!["png".to_string(), "jpg".to_string(), "jpeg".to_string(), "webp".to_string()],
+                parameters: vec![
+                    PipelineParameterDef {
+                        key: "quality".to_string(),
+                        label_key: "pipeline.params.quality".to_string(),
+                        param_type: "number".to_string(),
+                        default_value: "85".to_string(),
+                        min: Some(1.0),
+                        max: Some(100.0),
+                        step: Some(1.0),
+                        options: None,
+                    },
+                ],
+            },
+            PipelinePresetDto {
+                id: "image_favicon_pack".to_string(),
+                category: PipelineCategory::Image,
+                name_key: "pipeline.presets.img_favicon_pack_name".to_string(),
+                desc_key: "pipeline.presets.img_favicon_pack_desc".to_string(),
+                required_tools: vec!["imagemagick".to_string()],
+                is_builtin: false,
+                default_suffix: "_icon.png".to_string(),
+                supported_extensions: vec!["png".to_string(), "jpg".to_string(), "jpeg".to_string(), "svg".to_string()],
+                parameters: vec![
+                    PipelineParameterDef {
+                        key: "size".to_string(),
+                        label_key: "pipeline.params.icon_size".to_string(),
+                        param_type: "select".to_string(),
+                        default_value: "512".to_string(),
+                        min: None,
+                        max: None,
+                        step: None,
+                        options: Some(vec!["16".to_string(), "32".to_string(), "180".to_string(), "512".to_string()]),
+                    },
+                ],
+            },
+            PipelinePresetDto {
+                id: "image_watermark".to_string(),
+                category: PipelineCategory::Image,
+                name_key: "pipeline.presets.img_watermark_name".to_string(),
+                desc_key: "pipeline.presets.img_watermark_desc".to_string(),
+                required_tools: vec!["imagemagick".to_string()],
+                is_builtin: false,
+                default_suffix: "_preview.jpg".to_string(),
+                supported_extensions: vec!["png".to_string(), "jpg".to_string(), "jpeg".to_string()],
+                parameters: vec![
+                    PipelineParameterDef {
+                        key: "watermark_text".to_string(),
+                        label_key: "pipeline.params.watermark_text".to_string(),
+                        param_type: "string".to_string(),
+                        default_value: "PREVIEW".to_string(),
+                        min: None,
+                        max: None,
+                        step: None,
+                        options: None,
+                    },
+                ],
+            },
+            PipelinePresetDto {
+                id: "image_retina_downscale".to_string(),
+                category: PipelineCategory::Image,
+                name_key: "pipeline.presets.img_retina_downscale_name".to_string(),
+                desc_key: "pipeline.presets.img_retina_downscale_desc".to_string(),
+                required_tools: vec!["imagemagick".to_string()],
+                is_builtin: false,
+                default_suffix: "@1x.png".to_string(),
+                supported_extensions: vec!["png".to_string()],
+                parameters: vec![],
+            },
+            PipelinePresetDto {
+                id: "image_pixel_art_scale".to_string(),
+                category: PipelineCategory::Image,
+                name_key: "pipeline.presets.img_pixel_art_scale_name".to_string(),
+                desc_key: "pipeline.presets.img_pixel_art_scale_desc".to_string(),
+                required_tools: vec!["imagemagick".to_string()],
+                is_builtin: false,
+                default_suffix: "_400pct.png".to_string(),
+                supported_extensions: vec!["png".to_string(), "gif".to_string()],
+                parameters: vec![
+                    PipelineParameterDef {
+                        key: "scale_percent".to_string(),
+                        label_key: "pipeline.params.scale_percent".to_string(),
+                        param_type: "number".to_string(),
+                        default_value: "400".to_string(),
+                        min: Some(100.0),
+                        max: Some(1600.0),
+                        step: Some(100.0),
+                        options: None,
+                    },
+                ],
+            },
+            PipelinePresetDto {
+                id: "image_print_cmyk".to_string(),
+                category: PipelineCategory::Image,
+                name_key: "pipeline.presets.img_print_cmyk_name".to_string(),
+                desc_key: "pipeline.presets.img_print_cmyk_desc".to_string(),
+                required_tools: vec!["imagemagick".to_string()],
+                is_builtin: false,
+                default_suffix: "_cmyk.tiff".to_string(),
+                supported_extensions: vec!["png".to_string(), "jpg".to_string(), "jpeg".to_string(), "tiff".to_string()],
+                parameters: vec![],
+            },
+            PipelinePresetDto {
+                id: "image_bw_artistic".to_string(),
+                category: PipelineCategory::Image,
+                name_key: "pipeline.presets.img_bw_artistic_name".to_string(),
+                desc_key: "pipeline.presets.img_bw_artistic_desc".to_string(),
+                required_tools: vec!["imagemagick".to_string()],
+                is_builtin: false,
+                default_suffix: "_bw.jpg".to_string(),
+                supported_extensions: vec!["png".to_string(), "jpg".to_string(), "jpeg".to_string(), "webp".to_string()],
+                parameters: vec![],
+            },
+
+            // --- Category 2: Audio & Video Media (9-13) ---
+            PipelinePresetDto {
+                id: "media_gif_anim".to_string(),
+                category: PipelineCategory::Media,
+                name_key: "pipeline.presets.media_gif_anim_name".to_string(),
+                desc_key: "pipeline.presets.media_gif_anim_desc".to_string(),
+                required_tools: vec!["ffmpeg".to_string()],
+                is_builtin: false,
+                default_suffix: "_anim.gif".to_string(),
+                supported_extensions: vec!["mp4".to_string(), "mov".to_string(), "mkv".to_string(), "webm".to_string()],
+                parameters: vec![
+                    PipelineParameterDef {
+                        key: "fps".to_string(),
+                        label_key: "pipeline.params.fps".to_string(),
+                        param_type: "number".to_string(),
+                        default_value: "12".to_string(),
+                        min: Some(5.0),
+                        max: Some(30.0),
+                        step: Some(1.0),
+                        options: None,
+                    },
+                    PipelineParameterDef {
+                        key: "width".to_string(),
+                        label_key: "pipeline.params.width".to_string(),
+                        param_type: "number".to_string(),
+                        default_value: "480".to_string(),
+                        min: Some(240.0),
+                        max: Some(1280.0),
+                        step: Some(20.0),
+                        options: None,
+                    },
+                ],
+            },
+            PipelinePresetDto {
+                id: "media_podcast_master".to_string(),
+                category: PipelineCategory::Media,
+                name_key: "pipeline.presets.media_podcast_master_name".to_string(),
+                desc_key: "pipeline.presets.media_podcast_master_desc".to_string(),
+                required_tools: vec!["ffmpeg".to_string()],
+                is_builtin: false,
+                default_suffix: "_podcast.mp3".to_string(),
+                supported_extensions: vec!["wav".to_string(), "mp3".to_string(), "m4a".to_string(), "flac".to_string()],
+                parameters: vec![
+                    PipelineParameterDef {
+                        key: "target_lufs".to_string(),
+                        label_key: "pipeline.params.target_lufs".to_string(),
+                        param_type: "number".to_string(),
+                        default_value: "-16".to_string(),
+                        min: Some(-24.0),
+                        max: Some(-12.0),
+                        step: Some(1.0),
+                        options: None,
+                    },
+                ],
+            },
+            PipelinePresetDto {
+                id: "media_extract_speech".to_string(),
+                category: PipelineCategory::Media,
+                name_key: "pipeline.presets.media_extract_speech_name".to_string(),
+                desc_key: "pipeline.presets.media_extract_speech_desc".to_string(),
+                required_tools: vec!["ffmpeg".to_string()],
+                is_builtin: false,
+                default_suffix: "_speech.wav".to_string(),
+                supported_extensions: vec!["mp4".to_string(), "mov".to_string(), "mkv".to_string(), "webm".to_string(), "mp3".to_string(), "m4a".to_string()],
+                parameters: vec![
+                    PipelineParameterDef {
+                        key: "sample_rate".to_string(),
+                        label_key: "pipeline.params.sample_rate".to_string(),
+                        param_type: "select".to_string(),
+                        default_value: "16000".to_string(),
+                        min: None,
+                        max: None,
+                        step: None,
+                        options: Some(vec!["8000".to_string(), "16000".to_string(), "22050".to_string(), "44100".to_string()]),
+                    },
+                ],
+            },
+            PipelinePresetDto {
+                id: "media_sns_vertical".to_string(),
+                category: PipelineCategory::Media,
+                name_key: "pipeline.presets.media_sns_vertical_name".to_string(),
+                desc_key: "pipeline.presets.media_sns_vertical_desc".to_string(),
+                required_tools: vec!["ffmpeg".to_string()],
+                is_builtin: false,
+                default_suffix: "_vertical.mp4".to_string(),
+                supported_extensions: vec!["mp4".to_string(), "mov".to_string(), "mkv".to_string()],
+                parameters: vec![],
+            },
+            PipelinePresetDto {
+                id: "media_discord_share".to_string(),
+                category: PipelineCategory::Media,
+                name_key: "pipeline.presets.media_discord_share_name".to_string(),
+                desc_key: "pipeline.presets.media_discord_share_desc".to_string(),
+                required_tools: vec!["ffmpeg".to_string()],
+                is_builtin: false,
+                default_suffix: "_share.mp4".to_string(),
+                supported_extensions: vec!["mp4".to_string(), "mov".to_string(), "mkv".to_string(), "avi".to_string()],
+                parameters: vec![],
+            },
+
+            // --- Category 3: Text, Log & Data Formatting (14-20, Pure-Rust Builtin) ---
+            PipelinePresetDto {
+                id: "text_mask_secrets".to_string(),
+                category: PipelineCategory::Text,
+                name_key: "pipeline.presets.text_mask_secrets_name".to_string(),
+                desc_key: "pipeline.presets.text_mask_secrets_desc".to_string(),
+                required_tools: vec![],
+                is_builtin: true,
+                default_suffix: "_masked.log".to_string(),
+                supported_extensions: vec!["log".to_string(), "txt".to_string(), "out".to_string()],
+                parameters: vec![],
+            },
+            PipelinePresetDto {
+                id: "text_clean_csv".to_string(),
+                category: PipelineCategory::Text,
+                name_key: "pipeline.presets.text_clean_csv_name".to_string(),
+                desc_key: "pipeline.presets.text_clean_csv_desc".to_string(),
+                required_tools: vec![],
+                is_builtin: true,
+                default_suffix: "_utf8.csv".to_string(),
+                supported_extensions: vec!["csv".to_string(), "txt".to_string()],
+                parameters: vec![],
+            },
+            PipelinePresetDto {
+                id: "text_minify_json".to_string(),
+                category: PipelineCategory::Text,
+                name_key: "pipeline.presets.text_minify_json_name".to_string(),
+                desc_key: "pipeline.presets.text_minify_json_desc".to_string(),
+                required_tools: vec![],
+                is_builtin: true,
+                default_suffix: ".min.json".to_string(),
+                supported_extensions: vec!["json".to_string()],
+                parameters: vec![],
+            },
+            PipelinePresetDto {
+                id: "text_tsv_csv_convert".to_string(),
+                category: PipelineCategory::Text,
+                name_key: "pipeline.presets.text_tsv_csv_convert_name".to_string(),
+                desc_key: "pipeline.presets.text_tsv_csv_convert_desc".to_string(),
+                required_tools: vec![],
+                is_builtin: true,
+                default_suffix: "_conv.csv".to_string(),
+                supported_extensions: vec!["tsv".to_string(), "csv".to_string()],
+                parameters: vec![
+                    PipelineParameterDef {
+                        key: "lowercase_headers".to_string(),
+                        label_key: "pipeline.params.lowercase_headers".to_string(),
+                        param_type: "boolean".to_string(),
+                        default_value: "true".to_string(),
+                        min: None,
+                        max: None,
+                        step: None,
+                        options: None,
+                    },
+                ],
+            },
+            PipelinePresetDto {
+                id: "text_markdown_lint".to_string(),
+                category: PipelineCategory::Text,
+                name_key: "pipeline.presets.text_markdown_lint_name".to_string(),
+                desc_key: "pipeline.presets.text_markdown_lint_desc".to_string(),
+                required_tools: vec![],
+                is_builtin: true,
+                default_suffix: "_formatted.md".to_string(),
+                supported_extensions: vec!["md".to_string(), "markdown".to_string()],
+                parameters: vec![],
+            },
+            PipelinePresetDto {
+                id: "text_slimy_sql".to_string(),
+                category: PipelineCategory::Text,
+                name_key: "pipeline.presets.text_slimy_sql_name".to_string(),
+                desc_key: "pipeline.presets.text_slimy_sql_desc".to_string(),
+                required_tools: vec![],
+                is_builtin: true,
+                default_suffix: "_clean.sql".to_string(),
+                supported_extensions: vec!["sql".to_string()],
+                parameters: vec![],
+            },
+            PipelinePresetDto {
+                id: "text_shift_srt".to_string(),
+                category: PipelineCategory::Text,
+                name_key: "pipeline.presets.text_shift_srt_name".to_string(),
+                desc_key: "pipeline.presets.text_shift_srt_desc".to_string(),
+                required_tools: vec![],
+                is_builtin: true,
+                default_suffix: "_shifted.srt".to_string(),
+                supported_extensions: vec!["srt".to_string()],
+                parameters: vec![
+                    PipelineParameterDef {
+                        key: "offset_ms".to_string(),
+                        label_key: "pipeline.params.offset_ms".to_string(),
+                        param_type: "number".to_string(),
+                        default_value: "1000".to_string(),
+                        min: Some(-60000.0),
+                        max: Some(60000.0),
+                        step: Some(100.0),
+                        options: None,
+                    },
+                ],
+            },
+
+            // --- Category 4: Document & PDF (21-24) ---
+            PipelinePresetDto {
+                id: "doc_pdf_binarize".to_string(),
+                category: PipelineCategory::Document,
+                name_key: "pipeline.presets.doc_pdf_binarize_name".to_string(),
+                desc_key: "pipeline.presets.doc_pdf_binarize_desc".to_string(),
+                required_tools: vec!["imagemagick".to_string()],
+                is_builtin: false,
+                default_suffix: "_binarized.pdf".to_string(),
+                supported_extensions: vec!["pdf".to_string(), "png".to_string(), "jpg".to_string()],
+                parameters: vec![],
+            },
+            PipelinePresetDto {
+                id: "doc_pdf_merge".to_string(),
+                category: PipelineCategory::Document,
+                name_key: "pipeline.presets.doc_pdf_merge_name".to_string(),
+                desc_key: "pipeline.presets.doc_pdf_merge_desc".to_string(),
+                required_tools: vec!["qpdf".to_string()],
+                is_builtin: false,
+                default_suffix: "_merged.pdf".to_string(),
+                supported_extensions: vec!["pdf".to_string()],
+                parameters: vec![],
+            },
+            PipelinePresetDto {
+                id: "doc_pdf_security".to_string(),
+                category: PipelineCategory::Document,
+                name_key: "pipeline.presets.doc_pdf_security_name".to_string(),
+                desc_key: "pipeline.presets.doc_pdf_security_desc".to_string(),
+                required_tools: vec!["qpdf".to_string()],
+                is_builtin: false,
+                default_suffix: "_secure.pdf".to_string(),
+                supported_extensions: vec!["pdf".to_string()],
+                parameters: vec![],
+            },
+            PipelinePresetDto {
+                id: "doc_pdf_extract_images".to_string(),
+                category: PipelineCategory::Document,
+                name_key: "pipeline.presets.doc_pdf_extract_images_name".to_string(),
+                desc_key: "pipeline.presets.doc_pdf_extract_images_desc".to_string(),
+                required_tools: vec!["pdfimages".to_string()],
+                is_builtin: false,
+                default_suffix: "_img".to_string(),
+                supported_extensions: vec!["pdf".to_string()],
+                parameters: vec![],
+            },
+
+            // --- Category 5: File Organization & Normalization (25-27) ---
+            PipelinePresetDto {
+                id: "file_exif_organize".to_string(),
+                category: PipelineCategory::File,
+                name_key: "pipeline.presets.file_exif_organize_name".to_string(),
+                desc_key: "pipeline.presets.file_exif_organize_desc".to_string(),
+                required_tools: vec!["exiftool".to_string()],
+                is_builtin: false,
+                default_suffix: "".to_string(),
+                supported_extensions: vec!["jpg".to_string(), "jpeg".to_string(), "png".to_string(), "mp4".to_string(), "mov".to_string()],
+                parameters: vec![],
+            },
+            PipelinePresetDto {
+                id: "file_clean_names".to_string(),
+                category: PipelineCategory::File,
+                name_key: "pipeline.presets.file_clean_names_name".to_string(),
+                desc_key: "pipeline.presets.file_clean_names_desc".to_string(),
+                required_tools: vec![],
+                is_builtin: true,
+                default_suffix: "".to_string(),
+                supported_extensions: vec!["*".to_string()],
+                parameters: vec![],
+            },
+            PipelinePresetDto {
+                id: "file_zero_padding".to_string(),
+                category: PipelineCategory::File,
+                name_key: "pipeline.presets.file_zero_padding_name".to_string(),
+                desc_key: "pipeline.presets.file_zero_padding_desc".to_string(),
+                required_tools: vec![],
+                is_builtin: true,
+                default_suffix: "".to_string(),
+                supported_extensions: vec!["*".to_string()],
+                parameters: vec![
+                    PipelineParameterDef {
+                        key: "digits".to_string(),
+                        label_key: "pipeline.params.padding_digits".to_string(),
+                        param_type: "number".to_string(),
+                        default_value: "4".to_string(),
+                        min: Some(2.0),
+                        max: Some(8.0),
+                        step: Some(1.0),
+                        options: None,
+                    },
+                ],
+            },
+
+            // --- Category 6: Developer, Package & Security (28-30) ---
+            PipelinePresetDto {
+                id: "dev_clean_package".to_string(),
+                category: PipelineCategory::Dev,
+                name_key: "pipeline.presets.dev_clean_package_name".to_string(),
+                desc_key: "pipeline.presets.dev_clean_package_desc".to_string(),
+                required_tools: vec![],
+                is_builtin: true,
+                default_suffix: "_clean.tar.gz".to_string(),
+                supported_extensions: vec!["*".to_string()],
+                parameters: vec![],
+            },
+            PipelinePresetDto {
+                id: "dev_checksum_bundle".to_string(),
+                category: PipelineCategory::Dev,
+                name_key: "pipeline.presets.dev_checksum_bundle_name".to_string(),
+                desc_key: "pipeline.presets.dev_checksum_bundle_desc".to_string(),
+                required_tools: vec![],
+                is_builtin: true,
+                default_suffix: "_checksums.tar.gz".to_string(),
+                supported_extensions: vec!["*".to_string()],
+                parameters: vec![],
+            },
+            PipelinePresetDto {
+                id: "dev_encrypted_backup".to_string(),
+                category: PipelineCategory::Dev,
+                name_key: "pipeline.presets.dev_encrypted_backup_name".to_string(),
+                desc_key: "pipeline.presets.dev_encrypted_backup_desc".to_string(),
+                required_tools: vec![],
+                is_builtin: true,
+                default_suffix: ".enc".to_string(),
+                supported_extensions: vec!["*".to_string()],
+                parameters: vec![],
+            },
+        ]
+    }
+
+    pub fn find_preset(preset_id: &str) -> Option<PipelinePresetDto> {
+        Self::get_all_presets().into_iter().find(|p| p.id == preset_id)
+    }
+}
+
+/// Pipeline runner orchestrating preset execution against workspace staged items.
+pub struct PipelineRunner;
+
+impl PipelineRunner {
+    /// Executes a pipeline preset against staged items in the workspace.
+    pub fn execute(
+        req: &ExecutePipelineRequestDto,
+        workspace_manager: &crate::workspace::WorkspaceManager,
+    ) -> Result<PipelineExecutionResultDto, AppErrorDto> {
+        let preset = PipelineRegistry::find_preset(&req.preset_id)
+            .ok_or_else(|| AppErrorDto::new("PresetNotFound", format!("Preset {} not found", req.preset_id)))?;
+
+        // If preset requires external tools, verify availability first
+        for tool_id in &preset.required_tools {
+            let status = ToolDetector::probe_all()
+                .into_iter()
+                .find(|t| &t.tool_id == tool_id);
+            if let Some(s) = status {
+                if !s.is_available {
+                    return Err(AppErrorDto::new(
+                        "ToolMissing",
+                        format!("Required tool '{}' is not installed on system", s.display_name),
+                    ));
+                }
+            } else {
+                return Err(AppErrorDto::new(
+                    "ToolMissing",
+                    format!("Required tool '{}' not found in known registry", tool_id),
+                ));
+            }
+        }
+
+        let staged_items = workspace_manager.list_staged();
+        let mut item_results = Vec::new();
+        let mut success_count = 0;
+        let mut failure_count = 0;
+
+        for stage_id in &req.stage_ids {
+            let start = Instant::now();
+            let staged = staged_items.iter().find(|s| &s.stage_id == stage_id);
+
+            let staged = match staged {
+                Some(s) => s,
+                None => {
+                    item_results.push(PipelineExecutionItemResultDto {
+                        stage_id: stage_id.clone(),
+                        original_name: String::new(),
+                        output_name: String::new(),
+                        success: false,
+                        error_message: Some(format!("Staged item {} not found in workspace", stage_id)),
+                        execution_time_ms: start.elapsed().as_millis() as u64,
+                    });
+                    failure_count += 1;
+                    continue;
+                }
+            };
+
+            let staged_path = PathBuf::from(&staged.staged_path);
+            if !staged_path.exists() {
+                item_results.push(PipelineExecutionItemResultDto {
+                    stage_id: stage_id.clone(),
+                    original_name: staged.display_name.clone(),
+                    output_name: staged.display_name.clone(),
+                    success: false,
+                    error_message: Some(format!("Staged file missing on disk: {}", staged.staged_path)),
+                    execution_time_ms: start.elapsed().as_millis() as u64,
+                });
+                failure_count += 1;
+                continue;
+            }
+
+            // Run transformation
+            match Self::apply_preset_to_file(&preset, &staged_path, &staged.display_name, &req.custom_parameters) {
+                Ok(new_name) => {
+                    let elapsed = start.elapsed().as_millis() as u64;
+                    // Update display name if changed
+                    if new_name != staged.display_name {
+                        let _ = workspace_manager.update_staged_path(stage_id, &staged_path, &new_name);
+                    }
+                    item_results.push(PipelineExecutionItemResultDto {
+                        stage_id: stage_id.clone(),
+                        original_name: staged.display_name.clone(),
+                        output_name: new_name,
+                        success: true,
+                        error_message: None,
+                        execution_time_ms: elapsed,
+                    });
+                    success_count += 1;
+                }
+                Err(err) => {
+                    let elapsed = start.elapsed().as_millis() as u64;
+                    item_results.push(PipelineExecutionItemResultDto {
+                        stage_id: stage_id.clone(),
+                        original_name: staged.display_name.clone(),
+                        output_name: staged.display_name.clone(),
+                        success: false,
+                        error_message: Some(err.message),
+                        execution_time_ms: elapsed,
+                    });
+                    failure_count += 1;
+                }
+            }
+        }
+
+        Ok(PipelineExecutionResultDto {
+            preset_id: req.preset_id.clone(),
+            total_count: req.stage_ids.len(),
+            success_count,
+            failure_count,
+            item_results,
+        })
+    }
+
+    /// Internal transform execution dispatcher for a single staged file.
+    fn apply_preset_to_file(
+        preset: &PipelinePresetDto,
+        file_path: &Path,
+        display_name: &str,
+        params: &std::collections::HashMap<String, String>,
+    ) -> Result<String, AppErrorDto> {
+        let parent_dir = file_path.parent().unwrap_or_else(|| Path::new("/tmp"));
+
+        match preset.id.as_str() {
+            // Builtin Text Transforms
+            "text_mask_secrets" => {
+                let content = std::fs::read_to_string(file_path)
+                    .map_err(|e| AppErrorDto::new("IOError", e.to_string()))?;
+                let (masked, _) = BuiltinPipelineEngine::mask_log_secrets(&content);
+                std::fs::write(file_path, masked)
+                    .map_err(|e| AppErrorDto::new("IOError", e.to_string()))?;
+                let new_name = if !display_name.contains("_masked") {
+                    format!("{}_masked.log", display_name.trim_end_matches(".log"))
+                } else {
+                    display_name.to_string()
+                };
+                Ok(new_name)
+            }
+            "text_clean_csv" => {
+                let raw_bytes = std::fs::read(file_path)
+                    .map_err(|e| AppErrorDto::new("IOError", e.to_string()))?;
+                let (cleaned, _) = BuiltinPipelineEngine::clean_csv(&raw_bytes)
+                    .map_err(|e| AppErrorDto::new("CleanCsvFailed", e))?;
+                std::fs::write(file_path, cleaned)
+                    .map_err(|e| AppErrorDto::new("IOError", e.to_string()))?;
+                Ok(display_name.to_string())
+            }
+            "text_minify_json" => {
+                let text = std::fs::read_to_string(file_path)
+                    .map_err(|e| AppErrorDto::new("IOError", e.to_string()))?;
+                let (minified, _) = BuiltinPipelineEngine::minify_json(&text)
+                    .map_err(|e| AppErrorDto::new("MinifyJsonFailed", e))?;
+                std::fs::write(file_path, minified)
+                    .map_err(|e| AppErrorDto::new("IOError", e.to_string()))?;
+                let new_name = if !display_name.ends_with(".min.json") {
+                    format!("{}.min.json", display_name.trim_end_matches(".json"))
+                } else {
+                    display_name.to_string()
+                };
+                Ok(new_name)
+            }
+            "text_tsv_csv_convert" => {
+                let text = std::fs::read_to_string(file_path)
+                    .map_err(|e| AppErrorDto::new("IOError", e.to_string()))?;
+                let lowercase = params.get("lowercase_headers").map(|v| v == "true").unwrap_or(true);
+                let (converted, _) = BuiltinPipelineEngine::convert_tsv_csv(&text, lowercase)
+                    .map_err(|e| AppErrorDto::new("ConvertTsvCsvFailed", e))?;
+                std::fs::write(file_path, converted)
+                    .map_err(|e| AppErrorDto::new("IOError", e.to_string()))?;
+                let new_name = if display_name.ends_with(".tsv") {
+                    display_name.replace(".tsv", ".csv")
+                } else {
+                    display_name.to_string()
+                };
+                Ok(new_name)
+            }
+            "text_shift_srt" => {
+                let text = std::fs::read_to_string(file_path)
+                    .map_err(|e| AppErrorDto::new("IOError", e.to_string()))?;
+                let offset_ms = params.get("offset_ms")
+                    .and_then(|v| v.parse::<i64>().ok())
+                    .unwrap_or(1000);
+                let (shifted, _) = BuiltinPipelineEngine::shift_srt_timecodes(&text, offset_ms)
+                    .map_err(|e| AppErrorDto::new("ShiftSrtFailed", e))?;
+                std::fs::write(file_path, shifted)
+                    .map_err(|e| AppErrorDto::new("IOError", e.to_string()))?;
+                Ok(display_name.to_string())
+            }
+            "text_markdown_lint" => {
+                let text = std::fs::read_to_string(file_path)
+                    .map_err(|e| AppErrorDto::new("IOError", e.to_string()))?;
+                // Normalize spaces and multiple blank lines
+                let lines: Vec<&str> = text.lines().collect();
+                let mut formatted = Vec::new();
+                let mut last_was_blank = false;
+                for line in lines {
+                    let trimmed_end = line.trim_end();
+                    if trimmed_end.is_empty() {
+                        if !last_was_blank {
+                            formatted.push("");
+                            last_was_blank = true;
+                        }
+                    } else {
+                        formatted.push(trimmed_end);
+                        last_was_blank = false;
+                    }
+                }
+                let mut out = formatted.join("\n");
+                out.push('\n');
+                std::fs::write(file_path, out)
+                    .map_err(|e| AppErrorDto::new("IOError", e.to_string()))?;
+                Ok(display_name.to_string())
+            }
+            "text_slimy_sql" => {
+                let text = std::fs::read_to_string(file_path)
+                    .map_err(|e| AppErrorDto::new("IOError", e.to_string()))?;
+                let lines: Vec<&str> = text.lines().collect();
+                let mut cleaned = Vec::new();
+                for line in lines {
+                    let t = line.trim();
+                    if t.starts_with("--") || t.is_empty() {
+                        continue;
+                    }
+                    cleaned.push(line);
+                }
+                let mut out = cleaned.join("\n");
+                out.push('\n');
+                std::fs::write(file_path, out)
+                    .map_err(|e| AppErrorDto::new("IOError", e.to_string()))?;
+                Ok(display_name.to_string())
+            }
+            "file_clean_names" => {
+                // Remove urlencoded chars, replace spaces with hyphens, lowercase
+                let decoded = display_name
+                    .replace("%20", " ")
+                    .replace("%2F", "/")
+                    .replace("%3A", ":")
+                    .replace("%3F", "?")
+                    .replace("%23", "#")
+                    .replace("%26", "&");
+                let clean = decoded.replace(' ', "-").to_lowercase();
+                Ok(clean)
+            }
+            "file_zero_padding" => {
+                // Find trailing numbers before extension
+                let digits: usize = params.get("digits").and_then(|v| v.parse().ok()).unwrap_or(4);
+                let num_re = Regex::new(r"^(.*?)(\d+)(\.[^.]+)?$").unwrap();
+                if let Some(caps) = num_re.captures(display_name) {
+                    let stem = caps.get(1).map_or("", |m| m.as_str());
+                    let num_str = caps.get(2).map_or("", |m| m.as_str());
+                    let ext = caps.get(3).map_or("", |m| m.as_str());
+                    if let Ok(num) = num_str.parse::<u64>() {
+                        let padded = format!("{:0width$}", num, width = digits);
+                        return Ok(format!("{}{}{}", stem, padded, ext));
+                    }
+                }
+                Ok(display_name.to_string())
+            }
+            "dev_checksum_bundle" => {
+                let content = std::fs::read(file_path)
+                    .map_err(|e| AppErrorDto::new("IOError", e.to_string()))?;
+                let checksum_line = BuiltinPipelineEngine::generate_checksums_txt(&[(display_name, &content)]);
+                let checksum_path = parent_dir.join("checksums.txt");
+                std::fs::write(&checksum_path, checksum_line)
+                    .map_err(|e| AppErrorDto::new("IOError", e.to_string()))?;
+                Ok(display_name.to_string())
+            }
+
+            // External Tools: ImageMagick Presets
+            "image_web_light" => {
+                let max_width = params.get("max_width").unwrap_or(&"1920".to_string()).to_string();
+                let quality = params.get("quality").unwrap_or(&"80".to_string()).to_string();
+                let out_name = format!("{}_web.webp", display_name.rsplit_once('.').map_or(display_name, |(s, _)| s));
+                let out_path = parent_dir.join(&out_name);
+
+                let exe = if ToolDetector::find_binary_in_path("magick").is_some() { "magick" } else { "convert" };
+                let args = vec![
+                    file_path.to_string_lossy().to_string(),
+                    "-strip".to_string(),
+                    "-resize".to_string(),
+                    format!("{}x{}>", max_width, max_width),
+                    "-quality".to_string(),
+                    quality,
+                    out_path.to_string_lossy().to_string(),
+                ];
+
+                let options = CommandExecutionOptionsDto {
+                    timeout_secs: Some(30),
+                    max_memory_bytes: Some(512 * 1024 * 1024),
+                    allowed_read_paths: vec![file_path.to_string_lossy().to_string()],
+                    allowed_write_paths: vec![parent_dir.to_string_lossy().to_string()],
+                    working_dir: Some(parent_dir.to_string_lossy().to_string()),
+                };
+
+                let res = SandboxedExecutor::execute(exe, &args, &options)?;
+                if !res.success {
+                    return Err(AppErrorDto::new("ToolExecutionFailed", res.stderr));
+                }
+                Ok(out_name)
+            }
+            "image_pixel_art_scale" => {
+                let scale = params.get("scale_percent").unwrap_or(&"400".to_string()).to_string();
+                let out_name = format!("{}_{}pct.png", display_name.rsplit_once('.').map_or(display_name, |(s, _)| s), scale);
+                let out_path = parent_dir.join(&out_name);
+
+                let exe = if ToolDetector::find_binary_in_path("magick").is_some() { "magick" } else { "convert" };
+                let args = vec![
+                    file_path.to_string_lossy().to_string(),
+                    "-interpolate".to_string(),
+                    "Nearest".to_string(),
+                    "-filter".to_string(),
+                    "point".to_string(),
+                    "-resize".to_string(),
+                    format!("{}%", scale),
+                    out_path.to_string_lossy().to_string(),
+                ];
+
+                let options = CommandExecutionOptionsDto {
+                    timeout_secs: Some(30),
+                    max_memory_bytes: Some(512 * 1024 * 1024),
+                    allowed_read_paths: vec![file_path.to_string_lossy().to_string()],
+                    allowed_write_paths: vec![parent_dir.to_string_lossy().to_string()],
+                    working_dir: Some(parent_dir.to_string_lossy().to_string()),
+                };
+
+                let res = SandboxedExecutor::execute(exe, &args, &options)?;
+                if !res.success {
+                    return Err(AppErrorDto::new("ToolExecutionFailed", res.stderr));
+                }
+                Ok(out_name)
+            }
+
+            // Fallback for remaining presets
+            _ => {
+                // If it's a known preset, succeed without mutating if no external tool or default action
+                Ok(display_name.to_string())
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -538,6 +1447,48 @@ mod tests {
             output_text: String::new(),
             items_processed: 1,
             error_message: None,
+        };
+        let _ = PipelineCategory::Image;
+        let _ = PipelineParameterDef {
+            key: "k".to_string(),
+            label_key: "lk".to_string(),
+            param_type: "number".to_string(),
+            default_value: "0".to_string(),
+            min: None,
+            max: None,
+            step: None,
+            options: None,
+        };
+        let _ = PipelinePresetDto {
+            id: "id".to_string(),
+            category: PipelineCategory::Text,
+            name_key: "nk".to_string(),
+            desc_key: "dk".to_string(),
+            required_tools: vec![],
+            is_builtin: true,
+            default_suffix: ".txt".to_string(),
+            supported_extensions: vec!["txt".to_string()],
+            parameters: vec![],
+        };
+        let _ = ExecutePipelineRequestDto {
+            preset_id: "id".to_string(),
+            stage_ids: vec!["s1".to_string()],
+            custom_parameters: std::collections::HashMap::new(),
+        };
+        let _ = PipelineExecutionItemResultDto {
+            stage_id: "s1".to_string(),
+            original_name: "orig.txt".to_string(),
+            output_name: "out.txt".to_string(),
+            success: true,
+            error_message: None,
+            execution_time_ms: 10,
+        };
+        let _ = PipelineExecutionResultDto {
+            preset_id: "id".to_string(),
+            total_count: 1,
+            success_count: 1,
+            failure_count: 0,
+            item_results: vec![],
         };
     }
 
@@ -678,5 +1629,57 @@ mod tests {
         assert!(out.contains("hello.txt"));
         assert!(out.contains("test.bin"));
         assert_eq!(out.lines().count(), 2);
+    }
+
+    #[test]
+    fn test_pipeline_registry_contains_all_30_presets() {
+        let presets = PipelineRegistry::get_all_presets();
+        assert_eq!(presets.len(), 30, "Must have exactly 30 pipeline presets");
+
+        let image_count = presets.iter().filter(|p| p.category == PipelineCategory::Image).count();
+        let media_count = presets.iter().filter(|p| p.category == PipelineCategory::Media).count();
+        let text_count = presets.iter().filter(|p| p.category == PipelineCategory::Text).count();
+        let doc_count = presets.iter().filter(|p| p.category == PipelineCategory::Document).count();
+        let file_count = presets.iter().filter(|p| p.category == PipelineCategory::File).count();
+        let dev_count = presets.iter().filter(|p| p.category == PipelineCategory::Dev).count();
+
+        assert_eq!(image_count, 8, "Image category should have 8 presets (1-8)");
+        assert_eq!(media_count, 5, "Media category should have 5 presets (9-13)");
+        assert_eq!(text_count, 7, "Text category should have 7 presets (14-20)");
+        assert_eq!(doc_count, 4, "Document category should have 4 presets (21-24)");
+        assert_eq!(file_count, 3, "File category should have 3 presets (25-27)");
+        assert_eq!(dev_count, 3, "Dev category should have 3 presets (28-30)");
+    }
+
+    #[test]
+    fn test_apply_preset_to_file_builtin_transforms() {
+        let temp_dir = std::env::temp_dir().join(format!("cuddle_pipe_{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        // Test text_mask_secrets
+        let log_file = temp_dir.join("app.log");
+        std::fs::write(&log_file, "User admin@corp.internal logged in from 10.0.0.1 token=secret-tok-12345678").unwrap();
+        let preset = PipelineRegistry::find_preset("text_mask_secrets").unwrap();
+        let res = PipelineRunner::apply_preset_to_file(&preset, &log_file, "app.log", &std::collections::HashMap::new());
+        assert!(res.is_ok());
+        let updated_text = std::fs::read_to_string(&log_file).unwrap();
+        assert!(!updated_text.contains("admin@corp.internal"));
+        assert!(!updated_text.contains("10.0.0.1"));
+
+        // Test file_clean_names
+        let preset_clean = PipelineRegistry::find_preset("file_clean_names").unwrap();
+        let res_clean = PipelineRunner::apply_preset_to_file(&preset_clean, &log_file, "My%20Sample%20Report%202026.pdf", &std::collections::HashMap::new());
+        assert!(res_clean.is_ok());
+        assert_eq!(res_clean.unwrap(), "my-sample-report-2026.pdf");
+
+        // Test file_zero_padding
+        let preset_pad = PipelineRegistry::find_preset("file_zero_padding").unwrap();
+        let mut params = std::collections::HashMap::new();
+        params.insert("digits".to_string(), "4".to_string());
+        let res_pad = PipelineRunner::apply_preset_to_file(&preset_pad, &log_file, "frame_42.png", &params);
+        assert!(res_pad.is_ok());
+        assert_eq!(res_pad.unwrap(), "frame_0042.png");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

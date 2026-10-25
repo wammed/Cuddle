@@ -23,6 +23,7 @@ import { DetailsSidebarPanel } from "./components/DetailsSidebarPanel";
 import { BottomTabPanel } from "./components/BottomTabPanel";
 import { BulkRenameModal } from "./components/BulkRenameModal";
 import { ExitBackupModal } from "./components/ExitBackupModal";
+import { PipelineModal } from "./components/PipelineModal";
 import "./App.css";
 
 interface LandlockStatus {
@@ -42,6 +43,7 @@ export function App() {
   const [selectedItem, setSelectedItem] = useState<FileItem | null>(null);
   const [bulkRenameOpen, setBulkRenameOpen] = useState(false);
   const [exitBackupOpen, setExitBackupOpen] = useState(false);
+  const [pipelineModalOpen, setPipelineModalOpen] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -416,6 +418,34 @@ export function App() {
     showToast(t("workspace.clear_all_btn"));
   };
 
+  const handlePipelineSuccess = useCallback(async () => {
+    try {
+      const updatedList = await invoke<StagedItemDto[]>("list_staged_items");
+      setStagedItems(updatedList);
+      setStagedFiles((prev) =>
+        prev.map((f) => {
+          const match = updatedList.find(
+            (u) => u.stage_id === f.item_id || u.original_item_id === f.item_id || u.raw_base64 === f.raw_base64
+          );
+          if (match) {
+            return {
+              ...f,
+              display_name: match.display_name,
+              raw_base64: match.staged_raw_base64,
+            };
+          }
+          return f;
+        })
+      );
+      addHistory("Applied pipeline preset to staged files in workspace-temp/");
+      addLog("Pipeline workflow executed successfully on staged items");
+      showToast(t("pipeline.modal_title") + " ✓");
+      await loadHistory();
+    } catch (err) {
+      addLog(`Failed to refresh staged items after pipeline execution: ${String(err)}`);
+    }
+  }, [addHistory, addLog, loadHistory, showToast, t]);
+
   const handleExtractText = async (item: FileItem) => {
     try {
       setExtractLoading(true);
@@ -576,6 +606,7 @@ export function App() {
                       onClearWorkspace={handleClearWorkspace}
                       onUnstageItem={handleUnstageItem}
                       onOpenBulkRename={() => setBulkRenameOpen(true)}
+                      onOpenPipeline={() => setPipelineModalOpen(true)}
                       onUndo={handleUndoBatch}
                       onOpenBackup={() => setExitBackupOpen(true)}
                     />
@@ -646,6 +677,15 @@ export function App() {
         onDiscard={handleDiscardAndExit}
         onBackupSuccess={handleBackupSuccess}
       />
+
+      {/* Pipeline Workflow Modal (Phase 7.2) */}
+      {pipelineModalOpen && (
+        <PipelineModal
+          stagedFiles={stagedItems}
+          onClose={() => setPipelineModalOpen(false)}
+          onExecuteSuccess={handlePipelineSuccess}
+        />
+      )}
 
       <footer className="cuddle-global-statusbar">
         <div className="statusbar-left">

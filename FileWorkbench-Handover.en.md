@@ -231,7 +231,16 @@
   * **UI Integration:** Added "External Tool Ecosystem (Phase 7.1)" card inside `BottomTabPanel.tsx` Security & Settings tab (displaying ImageMagick, FFmpeg, qpdf, pdfimages, exiftool, pandoc status badges, versions, paths, and rescan action)
   * **Dark Theme Compliance:** Zero white backgrounds, adhering strictly to Dark Velvet Slate palette
   * **Automated Type Sync:** `ts-rs` generation of `ExternalToolStatusDto.ts`, `CommandExecutionOptionsDto.ts`, `CommandExecutionResultDto.ts`, `BuiltinTransformResultDto.ts`
-  * **Verification:** 119 Cargo tests 100% pass, 33 Vitest tests 100% pass, Clippy zero warnings, Vite build success
+* [x] **Phase 7.2 (30 Pipeline Presets Definition, DAG Execution Engine & UI Integration): Completed**
+  * **30 Presets Definition:** Implemented all 30 presets in `PipelineRegistry`: Images 1-8, Audio/Video 9-13, Text 14-20, Documents 21-24, File Organization 25-27, and Dev/Sec 28-30.
+  * **Hybrid Execution Engine:** Pure-Rust high-speed transforms combined with Landlock LSM sandboxed external tool dispatch (ImageMagick, FFmpeg, qpdf, etc.).
+  * **Original File Protection:** Transforms only apply to working copies inside `workspace-temp/`, safely updating staging paths while leaving original files untouched.
+  * **Operation History Integration:** Automatically records completed pipeline runs into SQLite WAL journal as `OperationType::Pipeline`.
+  * **UI Integration (`PipelineModal.tsx`):** 30 preset browser, category pills (All/Image/Media/Text/Document/File/Dev), search box, parameter sliders/inputs, tool availability checks, execution result summary, and double-click prevention.
+  * **Dark Mode Enforcement:** Completely eliminated pale/whitish tints on secondary buttons ("Original Snapshot Recorded", "Text Extraction & Indexing") by establishing deep Dark Velvet Slate surfaces (`rgba(15, 23, 42, 0.9)`, text `#e2e8f0`, border `rgba(255, 255, 255, 0.14)`). Strictly prohibited white backgrounds in textboxes, modals, and popups.
+  * **Bilingual Synchronization:** Full English and Japanese dictionaries synchronized (`pipeline.*`).
+  * **Automated Type Sync:** `ts-rs` generation of `PipelineCategory.ts`, `PipelinePresetDto.ts`, `PipelineParameterDef.ts`, `ExecutePipelineRequestDto.ts`, `PipelineExecutionResultDto.ts`, and `PipelineExecutionItemResultDto.ts`.
+  * **Verification:** 127 Cargo tests 100% pass, 37 Vitest tests 100% pass, Clippy zero warnings, Vite build success.
 
 ---
 

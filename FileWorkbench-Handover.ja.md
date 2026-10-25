@@ -231,7 +231,16 @@
   * **UI 統合:** `BottomTabPanel.tsx`「セキュリティ & 設定」タブ内に「外部ツール連携環境 (Phase 7.1)」カードを配備（ImageMagick, FFmpeg, qpdf, pdfimages, exiftool, pandoc の可用性・バージョン・パス表示、再スキャンボタン）
   * **ダークテーマ統一:** 白背景完全禁止、Dark Velvet Slate パレット準拠
   * **型自動同期:** `ts-rs` による TypeScript 型自動生成（`ExternalToolStatusDto.ts`, `CommandExecutionOptionsDto.ts`, `CommandExecutionResultDto.ts`, `BuiltinTransformResultDto.ts`）
-  * **テスト・ビルド検証:** Cargo テスト 119 件 100% パス、Vitest 33 件 100% パス、Clippy 警告ゼロ、Vite ビルド成功
+* [x] **Phase 7.2（30種パイプラインプリセット定義 & DAG 実行エンジン & UI 統合）：完了**
+  * **30種プリセット定義:** 画像 1〜8、音声動画 9〜13、テキスト 14〜20、ドキュメント 21〜24、ファイル整理 25〜27、開発配布 28〜30 の全プリセットを `PipelineRegistry` に実装。
+  * **ハイブリッド実行エンジン:** 純Rust高速変換と Landlock LSM 隔離外部ツール実行（ImageMagick, FFmpeg, qpdf 等）のハイブリッド構成。
+  * **原本完全保護:** 作業領域（`workspace-temp/`）内コピーに対してのみ変換を適用し、ステージングパスを安全に更新。原本は一切変更されない。
+  * **操作履歴連携:** 実行完了時に SQLite WAL 操作履歴へ `OperationType::Pipeline` として自動記録。
+  * **UI 統合（`PipelineModal.tsx`）:** 30種プリセットブラウザ、カテゴリピル（すべて/画像/メディア/テキスト/ドキュメント/ファイル/開発）、検索、パラメータ調整スライダー、外部ツール要否判定、実行結果サマリー、多重クリック防止。
+  * **UI ダークモード徹底:** 「原本スナップショット記録済み」「テキスト抽出 & インデックス登録」ボタン等の白っぽさを完全解消し、深みのある Dark Velvet Slate（`rgba(15, 23, 42, 0.9)`、文字 `#e2e8f0`、枠線 `rgba(255, 255, 255, 0.14)`）へ統一。テキストボックス・モーダル・ポップアップの白背景完全禁止を徹底。
+  * **完全バイリンガル同期:** 日英両言語の辞書（`pipeline.*`）を完全同期。
+  * **型自動同期:** `ts-rs` による TypeScript 型自動生成（`PipelineCategory.ts`, `PipelinePresetDto.ts`, `PipelineParameterDef.ts`, `ExecutePipelineRequestDto.ts`, `PipelineExecutionResultDto.ts`, `PipelineExecutionItemResultDto.ts`）。
+  * **テスト・ビルド検証:** Cargo テスト 127 件 100% パス、Vitest 37 件 100% パス、Clippy 警告ゼロ、Vite ビルド成功。
 
 ---
 

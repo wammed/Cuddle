@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Briefcase, ShieldCheck, Trash2, Sparkles, RotateCcw, Archive } from "lucide-react";
+import { Briefcase, ShieldCheck, Trash2, Sparkles, RotateCcw, Archive, Workflow } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
 import type { StagedItemDto } from "../types/StagedItemDto";
@@ -16,6 +16,7 @@ interface WorkspacePanelProps {
   onOpenBulkRename?: () => void;
   onUndo?: () => void;
   onOpenBackup?: () => void;
+  onOpenPipeline?: () => void;
 }
 
 export function WorkspacePanel({
@@ -29,6 +30,7 @@ export function WorkspacePanel({
   onOpenBulkRename,
   onUndo,
   onOpenBackup,
+  onOpenPipeline,
 }: WorkspacePanelProps) {
   const { t } = useTranslation();
 
@@ -95,6 +97,18 @@ export function WorkspacePanel({
             >
               <Sparkles size={13} />
               <span>{t("workspace.bulk_rename_btn")}</span>
+            </button>
+          )}
+
+          {stagedFiles.length > 0 && onOpenPipeline && (
+            <button
+              type="button"
+              className="panel-header-btn-pipeline"
+              onClick={onOpenPipeline}
+              title={t("pipeline.action_open_modal")}
+            >
+              <Workflow size={13} />
+              <span>{t("pipeline.action_open_modal")}</span>
             </button>
           )}
 

@@ -398,6 +398,35 @@ fn run_builtin_text_transform(
     }
 }
 
+#[tauri::command]
+fn get_pipeline_presets() -> Vec<pipeline::PipelinePresetDto> {
+    pipeline::PipelineRegistry::get_all_presets()
+}
+
+#[tauri::command]
+fn execute_pipeline_preset(
+    request: pipeline::ExecutePipelineRequestDto,
+) -> Result<pipeline::PipelineExecutionResultDto, models::AppErrorDto> {
+    let mgr = workspace::get_workspace_manager();
+    let res = pipeline::PipelineRunner::execute(&request, &mgr)?;
+
+    // Record into SQLite persistent history
+    let hist_mgr = history::get_history_manager();
+    let _ = hist_mgr.record_operation(&history::NewHistoryEntry {
+        operation_id: uuid::Uuid::new_v4().to_string(),
+        operation_type: "Pipeline".to_string(),
+        display_name: format!("Preset: {}", request.preset_id),
+        original_path: None,
+        staged_path: None,
+        inode: None,
+        status: if res.failure_count == 0 { "Success".to_string() } else { "Failed".to_string() },
+        can_undo: false,
+        details: Some(format!("Executed on {} items ({} success, {} failed)", res.total_count, res.success_count, res.failure_count)),
+    });
+
+    Ok(res)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -437,7 +466,9 @@ pub fn run() {
             has_unreflected_staged_items,
             probe_external_tools,
             execute_sandboxed_command,
-            run_builtin_text_transform
+            run_builtin_text_transform,
+            get_pipeline_presets,
+            execute_pipeline_preset
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

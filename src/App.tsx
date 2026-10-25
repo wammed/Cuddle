@@ -134,11 +134,24 @@ export function App() {
     try {
       const staged = await invoke<StagedItemDto>("stage_file", { pathBase64: item.raw_base64 });
       setStagedItems((prev) => [...prev.filter((s) => s.stage_id !== staged.stage_id), staged]);
+
+      const stagedAsFileItem: FileItem = {
+        ...item,
+        item_id: staged.stage_id, // Map directly to stage_id for consistent unstage
+        raw_base64: staged.staged_raw_base64,
+      };
+
       setStagedFiles((prev) => {
-        if (prev.some((f) => f.item_id === item.item_id)) return prev;
-        return [...prev, item];
+        const filtered = prev.filter(
+          (f) =>
+            f.item_id !== staged.stage_id &&
+            f.item_id !== item.item_id &&
+            f.display_name !== staged.display_name
+        );
+        return [...filtered, stagedAsFileItem];
       });
-      setSelectedItem(item);
+
+      setSelectedItem(stagedAsFileItem);
       addHistory(`Staged "${item.display_name}" via ${staged.clone_method}`);
       addLog(`Staged file "${item.display_name}" (${staged.clone_method}) -> ${staged.staged_path}`);
     } catch (err) {
@@ -158,13 +171,31 @@ export function App() {
   const handleUnstageItem = async (stageId: string) => {
     try {
       await invoke("unstage_file", { stageId });
-      const target = stagedItems.find((s) => s.stage_id === stageId);
-      setStagedItems((prev) => prev.filter((s) => s.stage_id !== stageId));
-      if (target) {
-        setStagedFiles((prev) => prev.filter((f) => f.item_id !== target.original_item_id && f.item_id !== stageId));
-        addHistory(`Unstaged "${target.display_name}"`);
-        addLog(`Unstaged file "${target.display_name}" from staging area`);
+      const target = stagedItems.find(
+        (s) =>
+          s.stage_id === stageId ||
+          s.original_item_id === stageId ||
+          s.display_name === stageId
+      );
+      const effectiveStageId = target ? target.stage_id : stageId;
+
+      setStagedItems((prev) => prev.filter((s) => s.stage_id !== effectiveStageId));
+      setStagedFiles((prev) =>
+        prev.filter(
+          (f) =>
+            f.item_id !== effectiveStageId &&
+            f.item_id !== stageId &&
+            (!target || (f.display_name !== target.display_name && f.raw_base64 !== target.staged_raw_base64))
+        )
+      );
+
+      if (selectedItem?.item_id === stageId || selectedItem?.item_id === effectiveStageId) {
+        setSelectedItem(null);
       }
+
+      const displayName = target?.display_name ?? stageId;
+      addHistory(`Unstaged "${displayName}"`);
+      addLog(`Unstaged file "${displayName}" from staging area`);
     } catch (err) {
       addLog(`Failed to unstage item ${stageId}: ${String(err)}`);
     }

@@ -82,8 +82,10 @@
     "staged_path_label": "反映元作業コピー",
     "confirm_reflect_btn": "原本への反映を実行",
     "cancel_btn": "キャンセル",
+    "close_btn": "閉じる",
     "reflect_success": "原本への反映が安全に完了しました",
-    "reflect_failed": "原本への反映に失敗しました",
+    "reflect_failed": "原本への反映に失敗しました (原本保護ガード作動)",
+    "conflict_detected_detail": "原本ファイルが作業コピー作成後に外部プロセス等で変更されています。原本破壊を防ぐため反映を自動遮断しました。「原本状態へ復元」で最新の原本を再読み込みできます。",
     "status_reflected": "原本反映済 (Pristine)"
   },
   "policy": {

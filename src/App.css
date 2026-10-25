@@ -1701,6 +1701,49 @@ body {
   margin: 0;
 }
 
+.dialog-error-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  border-radius: var(--radius-xs);
+  padding: 12px 14px;
+}
+
+.error-banner-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.error-banner-header h5 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f87171;
+  margin: 0;
+}
+
+.dialog-error-text {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #fca5a5;
+  margin: 0;
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+.dialog-conflict-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #fef08a;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-xs);
+  padding: 8px 10px;
+  margin: 0;
+}
+
 .dialog-meta-card {
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid var(--border-subtle);

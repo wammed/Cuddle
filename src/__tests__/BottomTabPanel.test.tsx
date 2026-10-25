@@ -264,6 +264,51 @@ describe("BottomTabPanel & Diff Operations (Phase 4.2)", () => {
     // Verify reflect button is NOT rendered
     expect(screen.queryByText("原本へ変更を反映")).toBeNull();
   });
+
+  it("displays conflict error banner when reflection fails (Test 6)", async () => {
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    const handleReflectFail = vi
+      .fn()
+      .mockRejectedValue("Policy error: Conflict detected: original file has been modified externally since staging");
+
+    render(
+      <BottomTabPanel
+        selectedItem={sampleItem}
+        extractedInfo={null}
+        appConfig={null}
+        logs={[]}
+        history={[]}
+        stagedItems={[sampleStaged]}
+        onReflectStagedItem={handleReflectFail}
+        onClose={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("原本へ変更を反映")).toBeDefined();
+    });
+
+    // Open modal
+    fireEvent.click(screen.getByText("原本へ変更を反映"));
+
+    // Click confirm reflect
+    const confirmBtn = screen.getByText("原本への反映を実行");
+    await act(async () => {
+      fireEvent.click(confirmBtn);
+    });
+
+    // Error banner should be rendered in modal
+    await waitFor(() => {
+      expect(screen.getByText("原本への反映に失敗しました (原本保護ガード作動)")).toBeDefined();
+      expect(screen.getByText(/Conflict detected/)).toBeDefined();
+    });
+
+    // Close button should now be available
+    expect(screen.getByText("閉じる")).toBeDefined();
+  });
 });
 
 

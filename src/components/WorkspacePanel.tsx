@@ -24,12 +24,14 @@ export function WorkspacePanel({
 }: WorkspacePanelProps) {
   const { t } = useTranslation();
 
-  // Map item_id to clone method (Reflink or StandardCopy)
+  // Map item identifiers to clone method (Reflink or StandardCopy)
   const cloneMethodMap = useMemo(() => {
     const map: Record<string, "Reflink" | "StandardCopy"> = {};
     for (const s of stagedItems) {
-      map[s.original_item_id] = s.clone_method;
       map[s.stage_id] = s.clone_method;
+      map[s.original_item_id] = s.clone_method;
+      map[s.raw_base64] = s.clone_method;
+      map[s.staged_raw_base64] = s.clone_method;
     }
     return map;
   }, [stagedItems]);
@@ -37,13 +39,18 @@ export function WorkspacePanel({
   const handleUnstage = (item: FileItem) => {
     if (!onUnstageItem) return;
     const match = stagedItems.find(
-      (s) => s.original_item_id === item.item_id || s.stage_id === item.item_id
+      (s) =>
+        s.stage_id === item.item_id ||
+        s.original_item_id === item.item_id ||
+        s.raw_base64 === item.raw_base64 ||
+        s.staged_raw_base64 === item.raw_base64 ||
+        (item.inode > 0n &&
+          s.original_snapshot.inode === item.inode &&
+          s.original_snapshot.dev === item.dev) ||
+        s.display_name === item.display_name
     );
-    if (match) {
-      onUnstageItem(match.stage_id);
-    } else {
-      onUnstageItem(item.item_id);
-    }
+    const targetStageId = match ? match.stage_id : item.item_id;
+    onUnstageItem(targetStageId);
   };
 
   return (

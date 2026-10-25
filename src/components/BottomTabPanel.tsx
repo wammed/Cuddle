@@ -37,6 +37,7 @@ export function BottomTabPanel({
   const [isDiffLoading, setIsDiffLoading] = useState(false);
   const [showReflectModal, setShowReflectModal] = useState(false);
   const [isReflecting, setIsReflecting] = useState(false);
+  const [reflectError, setReflectError] = useState<string | null>(null);
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
 
   const matchedStaged = useMemo(() => {
@@ -106,6 +107,7 @@ export function BottomTabPanel({
     if (!matchedStaged) return;
     try {
       setIsReflecting(true);
+      setReflectError(null);
       if (onReflectStagedItem) {
         await onReflectStagedItem(matchedStaged.stage_id);
       } else {
@@ -115,6 +117,8 @@ export function BottomTabPanel({
       await loadDiff(matchedStaged.stage_id);
     } catch (err) {
       console.error("Reflection failed:", err);
+      const errMsg = typeof err === "string" ? err : String(err);
+      setReflectError(errMsg);
     } finally {
       setIsReflecting(false);
     }
@@ -128,13 +132,16 @@ export function BottomTabPanel({
           <div className="reflect-confirm-dialog">
             <div className="dialog-header">
               <div className="dialog-title-group">
-                <AlertTriangle size={18} className="text-amber-400" />
-                <h4>{t("reflection.reflect_title")}</h4>
+                <AlertTriangle size={18} className={reflectError ? "text-red-400" : "text-amber-400"} />
+                <h4 className={reflectError ? "text-red-400" : ""}>{t("reflection.reflect_title")}</h4>
               </div>
               <button
                 type="button"
                 className="panel-header-btn"
-                onClick={() => setShowReflectModal(false)}
+                onClick={() => {
+                  setShowReflectModal(false);
+                  setReflectError(null);
+                }}
                 title={t("reflection.cancel_btn")}
               >
                 <X size={14} />
@@ -142,7 +149,20 @@ export function BottomTabPanel({
             </div>
 
             <div className="dialog-body">
-              <p className="dialog-warning-text">{t("reflection.reflect_warning")}</p>
+              {reflectError ? (
+                <div className="dialog-error-banner">
+                  <div className="error-banner-header">
+                    <AlertTriangle size={16} className="text-red-400" />
+                    <h5>{t("reflection.reflect_failed")}</h5>
+                  </div>
+                  <p className="dialog-error-text">{reflectError}</p>
+                  {(reflectError.includes("Conflict") || reflectError.includes("conflict")) && (
+                    <p className="dialog-conflict-note">{t("reflection.conflict_detected_detail")}</p>
+                  )}
+                </div>
+              ) : (
+                <p className="dialog-warning-text">{t("reflection.reflect_warning")}</p>
+              )}
 
               <div className="dialog-meta-card">
                 <div className="dialog-meta-row">
@@ -168,20 +188,40 @@ export function BottomTabPanel({
               <button
                 type="button"
                 className="dialog-btn secondary"
-                onClick={() => setShowReflectModal(false)}
+                onClick={() => {
+                  setShowReflectModal(false);
+                  setReflectError(null);
+                }}
                 disabled={isReflecting}
               >
-                {t("reflection.cancel_btn")}
+                {reflectError ? t("reflection.close_btn") : t("reflection.cancel_btn")}
               </button>
-              <button
-                type="button"
-                className="dialog-btn primary reflect-action-btn"
-                onClick={handleExecuteReflect}
-                disabled={isReflecting}
-              >
-                <Upload size={14} />
-                <span>{isReflecting ? "Reflecting..." : t("reflection.confirm_reflect_btn")}</span>
-              </button>
+
+              {reflectError ? (
+                <button
+                  type="button"
+                  className="dialog-btn secondary text-amber-400"
+                  onClick={async () => {
+                    await handleReset();
+                    setShowReflectModal(false);
+                    setReflectError(null);
+                  }}
+                  title={t("diff.reset_to_original")}
+                >
+                  <RotateCcw size={14} />
+                  <span>{t("diff.reset_to_original")}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="dialog-btn primary reflect-action-btn"
+                  onClick={handleExecuteReflect}
+                  disabled={isReflecting}
+                >
+                  <Upload size={14} />
+                  <span>{isReflecting ? "Reflecting..." : t("reflection.confirm_reflect_btn")}</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

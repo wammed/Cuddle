@@ -82,8 +82,10 @@
     "staged_path_label": "Source Staged Copy",
     "confirm_reflect_btn": "Execute Reflection",
     "cancel_btn": "Cancel",
+    "close_btn": "Close",
     "reflect_success": "Reflection to original completed safely",
-    "reflect_failed": "Reflection to original failed",
+    "reflect_failed": "Reflection to original failed (Protection Guard Active)",
+    "conflict_detected_detail": "The original file was modified externally after staging. To prevent data corruption, reflection was blocked. You can use 'Reset to Original' to reload the pristine original file.",
     "status_reflected": "Reflected to Original"
   },
   "policy": {

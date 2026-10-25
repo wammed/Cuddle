@@ -221,10 +221,33 @@ impl WorkspaceManager {
             if path.exists() {
                 let _ = fs::remove_file(path);
             }
-            Ok(())
-        } else {
-            Err(WorkspaceError::NotFound(stage_id.to_string()))
+            return Ok(());
         }
+
+        // Defensive fallback: lookup by original_item_id, raw_base64, or display_name
+        let found_key = map.iter().find_map(|(k, v)| {
+            if v.original_item_id == stage_id
+                || v.raw_base64 == stage_id
+                || v.staged_raw_base64 == stage_id
+                || v.display_name == stage_id
+            {
+                Some(k.clone())
+            } else {
+                None
+            }
+        });
+
+        if let Some(key) = found_key {
+            if let Some(staged) = map.remove(&key) {
+                let path = decode_path_from_base64(&staged.staged_raw_base64)?;
+                if path.exists() {
+                    let _ = fs::remove_file(path);
+                }
+                return Ok(());
+            }
+        }
+
+        Err(WorkspaceError::NotFound(stage_id.to_string()))
     }
 
     /// Retrieves a single staged item by stage_id.

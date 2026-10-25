@@ -9,14 +9,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Color output helpers (Midnight Cyber Dark theme aesthetic)
-C_RESET="\033[0m"
-C_BOLD="\033[1m"
-C_TEAL="\033[38;2;45;212;191m"
-C_CYAN="\033[38;2;56;189;248m"
-C_GREEN="\033[38;2;52;211;153m"
-C_AMBER="\033[38;2;251;191;36m"
-C_RED="\033[38;2;248;113;113m"
-C_MUTED="\033[38;2;148;163;184m"
+C_RESET=$'\033[0m'
+C_BOLD=$'\033[1m'
+C_TEAL=$'\033[38;2;45;212;191m'
+C_CYAN=$'\033[38;2;56;189;248m'
+C_GREEN=$'\033[38;2;52;211;153m'
+C_AMBER=$'\033[38;2;251;191;36m'
+C_RED=$'\033[38;2;248;113;113m'
+C_MUTED=$'\033[38;2;148;163;184m'
 
 log_info() {
     echo -e "${C_TEAL}${C_BOLD}[INFO]${C_RESET} $*"
@@ -42,6 +42,7 @@ log_error() {
 INSTALL_MODE="user"
 TARGET_DE="auto"
 USE_DEBUG="false"
+BUILD_MODE="auto" # "auto" (build if missing), "always" (--build), "never" (--no-build)
 CUSTOM_BIN=""
 
 print_usage() {
@@ -61,16 +62,21 @@ ${C_BOLD}OPTIONS:${C_RESET}
                        Desktop: /usr/local/share/applications/
                        Icons:   /usr/local/share/icons/hicolor/
     --de <NAME>        Target Desktop Environment: auto (default), cosmic, gnome, kde, xfce, generic
-    --debug            Use debug build (src-tauri/target/debug/fileworkbench)
+    --build            Force compile production release binary before installing (pnpm tauri build)
+    --no-build         Do not auto-build; fail if release binary is not found
+    --debug            Use debug build (src-tauri/target/debug/fileworkbench, requires dev server)
     --bin <PATH>       Use custom binary at specified path
     -h, --help         Show this help message
 
 ${C_BOLD}EXAMPLES:${C_RESET}
-    # Standard user installation (recommended)
+    # Standard user installation (auto-builds release binary if missing)
     bash scripts/install.sh
 
     # CachyOS + COSMIC DE specific install
     bash scripts/install.sh --de cosmic
+
+    # Force re-compile production release binary before installing
+    bash scripts/install.sh --build
 
     # System-wide installation
     sudo bash scripts/install.sh --system
@@ -92,6 +98,14 @@ while [[ $# -gt 0 ]]; do
             TARGET_DE="${2:-auto}"
             shift 2
             ;;
+        --build)
+            BUILD_MODE="always"
+            shift
+            ;;
+        --no-build)
+            BUILD_MODE="never"
+            shift
+            ;;
         --debug)
             USE_DEBUG="true"
             shift
@@ -112,6 +126,20 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+build_release_binary() {
+    log_step "Building production release binary (pnpm tauri build)..."
+    log_info "Compiling and bundling self-contained assets (no localhost server needed)..."
+    cd "${ROOT_DIR}"
+    if command -v pnpm &>/dev/null; then
+        pnpm tauri build
+    elif command -v npm &>/dev/null; then
+        npm run tauri build
+    else
+        log_error "Neither pnpm nor npm found. Please install Node.js and pnpm."
+        exit 1
+    fi
+}
+
 echo -e "${C_TEAL}${C_BOLD}==============================================================================${C_RESET}"
 echo -e "${C_TEAL}${C_BOLD}   Cuddle (File Workbench) - Desktop Launcher Installer                       ${C_RESET}"
 echo -e "${C_TEAL}${C_BOLD}==============================================================================${C_RESET}"
@@ -128,6 +156,7 @@ if [[ -n "${CUSTOM_BIN}" ]]; then
         exit 1
     fi
 elif [[ "${USE_DEBUG}" == "true" ]]; then
+    log_warn "Installing DEBUG binary (--debug specified). Note: requires local Vite dev server (localhost:1420)."
     if [[ -f "${ROOT_DIR}/src-tauri/target/debug/fileworkbench" ]]; then
         SOURCE_BIN="${ROOT_DIR}/src-tauri/target/debug/fileworkbench"
     else
@@ -135,18 +164,34 @@ elif [[ "${USE_DEBUG}" == "true" ]]; then
         exit 1
     fi
 else
-    # Check release build first, then fallback to debug
+    # Release build resolution
+    RELEASE_BIN=""
     if [[ -f "${ROOT_DIR}/src-tauri/target/release/fileworkbench" ]]; then
-        SOURCE_BIN="${ROOT_DIR}/src-tauri/target/release/fileworkbench"
+        RELEASE_BIN="${ROOT_DIR}/src-tauri/target/release/fileworkbench"
     elif [[ -f "${ROOT_DIR}/src-tauri/target/release/cuddle" ]]; then
-        SOURCE_BIN="${ROOT_DIR}/src-tauri/target/release/cuddle"
-    elif [[ -f "${ROOT_DIR}/src-tauri/target/debug/fileworkbench" ]]; then
-        log_warn "Release binary not found. Falling back to debug binary: src-tauri/target/debug/fileworkbench"
-        log_warn "For optimal performance, build with: pnpm run tauri build"
-        SOURCE_BIN="${ROOT_DIR}/src-tauri/target/debug/fileworkbench"
+        RELEASE_BIN="${ROOT_DIR}/src-tauri/target/release/cuddle"
+    fi
+
+    if [[ "${BUILD_MODE}" == "always" ]] || { [[ -z "${RELEASE_BIN}" ]] && [[ "${BUILD_MODE}" == "auto" ]]; }; then
+        if [[ -z "${RELEASE_BIN}" ]]; then
+            log_info "Release binary not found. Triggering automatic production build..."
+        else
+            log_info "Forced rebuild requested (--build). Triggering production build..."
+        fi
+        build_release_binary
+        if [[ -f "${ROOT_DIR}/src-tauri/target/release/fileworkbench" ]]; then
+            RELEASE_BIN="${ROOT_DIR}/src-tauri/target/release/fileworkbench"
+        elif [[ -f "${ROOT_DIR}/src-tauri/target/release/cuddle" ]]; then
+            RELEASE_BIN="${ROOT_DIR}/src-tauri/target/release/cuddle"
+        fi
+    fi
+
+    if [[ -n "${RELEASE_BIN}" ]]; then
+        SOURCE_BIN="${RELEASE_BIN}"
     else
-        log_error "No compiled binary found. Please compile Cuddle before running install:"
-        echo -e "    ${C_CYAN}pnpm install && pnpm run build && cargo build --release --manifest-path src-tauri/Cargo.toml${C_RESET}"
+        log_error "No release binary found and auto-build was disabled (--no-build)."
+        log_error "Please build Cuddle release binary or run installer without --no-build:"
+        echo -e "    ${C_CYAN}pnpm run tauri build${C_RESET}"
         exit 1
     fi
 fi

@@ -7,11 +7,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-C_RESET="\033[0m"
-C_BOLD="\033[1m"
-C_TEAL="\033[38;2;45;212;191m"
-C_CYAN="\033[38;2;56;189;248m"
-C_GREEN="\033[38;2;52;211;153m"
+C_RESET=$'\033[0m'
+C_BOLD=$'\033[1m'
+C_TEAL=$'\033[38;2;45;212;191m'
+C_CYAN=$'\033[38;2;56;189;248m'
+C_GREEN=$'\033[38;2;52;211;153m'
 
 echo -e "${C_TEAL}${C_BOLD}==============================================================================${C_RESET}"
 echo -e "${C_TEAL}${C_BOLD}   Cuddle - CachyOS + COSMIC Desktop Environment (Wayland) Installer         ${C_RESET}"

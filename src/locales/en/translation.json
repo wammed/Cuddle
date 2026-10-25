@@ -45,7 +45,7 @@
     "staging_path": "Staging Destination",
     "staged_time": "Staged At",
     "stage_all": "Stage All",
-    "bulk_rename_btn": "Bulk Rename & Normalize",
+    "bulk_rename_btn": "Bulk Rename",
     "undo_rename_btn": "Undo Last Rename",
     "undo_success": "Undid bulk rename: restored {{count}} files",
     "undo_failed": "Failed to undo rename"
@@ -242,8 +242,8 @@
     "conflict_warning": "Cannot execute rename due to duplicate collisions or existing files. Please adjust rules.",
     "dry_run_success": "Dry-run verification passed: Safe to execute without conflicts or errors.",
     "cancel": "Close",
-    "apply_plan": "Execute Two-Phase Rename",
-    "executing": "Executing Two-Phase Rename (Temp UUID Parking -> Commit)...",
+    "apply_plan": "Execute Bulk Rename",
+    "executing": "Executing Bulk Rename...",
     "execute_success": "Bulk rename completed: {{count}} files safely renamed",
     "execute_failed": "Bulk rename failed: Entire batch was safely rolled back to original state"
   }

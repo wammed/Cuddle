@@ -130,7 +130,7 @@ describe("BulkRenameModal (Phase 5.1 & 5.2)", () => {
     });
 
     // Confirm button is enabled when plan is executable
-    const confirmBtn = screen.getByRole("button", { name: /段階リネームを実行/i });
+    const confirmBtn = screen.getByRole("button", { name: /一括リネームを実行/i });
     expect((confirmBtn as HTMLButtonElement).disabled).toBe(false);
   });
 
@@ -150,7 +150,7 @@ describe("BulkRenameModal (Phase 5.1 & 5.2)", () => {
       expect(screen.getAllByText("重複衝突 (同名)").length).toBeGreaterThan(0);
     });
 
-    const confirmBtn = screen.getByRole("button", { name: /段階リネームを実行/i });
+    const confirmBtn = screen.getByRole("button", { name: /一括リネームを実行/i });
     expect((confirmBtn as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -171,7 +171,7 @@ describe("BulkRenameModal (Phase 5.1 & 5.2)", () => {
       expect(screen.getByText("SAMPLE.txt")).toBeDefined();
     });
 
-    const confirmBtn = screen.getByRole("button", { name: /段階リネームを実行/i });
+    const confirmBtn = screen.getByRole("button", { name: /一括リネームを実行/i });
     confirmBtn.click();
 
     await waitFor(() => {
@@ -193,6 +193,6 @@ describe("BulkRenameModal (Phase 5.1 & 5.2)", () => {
 
     expect(screen.getByText("Bulk Rename & Normalize (Dry-run Verification)")).toBeDefined();
     expect(screen.getByText("Dry-run Preview Verification")).toBeDefined();
-    expect(screen.getByRole("button", { name: /Execute Two-Phase Rename/i })).toBeDefined();
+    expect(screen.getByRole("button", { name: /Execute Bulk Rename/i })).toBeDefined();
   });
 });

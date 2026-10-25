@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { Panel, Group, Separator } from "react-resizable-panels";
+import { CheckCircle } from "lucide-react";
 import { changeLanguage, SupportedLanguage } from "./i18n";
 import type { FileItem } from "./types/FileItem";
 import type { AppConfig } from "./types/AppConfig";
@@ -37,6 +38,7 @@ export function App() {
   const [selectedItem, setSelectedItem] = useState<FileItem | null>(null);
   const [bulkRenameOpen, setBulkRenameOpen] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const [landlock, setLandlock] = useState<LandlockStatus | null>(null);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
@@ -63,6 +65,13 @@ export function App() {
   const addHistory = useCallback((entry: string) => {
     const timestamp = new Date().toLocaleTimeString();
     setHistory((prev) => [`[${timestamp}] ${entry}`, ...prev]);
+  }, []);
+
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage((prev) => (prev === msg ? null : prev));
+    }, 4000);
   }, []);
 
   const toggleLanguage = () => {
@@ -274,14 +283,16 @@ export function App() {
             return f;
           })
         );
+        const successMsg = t("bulk_rename.execute_success", { count: result.succeeded_count });
         addHistory(`Executed two-phase bulk rename on ${result.succeeded_count} items in workspace-temp/`);
         addLog(`Bulk rename executed successfully: batch ${result.batch_id} (${result.succeeded_count} items renamed)`);
+        showToast(successMsg);
         await checkCanUndo();
       } catch (err) {
         addLog(`Failed to refresh staged items after bulk rename: ${String(err)}`);
       }
     },
-    [addHistory, addLog, checkCanUndo]
+    [addHistory, addLog, checkCanUndo, showToast, t]
   );
 
   const handleUndoBatch = async () => {
@@ -305,10 +316,14 @@ export function App() {
             return f;
           })
         );
-        addHistory(t("workspace.undo_success", { count: result.succeeded_count }));
+        const undoMsg = t("workspace.undo_success", { count: result.succeeded_count });
+        addHistory(undoMsg);
         addLog(`Bulk rename undone: restored ${result.succeeded_count} files (batch ${result.batch_id})`);
+        showToast(undoMsg);
       } else {
-        addLog(`Undo failed: ${result.error_message || t("workspace.undo_failed")}`);
+        const errMsg = result.error_message || t("workspace.undo_failed");
+        addLog(`Undo failed: ${errMsg}`);
+        showToast(`❌ ${errMsg}`);
       }
       await checkCanUndo();
     } catch (err) {
@@ -365,6 +380,13 @@ export function App() {
 
   return (
     <div className="cuddle-root-app">
+      {toastMessage && (
+        <div className="cuddle-floating-toast" role="status" aria-live="polite">
+          <CheckCircle size={16} />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       <Header
         currentLang={currentLang}
         onToggleLang={toggleLanguage}

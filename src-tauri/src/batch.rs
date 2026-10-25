@@ -381,8 +381,24 @@ pub fn generate_batch_plan(
     for (idx, item) in items.iter().enumerate() {
         let parent_dir = item.original_path.parent().unwrap_or_else(|| Path::new(""));
 
+        // If the item in staging has a "{item_id}_" prefix on disk, maintain it in the destination path on disk
+        let orig_file_name = item
+            .original_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        let prefix_with_underscore = format!("{}_", item.item_id);
+        let has_staged_prefix = orig_file_name.starts_with(&prefix_with_underscore);
+
         match apply_rule_chain(&item.display_name, rules, idx, item.modified_time) {
             Ok(proposed_name) => {
+                let disk_target_filename = if has_staged_prefix {
+                    format!("{}_{}", item.item_id, proposed_name)
+                } else {
+                    proposed_name.clone()
+                };
+                let target_path = parent_dir.join(disk_target_filename);
+
                 if let Err(err_msg) = validate_filename(&proposed_name) {
                     operations.push(PlannedOperationDto {
                         item_id: item.item_id.clone(),
@@ -390,13 +406,12 @@ pub fn generate_batch_plan(
                         display_name: item.display_name.clone(),
                         raw_base64: item.raw_base64.clone(),
                         proposed_name: proposed_name.clone(),
-                        target_path: parent_dir.join(&proposed_name).to_string_lossy().to_string(),
+                        target_path: target_path.to_string_lossy().to_string(),
                         status: OperationStatus::InvalidFilename,
                         message: Some(err_msg.to_string()),
                     });
                 } else {
                     let is_unchanged = proposed_name == item.display_name;
-                    let target_path = parent_dir.join(&proposed_name);
                     let initial_status = if is_unchanged {
                         OperationStatus::Unchanged
                     } else {
@@ -692,6 +707,11 @@ impl BatchJournalManager {
         hist.iter().any(|entry| !entry.is_undone)
     }
 
+    pub fn clear(&self) {
+        let mut hist = self.history.lock().unwrap();
+        hist.clear();
+    }
+
     pub fn undo_last(&self) -> Result<BatchExecutionResultDto, String> {
         let mut hist = self.history.lock().unwrap();
         let last_idx = hist
@@ -706,20 +726,13 @@ impl BatchJournalManager {
         let mut reverse_ops = Vec::with_capacity(entry.operations.len());
 
         for op in &entry.operations {
-            let orig_path_p = Path::new(&op.original_path);
-            let orig_name = orig_path_p
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-
             reverse_ops.push(PlannedOperationDto {
                 item_id: op.item_id.clone(),
                 original_path: op.target_path.clone(), // Current path on disk is target_path
-                display_name: op.proposed_name.clone(), // Current name on disk
+                display_name: op.proposed_name.clone(), // Current display name
                 raw_base64: op.raw_base64.clone(),
-                proposed_name: orig_name,              // Revert to original name
-                target_path: op.original_path.clone(), // Revert to original path
+                proposed_name: op.display_name.clone(), // Revert strictly to original user display name (NOT internal disk filename)
+                target_path: op.original_path.clone(), // Revert to original path on disk
                 status: OperationStatus::Ok,
                 message: None,
             });
@@ -742,11 +755,6 @@ impl BatchJournalManager {
         hist[last_idx].is_undone = true;
 
         Ok(result)
-    }
-
-    pub fn clear(&self) {
-        let mut hist = self.history.lock().unwrap();
-        hist.clear();
     }
 }
 
@@ -1042,9 +1050,17 @@ mod tests {
             is_executable: true,
         };
 
-        // 1. Execute rename
-        let res = execute_batch_rename(plan).expect("Initial rename must succeed");
+        // 1. Execute rename with dedicated journal
+        let journal = BatchJournalManager::new();
+        let res = execute_batch_rename_internal(plan, false).expect("Initial rename must succeed");
         assert_eq!(res.succeeded_count, 2);
+
+        journal.record_batch(BatchJournalEntry {
+            batch_id: "undo-lifecycle-batch".to_string(),
+            executed_at_ms: 1000,
+            operations: res.affected_items,
+            is_undone: false,
+        });
 
         // Verify renamed files exist on disk
         let p1_renamed = temp_dir.join("ALPHA_RENAMED.txt");
@@ -1055,10 +1071,10 @@ mod tests {
         assert!(!p2.exists());
 
         // 2. Check can_undo
-        assert!(can_undo_batch());
+        assert!(journal.can_undo());
 
         // 3. Execute undo
-        let undo_res = undo_last_batch().expect("Undo must succeed");
+        let undo_res = journal.undo_last().expect("Undo must succeed");
         assert_eq!(undo_res.succeeded_count, 2);
 
         // Verify original files are completely restored
@@ -1068,6 +1084,61 @@ mod tests {
         assert!(!p2_renamed.exists());
         assert_eq!(std::fs::read_to_string(&p1).unwrap(), "alpha-data");
         assert_eq!(std::fs::read_to_string(&p2).unwrap(), "beta-data");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_staged_item_undo_restores_display_name_without_uuid() {
+        let temp_dir = std::env::temp_dir().join(format!("cuddle_staged_undo_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let stage_id = "test-stage-uuid-456".to_string();
+        let staged_filename = format!("{}_04.txt", stage_id);
+        let disk_path = temp_dir.join(&staged_filename);
+        std::fs::write(&disk_path, "04-content").unwrap();
+
+        let item = RenameTargetItem {
+            item_id: stage_id.clone(),
+            original_path: disk_path.clone(),
+            display_name: "04.txt".to_string(), // User-facing display name
+            raw_base64: "dummy".to_string(),
+            modified_time: None,
+        };
+
+        // Add a prefix rule
+        let rules = vec![RenameRule::AddPrefixSuffix {
+            prefix: "renamed_".to_string(),
+            suffix: "".to_string(),
+            preserve_extension: true,
+        }];
+
+        let plan = generate_batch_plan(vec![item], &rules);
+        assert_eq!(plan.operations[0].proposed_name, "renamed_04.txt");
+        // Target path on disk should retain the stage_id prefix
+        let expected_target_path = temp_dir.join(format!("{}_renamed_04.txt", stage_id));
+        assert_eq!(plan.operations[0].target_path, expected_target_path.to_string_lossy().to_string());
+
+        // Execute rename with dedicated journal
+        let journal = BatchJournalManager::new();
+        let res = execute_batch_rename_internal(plan, false).expect("Bulk rename must succeed");
+        assert_eq!(res.succeeded_count, 1);
+        assert!(expected_target_path.exists());
+        assert!(!disk_path.exists());
+
+        journal.record_batch(BatchJournalEntry {
+            batch_id: "staged-undo-batch".to_string(),
+            executed_at_ms: 1000,
+            operations: res.affected_items,
+            is_undone: false,
+        });
+
+        // Undo
+        let undo_res = journal.undo_last().expect("Undo must succeed");
+        assert_eq!(undo_res.succeeded_count, 1);
+        assert_eq!(undo_res.affected_items[0].proposed_name, "04.txt", "Display name in undo plan must be original display name, NEVER uuid prefix");
+        assert!(disk_path.exists(), "Original disk path must be restored");
+        assert!(!expected_target_path.exists());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

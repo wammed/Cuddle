@@ -45,9 +45,9 @@
     "staging_path": "作業コピー配置先",
     "staged_time": "ステージング日時",
     "stage_all": "すべて作業領域へ",
-    "bulk_rename_btn": "一括リネーム & 正規化",
+    "bulk_rename_btn": "一括リネーム",
     "undo_rename_btn": "直前のリネームを元に戻す",
-    "undo_success": "一括リネームを取り消しました: {{count}} 件のファイルを元に戻しました",
+    "undo_success": "直前のリネームを元に戻しました（{{count}} 件のファイル名を復元）",
     "undo_failed": "リネームの取り消しに失敗しました"
   },
   "warnings": {
@@ -242,8 +242,8 @@
     "conflict_warning": "重複衝突または既存ファイルが存在するため、リネームを実行できません。ルールを調整してください。",
     "dry_run_success": "Dry-run 検証成功: 衝突・エラーなく安全に実行可能です。",
     "cancel": "閉じる",
-    "apply_plan": "段階リネームを実行 (Two-Phase)",
-    "executing": "段階リネーム実行中 (一時UUID待避 -> 確定)...",
+    "apply_plan": "一括リネームを実行",
+    "executing": "一括リネーム実行中 (一時待避 -> 確定)...",
     "execute_success": "一括リネーム完了: {{count}} 件のファイルを安全に変更しました",
     "execute_failed": "一括リネーム失敗: 全体ロールバックが実行され、ファイルは元の状態へ復元されました"
   }

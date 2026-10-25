@@ -251,7 +251,17 @@
     "apply_plan": "一括リネームを実行",
     "executing": "一括リネーム実行中 (一時待避 -> 確定)...",
     "execute_success": "一括リネーム完了: {{count}} 件のファイルを安全に変更しました",
-    "execute_failed": "一括リネーム失敗: 全体ロールバックが実行され、ファイルは元の状態へ復元されました"
+    "execute_failed": "一括リネーム失敗: 全体ロールバックが実行され、ファイルは元の状態へ復元されました",
+    "tab_rules": "ルール設定 (正規表現・連番・日時)",
+    "tab_vidir": "エディタ連携 (vidir型)",
+    "vidir_title": "エディタ連携リネーム (vidir型)",
+    "vidir_desc": "対象一覧をタブ区切りテキストとして編集します。外部エディタ（$EDITOR, VS Code, nano 等）または下記エリアで直接編集可能です。",
+    "vidir_safe_notice": "行を削除したファイルは変更なしとして扱われます（ファイルは削除されません）",
+    "launch_external_editor": "外部エディタで編集",
+    "external_editor_placeholder": "エディタ指定 (例: code --wait, nano, gedit)",
+    "reload_vidir": "再読み込み",
+    "vidir_launching": "外部エディタ起動中...",
+    "vidir_hint": "フォーマット: [ID]<TAB>[変更後ファイル名]。左側のIDは変更しないでください。"
   },
   "history": {
     "title": "操作履歴 (SQLite WAL)",

@@ -251,7 +251,17 @@
     "apply_plan": "Execute Bulk Rename",
     "executing": "Executing Bulk Rename...",
     "execute_success": "Bulk rename completed: {{count}} files safely renamed",
-    "execute_failed": "Bulk rename failed: Entire batch was safely rolled back to original state"
+    "execute_failed": "Bulk rename failed: Entire batch was safely rolled back to original state",
+    "tab_rules": "Rule Builder (Regex, Seq, DateTime)",
+    "tab_vidir": "Editor Integration (vidir)",
+    "vidir_title": "vidir Editor Rename (Design 9.4)",
+    "vidir_desc": "Edit target files as tab-delimited text. You can edit directly in the text area below or launch an external editor ($EDITOR, VS Code, nano).",
+    "vidir_safe_notice": "Deleted lines are preserved as unchanged (files are NEVER deleted)",
+    "launch_external_editor": "Open in External Editor",
+    "external_editor_placeholder": "Editor command (e.g. code --wait, nano, gedit)",
+    "reload_vidir": "Reload Buffer",
+    "vidir_launching": "Launching External Editor...",
+    "vidir_hint": "Format: [ID]<TAB>[Filename]. Do not alter the ID on the left."
   },
   "history": {
     "title": "Operation History (SQLite WAL)",

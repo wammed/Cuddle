@@ -370,15 +370,16 @@ pub struct RenameTargetItem {
 }
 
 /// Generate a BatchPlan with full dry-run collision detection
-pub fn generate_batch_plan(
+/// Common validation and collision detection engine that constructs BatchPlanDto.
+pub fn build_batch_plan_from_proposed_names(
     items: Vec<RenameTargetItem>,
-    rules: &[RenameRule],
+    proposed_names: HashMap<String, Result<String, String>>,
 ) -> BatchPlanDto {
     let batch_id = uuid::Uuid::new_v4().to_string();
     let mut operations = Vec::with_capacity(items.len());
 
-    // 1. Calculate proposed names for all items
-    for (idx, item) in items.iter().enumerate() {
+    // 1. Process each item with its proposed name
+    for item in &items {
         let parent_dir = item.original_path.parent().unwrap_or_else(|| Path::new(""));
 
         // If the item in staging has a "{item_id}_" prefix on disk, maintain it in the destination path on disk
@@ -390,7 +391,12 @@ pub fn generate_batch_plan(
         let prefix_with_underscore = format!("{}_", item.item_id);
         let has_staged_prefix = orig_file_name.starts_with(&prefix_with_underscore);
 
-        match apply_rule_chain(&item.display_name, rules, idx, item.modified_time) {
+        let proposed_res = proposed_names
+            .get(&item.item_id)
+            .cloned()
+            .unwrap_or_else(|| Ok(item.display_name.clone()));
+
+        match proposed_res {
             Ok(proposed_name) => {
                 let disk_target_filename = if has_staged_prefix {
                     format!("{}_{}", item.item_id, proposed_name)
@@ -405,7 +411,7 @@ pub fn generate_batch_plan(
                         original_path: item.original_path.to_string_lossy().to_string(),
                         display_name: item.display_name.clone(),
                         raw_base64: item.raw_base64.clone(),
-                        proposed_name: proposed_name.clone(),
+                        proposed_name,
                         target_path: target_path.to_string_lossy().to_string(),
                         status: OperationStatus::InvalidFilename,
                         message: Some(err_msg.to_string()),
@@ -517,15 +523,32 @@ pub fn generate_batch_plan(
     }
 }
 
-/// Convenience entry point to generate BatchPlanDto from BulkRenameOptions
-pub fn generate_plan_from_options(options: BulkRenameOptions) -> Result<BatchPlanDto, String> {
-    use chrono::TimeZone;
-    let mut items = Vec::with_capacity(options.target_items.len());
+/// Generate a BatchPlan with full dry-run collision detection using rules
+pub fn generate_batch_plan(
+    items: Vec<RenameTargetItem>,
+    rules: &[RenameRule],
+) -> BatchPlanDto {
+    let mut proposed_map = HashMap::with_capacity(items.len());
 
-    for input in options.target_items {
+    for (idx, item) in items.iter().enumerate() {
+        let res = apply_rule_chain(&item.display_name, rules, idx, item.modified_time);
+        proposed_map.insert(item.item_id.clone(), res);
+    }
+
+    build_batch_plan_from_proposed_names(items, proposed_map)
+}
+
+/// Convert input DTOs to resolved internal items
+pub fn resolve_rename_target_items(
+    target_items: Vec<RenameTargetInputDto>,
+) -> Result<Vec<RenameTargetItem>, String> {
+    use chrono::TimeZone;
+    let mut items = Vec::with_capacity(target_items.len());
+
+    for input in target_items {
         let resolved = crate::models::resolve_path_str_or_b64(&input.path_or_base64)
             .map_err(|e| format!("Failed to resolve path for item {}: {}", input.item_id, e))?;
-        
+
         let path = PathBuf::from(&resolved.path_str);
         let raw_base64 = crate::models::encode_path_to_base64(&path);
 
@@ -542,7 +565,182 @@ pub fn generate_plan_from_options(options: BulkRenameOptions) -> Result<BatchPla
         });
     }
 
+    Ok(items)
+}
+
+/// Generate vidir text buffer content from target items.
+/// Format (Design 9.4):
+/// [ID]<TAB>[Filename]
+pub fn generate_vidir_buffer(items: &[RenameTargetItem]) -> String {
+    let mut buf = String::new();
+    buf.push_str("# ==============================================================================\n");
+    buf.push_str("# Cuddle - vidir Editor Rename (Phase 9.1 / Design 9.4)\n");
+    buf.push_str("# Format: [ID]<TAB>[Filename]\n");
+    buf.push_str("# ・Edit the filename on the right and save/apply.\n");
+    buf.push_str("# ・Deleted lines are treated as UNCHANGED (files are NEVER deleted).\n");
+    buf.push_str("# ・Do NOT change the ID on the left.\n");
+    buf.push_str("# ==============================================================================\n");
+
+    for item in items {
+        buf.push_str(&format!("{}\t{}\n", item.item_id, item.display_name));
+    }
+    buf
+}
+
+/// Parse vidir text buffer and construct a BatchPlanDto with collision detection.
+/// Follows Design 9.4: items omitted/deleted from the buffer are preserved as Unchanged.
+pub fn parse_vidir_buffer(items: Vec<RenameTargetItem>, buffer: &str) -> BatchPlanDto {
+    let mut proposed_map: HashMap<String, Result<String, String>> = HashMap::new();
+
+    for line in buffer.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        // Split by tab first, or by 2+ spaces if tab is not present
+        let (id_part, name_part) = if let Some(tab_pos) = line.find('\t') {
+            (line[..tab_pos].trim().to_string(), line[tab_pos + 1..].trim().to_string())
+        } else if let Some(space_pos) = line.find("  ") {
+            (line[..space_pos].trim().to_string(), line[space_pos..].trim().to_string())
+        } else {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                (parts[0].to_string(), parts[1..].join(" "))
+            } else if parts.len() == 1 {
+                (parts[0].to_string(), String::new())
+            } else {
+                continue;
+            }
+        };
+
+        if !id_part.is_empty() {
+            proposed_map.insert(id_part, Ok(name_part));
+        }
+    }
+
+    build_batch_plan_from_proposed_names(items, proposed_map)
+}
+
+/// Detect preferred external text editor command
+pub fn detect_preferred_editor(custom_editor: Option<&str>) -> Option<Vec<String>> {
+    if let Some(cmd) = custom_editor {
+        let trimmed = cmd.trim();
+        if !trimmed.is_empty() {
+            let parts: Vec<String> = trimmed.split_whitespace().map(|s| s.to_string()).collect();
+            return Some(parts);
+        }
+    }
+
+    if let Ok(visual) = std::env::var("VISUAL") {
+        let trimmed = visual.trim();
+        if !trimmed.is_empty() {
+            let parts: Vec<String> = trimmed.split_whitespace().map(|s| s.to_string()).collect();
+            return Some(parts);
+        }
+    }
+
+    if let Ok(editor) = std::env::var("EDITOR") {
+        let trimmed = editor.trim();
+        if !trimmed.is_empty() {
+            let parts: Vec<String> = trimmed.split_whitespace().map(|s| s.to_string()).collect();
+            return Some(parts);
+        }
+    }
+
+    // Common GUI / terminal editor candidates on Linux
+    let candidates = [
+        "code --wait",
+        "gedit --wait",
+        "kate",
+        "gnome-text-editor --wait",
+        "xed",
+        "mousepad",
+        "featherpad",
+        "nano",
+    ];
+
+    for c in &candidates {
+        let parts: Vec<String> = c.split_whitespace().map(|s| s.to_string()).collect();
+        if let Some(bin) = parts.first() {
+            if crate::pipeline::ToolDetector::find_binary_in_path(bin).is_some() {
+                return Some(parts);
+            }
+        }
+    }
+
+    None
+}
+
+/// Spawns external editor with temporary TSV file and waits for completion.
+pub fn launch_external_editor_vidir(
+    items: Vec<RenameTargetItem>,
+    custom_editor: Option<String>,
+) -> Result<BatchPlanDto, String> {
+    let editor_cmd = detect_preferred_editor(custom_editor.as_deref())
+        .ok_or_else(|| "No suitable text editor found ($VISUAL, $EDITOR, code, gedit, nano). Please specify an editor command.".to_string())?;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_filename = format!("cuddle_vidir_{}.tsv", uuid::Uuid::new_v4());
+    let temp_file_path = temp_dir.join(temp_filename);
+
+    let initial_content = generate_vidir_buffer(&items);
+    std::fs::write(&temp_file_path, &initial_content)
+        .map_err(|e| format!("Failed to create temporary editor file: {}", e))?;
+
+    let bin = &editor_cmd[0];
+    let mut cmd = std::process::Command::new(bin);
+    for arg in &editor_cmd[1..] {
+        cmd.arg(arg);
+    }
+    cmd.arg(&temp_file_path);
+
+    let status = cmd.status().map_err(|e| {
+        let _ = std::fs::remove_file(&temp_file_path);
+        format!("Failed to execute editor '{}': {}", bin, e)
+    })?;
+
+    if !status.success() {
+        let _ = std::fs::remove_file(&temp_file_path);
+        return Err(format!("Editor exited with non-zero exit code: {:?}", status.code()));
+    }
+
+    let edited_content = std::fs::read_to_string(&temp_file_path)
+        .map_err(|e| format!("Failed to read edited temporary file: {}", e))?;
+
+    let _ = std::fs::remove_file(&temp_file_path);
+
+    Ok(parse_vidir_buffer(items, &edited_content))
+}
+
+/// Convenience entry point to generate BatchPlanDto from BulkRenameOptions
+pub fn generate_plan_from_options(options: BulkRenameOptions) -> Result<BatchPlanDto, String> {
+    let items = resolve_rename_target_items(options.target_items)?;
     Ok(generate_batch_plan(items, &options.rules))
+}
+
+/// Convenience entry point to generate vidir buffer string
+pub fn generate_vidir_text(target_items: Vec<RenameTargetInputDto>) -> Result<String, String> {
+    let items = resolve_rename_target_items(target_items)?;
+    Ok(generate_vidir_buffer(&items))
+}
+
+/// Convenience entry point to parse vidir buffer string into BatchPlanDto
+pub fn parse_vidir_text(
+    target_items: Vec<RenameTargetInputDto>,
+    content: String,
+) -> Result<BatchPlanDto, String> {
+    let items = resolve_rename_target_items(target_items)?;
+    Ok(parse_vidir_buffer(items, &content))
+}
+
+/// Convenience entry point to launch external editor and parse result
+pub fn launch_external_editor(
+    target_items: Vec<RenameTargetInputDto>,
+    custom_editor: Option<String>,
+) -> Result<BatchPlanDto, String> {
+    let items = resolve_rename_target_items(target_items)?;
+    launch_external_editor_vidir(items, custom_editor)
 }
 
 /// Executes a two-phase bulk rename plan with atomic rollback on any failure.
@@ -1168,6 +1366,122 @@ mod tests {
         assert_eq!(undo_res.affected_items[0].proposed_name, "04.txt", "Display name in undo plan must be original display name, NEVER uuid prefix");
         assert!(disk_path.exists(), "Original disk path must be restored");
         assert!(!expected_target_path.exists());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_vidir_buffer_generation_and_parsing() {
+        let temp_dir = std::env::temp_dir().join(format!("cuddle_test_vidir_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let item1 = RenameTargetItem {
+            item_id: "id-101".to_string(),
+            original_path: temp_dir.join("photo1.jpg"),
+            display_name: "photo1.jpg".to_string(),
+            raw_base64: "dummy1".to_string(),
+            modified_time: None,
+        };
+        let item2 = RenameTargetItem {
+            item_id: "id-102".to_string(),
+            original_path: temp_dir.join("photo2.jpg"),
+            display_name: "photo2.jpg".to_string(),
+            raw_base64: "dummy2".to_string(),
+            modified_time: None,
+        };
+        let item3 = RenameTargetItem {
+            item_id: "id-103".to_string(),
+            original_path: temp_dir.join("document.pdf"),
+            display_name: "document.pdf".to_string(),
+            raw_base64: "dummy3".to_string(),
+            modified_time: None,
+        };
+
+        let items = vec![item1, item2, item3];
+
+        // 1. Generate buffer
+        let buf = generate_vidir_buffer(&items);
+        assert!(buf.contains("id-101\tphoto1.jpg"));
+        assert!(buf.contains("id-102\tphoto2.jpg"));
+        assert!(buf.contains("id-103\tdocument.pdf"));
+
+        // 2. Simulate user editing:
+        // - reorder items (id-103 first, then id-101)
+        // - delete id-102 (line deletion must be treated as UNCHANGED, NEVER file deletion)
+        // - modify id-101 to "photo_renamed.jpg"
+        // - leave id-103 as "document.pdf" (unchanged)
+        let edited = r#"
+# Custom comment
+id-103	document.pdf
+id-101	photo_renamed.jpg
+"#;
+
+        let plan = parse_vidir_buffer(items, edited);
+        assert_eq!(plan.total_count, 3);
+        assert_eq!(plan.changed_count, 1);
+        assert_eq!(plan.conflict_count, 0);
+        assert_eq!(plan.error_count, 0);
+        assert!(plan.is_executable);
+
+        let op101 = plan.operations.iter().find(|op| op.item_id == "id-101").unwrap();
+        assert_eq!(op101.proposed_name, "photo_renamed.jpg");
+        assert_eq!(op101.status, OperationStatus::Ok);
+
+        let op102 = plan.operations.iter().find(|op| op.item_id == "id-102").unwrap();
+        assert_eq!(op102.proposed_name, "photo2.jpg");
+        assert_eq!(op102.status, OperationStatus::Unchanged, "Deleted line MUST be kept as Unchanged");
+
+        let op103 = plan.operations.iter().find(|op| op.item_id == "id-103").unwrap();
+        assert_eq!(op103.proposed_name, "document.pdf");
+        assert_eq!(op103.status, OperationStatus::Unchanged);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_vidir_collision_detection() {
+        let temp_dir = std::env::temp_dir().join(format!("cuddle_test_vidir_col_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        // Existing file on disk
+        std::fs::write(temp_dir.join("existing_on_disk.txt"), "hello").unwrap();
+
+        let item1 = RenameTargetItem {
+            item_id: "id-1".to_string(),
+            original_path: temp_dir.join("f1.txt"),
+            display_name: "f1.txt".to_string(),
+            raw_base64: "d1".to_string(),
+            modified_time: None,
+        };
+        let item2 = RenameTargetItem {
+            item_id: "id-2".to_string(),
+            original_path: temp_dir.join("f2.txt"),
+            display_name: "f2.txt".to_string(),
+            raw_base64: "d2".to_string(),
+            modified_time: None,
+        };
+
+        let items = vec![item1, item2];
+
+        // 1. Duplicate conflict
+        let edited_dup = "id-1\tsame_name.txt\nid-2\tsame_name.txt\n";
+        let plan_dup = parse_vidir_buffer(items.clone(), edited_dup);
+        assert_eq!(plan_dup.conflict_count, 2);
+        assert!(!plan_dup.is_executable);
+
+        // 2. On-disk conflict
+        let edited_disk = "id-1\texisting_on_disk.txt\n";
+        let plan_disk = parse_vidir_buffer(items.clone(), edited_disk);
+        let op1 = plan_disk.operations.iter().find(|o| o.item_id == "id-1").unwrap();
+        assert_eq!(op1.status, OperationStatus::ConflictExistsOnDisk);
+        assert!(!plan_disk.is_executable);
+
+        // 3. Invalid filename
+        let edited_invalid = "id-1\tinvalid/name.txt\n";
+        let plan_invalid = parse_vidir_buffer(items, edited_invalid);
+        let op_inv = plan_invalid.operations.iter().find(|o| o.item_id == "id-1").unwrap();
+        assert_eq!(op_inv.status, OperationStatus::InvalidFilename);
+        assert!(!plan_invalid.is_executable);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

@@ -14,6 +14,10 @@ import {
   ShieldCheck,
   ArrowRight,
   Sparkles,
+  Sliders,
+  FileEdit,
+  ExternalLink,
+  RefreshCw,
 } from "lucide-react";
 
 import type { StagedItemDto } from "../types/StagedItemDto";
@@ -71,6 +75,12 @@ export const BulkRenameModal: React.FC<BulkRenameModalProps> = ({
   const [dtFormat, setDtFormat] = useState("%Y%m%d_%H%M%S");
   const [dtSource, setDtSource] = useState<"CurrentTime" | "FileModifiedTime">("CurrentTime");
 
+  // Mode toggle (rules vs vidir editor)
+  const [mode, setMode] = useState<"rules" | "vidir">("rules");
+  const [vidirContent, setVidirContent] = useState<string>("");
+  const [customEditor, setCustomEditor] = useState<string>("");
+  const [isLaunchingEditor, setIsLaunchingEditor] = useState<boolean>(false);
+
   // Dry-run results
   const [plan, setPlan] = useState<BatchPlanDto | null>(null);
   const [loading, setLoading] = useState(false);
@@ -100,7 +110,7 @@ export const BulkRenameModal: React.FC<BulkRenameModalProps> = ({
     });
   }, [items]);
 
-  // Compute dry-run plan
+  // Compute dry-run plan for rules
   const computeDryRun = useCallback(
     async (currentRules: RenameRule[]) => {
       if (targetInputs.length === 0) {
@@ -130,6 +140,93 @@ export const BulkRenameModal: React.FC<BulkRenameModalProps> = ({
     },
     [targetInputs]
   );
+
+  // Load vidir buffer text from backend
+  const loadVidirBuffer = useCallback(async () => {
+    if (targetInputs.length === 0) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const text = await invoke<string>("generate_vidir_text", {
+        targetItems: targetInputs,
+      });
+      setVidirContent(text);
+      const initialPlan = await invoke<BatchPlanDto>("parse_vidir_text", {
+        targetItems: targetInputs,
+        content: text,
+      });
+      setPlan(initialPlan);
+    } catch (err) {
+      console.error("Failed to generate vidir buffer:", err);
+      setError(typeof err === "string" ? err : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [targetInputs]);
+
+  // Handle in-app vidir textarea edits
+  const handleVidirChange = async (newText: string) => {
+    setVidirContent(newText);
+    try {
+      const newPlan = await invoke<BatchPlanDto>("parse_vidir_text", {
+        targetItems: targetInputs,
+        content: newText,
+      });
+      setPlan(newPlan);
+      setError(null);
+    } catch (err) {
+      console.error("Failed to parse vidir buffer:", err);
+      setError(typeof err === "string" ? err : String(err));
+    }
+  };
+
+  // Launch external editor ($VISUAL, $EDITOR, code, etc.)
+  const handleLaunchExternalEditor = async () => {
+    if (isLaunchingEditor || targetInputs.length === 0) return;
+    setIsLaunchingEditor(true);
+    setError(null);
+
+    try {
+      const newPlan = await invoke<BatchPlanDto>("launch_external_editor_vidir", {
+        targetItems: targetInputs,
+        customEditor: customEditor.trim() ? customEditor.trim() : null,
+      });
+      setPlan(newPlan);
+
+      // Re-sync textarea with updated plan values
+      const text = await invoke<string>("generate_vidir_text", {
+        targetItems: targetInputs,
+      });
+      const lines = text.split("\n").map((line) => {
+        if (line.startsWith("#") || !line.trim()) return line;
+        const tabPos = line.indexOf("\t");
+        if (tabPos >= 0) {
+          const id = line.slice(0, tabPos);
+          const op = newPlan.operations.find((o) => o.item_id === id);
+          if (op) {
+            return `${id}\t${op.proposed_name}`;
+          }
+        }
+        return line;
+      });
+      setVidirContent(lines.join("\n"));
+    } catch (err) {
+      console.error("External editor launch failed:", err);
+      setError(typeof err === "string" ? err : String(err));
+    } finally {
+      setIsLaunchingEditor(false);
+    }
+  };
+
+  // Switch mode handler
+  const handleSwitchMode = (newMode: "rules" | "vidir") => {
+    setMode(newMode);
+    if (newMode === "vidir") {
+      loadVidirBuffer();
+    } else {
+      computeDryRun(rules);
+    }
+  };
 
   const handleExecute = async () => {
     if (!plan || !plan.is_executable || isExecuting) return;
@@ -163,9 +260,13 @@ export const BulkRenameModal: React.FC<BulkRenameModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      computeDryRun(rules);
+      if (mode === "rules") {
+        computeDryRun(rules);
+      } else {
+        loadVidirBuffer();
+      }
     }
-  }, [isOpen, rules, computeDryRun]);
+  }, [isOpen, rules, mode, computeDryRun, loadVidirBuffer]);
 
   if (!isOpen) return null;
 
@@ -299,6 +400,26 @@ export const BulkRenameModal: React.FC<BulkRenameModalProps> = ({
 
         {/* Modal Body */}
         <div className="bulk-rename-body">
+          {/* Mode Switch Tabs */}
+          <div className="bulk-rename-tab-bar">
+            <button
+              type="button"
+              className={`bulk-rename-tab-btn ${mode === "rules" ? "active" : ""}`}
+              onClick={() => handleSwitchMode("rules")}
+            >
+              <Sliders size={13} />
+              <span>{t("bulk_rename.tab_rules")}</span>
+            </button>
+            <button
+              type="button"
+              className={`bulk-rename-tab-btn ${mode === "vidir" ? "active" : ""}`}
+              onClick={() => handleSwitchMode("vidir")}
+            >
+              <FileEdit size={13} />
+              <span>{t("bulk_rename.tab_vidir")}</span>
+            </button>
+          </div>
+
           {/* Top: Summary Badges */}
           {plan && (
             <div className="dry-run-summary-bar">
@@ -349,8 +470,9 @@ export const BulkRenameModal: React.FC<BulkRenameModalProps> = ({
             </div>
           )}
 
-          {/* Rules Configuration Section */}
-          <div className="rules-section">
+          {/* Mode 1: Rules Configuration Section */}
+          {mode === "rules" && (
+            <div className="rules-section">
             <div className="section-title-row">
               <h5>{t("bulk_rename.rules_header")}</h5>
               <div className="add-rule-controls">
@@ -551,6 +673,60 @@ export const BulkRenameModal: React.FC<BulkRenameModalProps> = ({
               ))}
             </div>
           </div>
+          )}
+
+          {/* Mode 2: vidir Editor Section */}
+          {mode === "vidir" && (
+            <div className="vidir-editor-section">
+              <div className="vidir-toolbar">
+                <div className="vidir-actions-left">
+                  <button
+                    type="button"
+                    className="btn-vidir-ext"
+                    onClick={handleLaunchExternalEditor}
+                    disabled={isLaunchingEditor}
+                    title={t("bulk_rename.launch_external_editor")}
+                  >
+                    <ExternalLink size={13} />
+                    <span>
+                      {isLaunchingEditor
+                        ? t("bulk_rename.vidir_launching")
+                        : t("bulk_rename.launch_external_editor")}
+                    </span>
+                  </button>
+                  <input
+                    type="text"
+                    className="vidir-custom-cmd-input"
+                    placeholder={t("bulk_rename.external_editor_placeholder")}
+                    value={customEditor}
+                    onChange={(e) => setCustomEditor(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="panel-header-btn"
+                    onClick={loadVidirBuffer}
+                    title={t("bulk_rename.reload_vidir")}
+                  >
+                    <RefreshCw size={13} />
+                  </button>
+                </div>
+                <span className="vidir-safe-badge">
+                  <ShieldCheck size={13} />
+                  <span>{t("bulk_rename.vidir_safe_notice")}</span>
+                </span>
+              </div>
+
+              <div className="vidir-textarea-wrap">
+                <textarea
+                  className="vidir-textarea"
+                  value={vidirContent}
+                  onChange={(e) => handleVidirChange(e.target.value)}
+                  spellCheck={false}
+                />
+              </div>
+              <span className="vidir-hint-text">{t("bulk_rename.vidir_hint")}</span>
+            </div>
+          )}
 
           {/* Dry-run Table Section */}
           <div className="preview-table-section">

@@ -266,6 +266,27 @@ fn undo_last_bulk_rename() -> Result<batch::BatchExecutionResultDto, String> {
 }
 
 #[tauri::command]
+fn generate_vidir_text(target_items: Vec<batch::RenameTargetInputDto>) -> Result<String, String> {
+    batch::generate_vidir_text(target_items)
+}
+
+#[tauri::command]
+fn parse_vidir_text(
+    target_items: Vec<batch::RenameTargetInputDto>,
+    content: String,
+) -> Result<batch::BatchPlanDto, String> {
+    batch::parse_vidir_text(target_items, content)
+}
+
+#[tauri::command]
+fn launch_external_editor_vidir(
+    target_items: Vec<batch::RenameTargetInputDto>,
+    custom_editor: Option<String>,
+) -> Result<batch::BatchPlanDto, String> {
+    batch::launch_external_editor(target_items, custom_editor)
+}
+
+#[tauri::command]
 fn get_operation_history(limit: Option<usize>) -> Result<Vec<history::OperationHistoryDto>, String> {
     let mgr = history::get_history_manager();
     mgr.list_history(limit.unwrap_or(50))
@@ -552,6 +573,9 @@ pub fn run() {
             execute_bulk_rename,
             can_undo_bulk_rename,
             undo_last_bulk_rename,
+            generate_vidir_text,
+            parse_vidir_text,
+            launch_external_editor_vidir,
             get_operation_history,
             clear_operation_history,
             get_default_backup_path,

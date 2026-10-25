@@ -446,6 +446,35 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
 
 ---
 
+## 9. Phase 9 (Remaining Core Features & Source-Only Distribution): In Progress
+
+### 9.1 User Decisions (Decision Gate)
+1. **Distribution Policy:** For initial public release, avoid pre-built binary packages (deb, AppImage, Flatpak, etc.) to minimize licensing and compliance complexities. **Publish strictly as open source code accompanied by exhaustive build guides and prerequisite instructions (README / BUILD)**.
+2. **Editor-Integrated Rename (vidir style) Specifications:**
+   - **Interface:** Dual-mode support featuring both an embedded multi-line in-app editor and external editor spawning (`$VISUAL`, `$EDITOR`, VS Code, nano, gedit, etc.).
+   - **Format:** Clean tab-separated values format (`[item_id]<TAB>[Filename]`) adhering to Design 9.4.
+   - **Safety Guarantees:** Correlated strictly via `item_id`. Deleted lines are preserved as unchanged (NEVER interpreted as file deletion). Two-Phase atomic rename and rollback journal (UNDO) fully enforced.
+
+### 9.2 Implementation Details (Phase 9.1: vidir-Style Editor Integration): Completed
+* **Backend Engine (`src-tauri/src/batch.rs`, `src-tauri/src/lib.rs`):**
+  * `generate_vidir_buffer`: Generates tab-separated text representation from target items with safety guidance headers.
+  * `parse_vidir_buffer`: Parses user-edited text buffer, guarantees that omitted lines remain `OperationStatus::Unchanged`, and detects duplicate collisions (`ConflictDuplicate`), on-disk collisions (`ConflictExistsOnDisk`), and illegal paths (`InvalidFilename`).
+  * `launch_external_editor_vidir`: Spawns external editor with temporary TSV file (`~/.cache/Cuddle/vidir_<uuid>.tsv`) via direct argument arrays without shell expansion, waits for editor completion, auto-parses output, and securely deletes the temporary buffer.
+  * Exposed Tauri IPC commands: `generate_vidir_text`, `parse_vidir_text`, `launch_external_editor_vidir`.
+  * Added 2 Rust unit tests (`test_vidir_buffer_generation_and_parsing`, `test_vidir_collision_detection`), passing 100%.
+* **Frontend UI Integration (`BulkRenameModal.tsx`, `App.css`):**
+  * Added clean top toggle tab bar: "Rule Builder (Regex, Seq, DateTime)" vs "Editor Integration (vidir)".
+  * **Embedded vidir Editor:** Dedicated monospace text area with instant Dry-Run collision re-computation on edit.
+  * **External Editor Controls:** "Open in External Editor" action button with launching spinner, custom editor command override input, and reload buffer button.
+  * **Safety Badge:** Highlighting "Deleted lines are preserved as unchanged (files are NEVER deleted)".
+  * Seamlessly synchronized with summary counters, preview diff table, and fixed-bottom execution button.
+* **Bilingual Synchronization (`ja/translation.json`, `en/translation.json`):**
+  * Full parity across Japanese and English locales for all `bulk_rename.tab_*` and `bulk_rename.vidir_*` keys.
+* **Verification & Testing:**
+  * 51 Vitest unit tests passing (100%), 141 Cargo unit tests passing (100%), TypeScript / Vite production build passing cleanly.
+
+---
+
 ## 7. Development Guardrails
 
 * **Root Execution Prohibited:** The application must strictly execute with non-privileged user rights (no `sudo` / `pkexec` privilege escalation).

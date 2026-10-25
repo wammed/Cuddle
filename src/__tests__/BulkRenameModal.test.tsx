@@ -64,6 +64,15 @@ vi.mock("@tauri-apps/api/core", () => ({
     if (cmd === "generate_bulk_rename_plan") {
       return Promise.resolve(currentPlan);
     }
+    if (cmd === "generate_vidir_text") {
+      return Promise.resolve("# vidir header\nstage-1\tsample.txt\n");
+    }
+    if (cmd === "parse_vidir_text") {
+      return Promise.resolve(currentPlan);
+    }
+    if (cmd === "launch_external_editor_vidir") {
+      return Promise.resolve(currentPlan);
+    }
     if (cmd === "execute_bulk_rename") {
       return Promise.resolve({
         batch_id: "batch-12345",
@@ -194,5 +203,25 @@ describe("BulkRenameModal (Phase 5.1 & 5.2)", () => {
     expect(screen.getByText("Bulk Rename & Normalize (Dry-run Verification)")).toBeDefined();
     expect(screen.getByText("Dry-run Preview Verification")).toBeDefined();
     expect(screen.getByRole("button", { name: /Execute Bulk Rename/i })).toBeDefined();
+  });
+
+  it("supports switching to vidir editor mode and renders textarea", async () => {
+    await changeLanguage("ja");
+
+    render(
+      <BulkRenameModal
+        isOpen={true}
+        onClose={vi.fn()}
+        items={mockStagedItems}
+      />
+    );
+
+    const vidirTabBtn = screen.getByRole("button", { name: /エディタ連携 \(vidir型\)/i });
+    vidirTabBtn.click();
+
+    await waitFor(() => {
+      expect(screen.getByText(/行を削除したファイルは変更なしとして扱われます/i)).toBeDefined();
+      expect(screen.getByRole("button", { name: /外部エディタで編集/i })).toBeDefined();
+    });
   });
 });

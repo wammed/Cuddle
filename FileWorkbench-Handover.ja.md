@@ -448,6 +448,35 @@
 
 ---
 
+## 9. Phase 9（未実装コア機能 & ソース公開配布体制）：進行中
+
+### 9.1 ユーザー合意事項（意思決定ゲート）
+1. **配布方針（Distribution Policy）：** 初期リリースではライセンス管理等の煩雑さを避けるためバイナリパッケージ（deb, AppImage, Flatpak 等）の配布は行わず、**ソースコードのみを公開し、必須前提パッケージおよびビルド手順（README / BUILD）を完全に明記する**。
+2. **エディタ連携リネーム（vidir型）仕様：**
+   - **インターフェース：** アプリ内テキストエディタ ＋ 外部エディタ（`$VISUAL`, `$EDITOR`, VS Code, nano 等）呼び出しの両方に対応。
+   - **フォーマット：** 設計書 9.4 準拠のシンプルなタブ区切りテキスト形式（`[item_id]<TAB>[ファイル名]`）。
+   - **安全保護：** `item_id` で照合し、行削除は「ファイル削除」と解釈せず「変更なし（リネーム対象外）」として扱う。Two-Phase Rename およびロールバックジャーナル（UNDO）を完全適用。
+
+### 9.2 実装内容（Phase 9.1: エディタ連携リネーム vidir型）：完了
+* **バックエンドエンジン（`src-tauri/src/batch.rs`, `src-tauri/src/lib.rs`）：**
+  * `generate_vidir_buffer`: 対象一覧から設計書 9.4 準拠のタブ区切りバッファを生成（安全上の注意事項ヘッダー付き）。
+  * `parse_vidir_buffer`: 編集後のテキストをパースし、行削除されたアイテムは `OperationStatus::Unchanged` として安全に保持。重複衝突（`ConflictDuplicate`）、ディスク上既存衝突（`ConflictExistsOnDisk`）、不正ファイル名（`InvalidFilename`）を厳格に検出。
+  * `launch_external_editor_vidir`: 一時ファイル（`~/.cache/Cuddle/vidir_<uuid>.tsv`）を生成し、`$VISUAL`, `$EDITOR`、または PATH 内のエディタ（`code --wait`, `gedit --wait`, `kate`, `gnome-text-editor`, `nano` 等）を直接プロセス起動。終了後に自動パース・一時ファイル安全消去。
+  * Tauri IPC コマンド `generate_vidir_text`, `parse_vidir_text`, `launch_external_editor_vidir` を公開・登録。
+  * Rust 単体テスト 2 件（`test_vidir_buffer_generation_and_parsing`, `test_vidir_collision_detection`）を追加し 100% パス。
+* **フロントエンド UI 統合（`BulkRenameModal.tsx`, `App.css`）：**
+  * モーダル上部に「ルール設定（Rules）」と「エディタ連携 (vidir型)」の切り替えタブバーを新設。
+  * **アプリ内 vidir エディタ：** 行高・等幅フォント（`var(--font-mono)`）対応のテキストエリア、入力変更時のリアルタイム Dry-run 衝突検証。
+  * **外部エディタ連携：** 「外部エディタで編集」ボタン（起動中スピナー表示、カスタムエディタコマンド入力枠、リロードボタン）。
+  * **安全バッジ：** 「行を削除したファイルは変更なしとして扱われます（ファイルは削除されません）」を常時明示。
+  * 下部 Dry-run サマリーバー・プレビュー差分テーブル・下部固定「一括リネームを実行」ボタンとの完全同期。
+* **多言語同期（`ja/translation.json`, `en/translation.json`）：**
+  * `bulk_rename.tab_rules`, `bulk_rename.tab_vidir`, `bulk_rename.vidir_*` の全キーを日英完全同期。
+* **テスト検証：**
+  * Vitest 51 件全件 100% パス（`BulkRenameModal.test.tsx` に vidir 連携テスト追加）、Cargo test 141 件全件 100% パス、TypeScript 型チェック / Vite ビルド完全成功。
+
+---
+
 ## 7. 開発上の重要制約（Guardrails）
 
 * **root 権限実行の禁止：** アプリは常に非特権一般ユーザー権限で動作させる（権限昇格 `sudo`/`pkexec` は行わない）。

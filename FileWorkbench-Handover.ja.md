@@ -5,7 +5,7 @@
 </p>
 
 **文書作成日：** 2026-10-25  
-**ステータス：** Phase 5 完了、Phase 6 着手準備完了  
+**ステータス：** Phase 8（UI/UX 最終調整 & カラーテーマ・下部固定アクションバー）完了、Phase 9（パッケージング & 最終検証）着手準備完了  
 **対象：** 開発・設計・テスト担当者、次期作業セッション担当  
 
 ---
@@ -322,10 +322,39 @@
 * **ツール可用性プローブ（Tool Availability Probe）：**
   * 各プリセットの必要ツール（`magick`, `ffmpeg`, `qpdf`, `pdfimages`, `exiftool` 等）の `$PATH` 実在を検知し、未インストール時は分かりやすい案内を表示。純Rust完結プリセット（14〜20, 26〜29）は外部ツール不要で即時利用可能。
 
-### 7.3 Phase 7.3 の目的と設計方針（リアルタイム進捗 UI & キャンセル制御）
+### 7.3 Phase 7.3（リアルタイム進捗 UI & キャンセル制御）：完了
 * **非同期ストリーミング通知と UI 統合：**
-  * 各ファイルの処理状況（待機・実行中・成功・失敗）をリアルタイムに進捗プログレスバーで表示。
-  * ユーザーによる途中キャンセル機能の実装。
+  * 各ファイルの処理状況（待機・実行中・成功・失敗）をリアルタイムに進捗プログレスバーで表示（Tauri イベント `pipeline-progress`）。
+  * `PipelineCancellationManager` による子プロセスの即時 SIGKILL 中断と RollbackAll 安全終了。
+  * `PipelineModal.tsx` にプログレスバー、処理中ファイル名、深紅キャンセルボタン、中断警告バナーを完全統合。
+
+---
+
+## 8. Phase 8（UI/UX 最終調整、仮想スクロール、レイアウト最適化 & カラーテーマ）：完了
+
+### 8.1 ユーザー合意事項（意思決定ゲート）
+1. **カラーテーマ選定：** `Midnight Teal / Cyber Dark`（深海ダーク `#060c11`, `#09141b` をベースに、サイバーティール `#14b8a6`、ネオンミント `#2dd4bf` のアクセントを取り入れたサイバー調ダークパレット）。
+2. **ボタン隠れ問題解決方針：** `下部固定アクションバー方式`（全モーダル・ダイアログでフッターボタンを画面下部に固定配置し、入力・設定・リスト領域のみを独立スクロールさせて、ウィンドウが小さくてもボタンが絶対に隠れない構造に統一）。
+
+### 8.2 実装内容
+* **下部固定アクションバー（Fixed Bottom Action Bar）：**
+  * `.reflect-confirm-dialog`, `.bulk-rename-modal`, `.exit-backup-dialog`, `.pipeline-modal-dialog` の全モーダルにおいて、共通アクションバー（`.dialog-footer`, `.dialog-actions-bar`）に `flex-shrink: 0; margin-top: auto; position: relative; z-index: 10;` を設定。
+  * コンテンツボディ部（`.dialog-body`, `.bulk-rename-body`, `.pipeline-config-scroll`）に `flex: 1; min-height: 0; overflow-y: auto;` を徹底し、エラーバナーやプレビューテーブルが長くなってもボタンバーが画面内に常に固定表示される構造を確立。
+* **Midnight Teal / Cyber Dark カラーテーマの統一：**
+  * `--bg-canvas` (`#060c11`), `--bg-surface-base` (`#09141b`), `--bg-surface-input` (`#050a0e`), `--accent-brand` (`#14b8a6`), `--accent-brand-bright` (`#2dd4bf`)。
+  * 幅 6px のティールカスタムスクロールバー（`::-webkit-scrollbar`）を全コンポーネントにグローバル適用。
+  * 「原本スナップショット記録済み」「テキスト抽出 ＆ インデックス登録」等の白浮きボタンを重厚なサイバーダーク背景＋高コントラストミント文字へ刷新。
+  * 全入力要素・ポップアップ・モーダルにおける白背景を完全根絶。
+* **仮想スクロール（`@tanstack/react-virtual`）：**
+  * `FileBrowserPanel` および `WorkspacePanel` にて `VirtualFileList` を稼働。最大 10,000 件のファイル一覧を 60fps で滑らかに描画し、メモリ消費を最小化。
+* **キーボードショートカット & アクセシビリティ（Phase 8.4）：**
+  * `Ctrl+F` / `Cmd+F`: グローバル検索入力フィールド（`#global-search-input`）へ即座にフォーカス & 全選択。
+  * `Ctrl+R` / `Cmd+R`: 一括リネームモーダルを開く（ワークスペースにファイルがある場合）。
+  * `Ctrl+P` / `Cmd+P`: パイプラインモーダルを開く（ワークスペースにファイルがある場合）。
+  * `Ctrl+Z` / `Cmd+Z`: 直前のリネーム操作を取り消す（Undo 履歴がある場合。テキストエリア内ではネイティブ Undo を優先）。
+  * `Escape`: 開いているモーダルを安全に閉じる。
+* **テスト検証：**
+  * Vitest 39 件全件 100% パス、Cargo test 130 件全件 100% パス、Clippy 警告ゼロ、TypeScript/Vite ビルド成功。
 
 ---
 

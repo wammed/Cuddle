@@ -89,6 +89,7 @@ export function SearchPanel({ onSelectItem, onLog }: SearchPanelProps) {
           }}
         >
           <input
+            id="global-search-input"
             type="text"
             className="search-input-field"
             value={query}

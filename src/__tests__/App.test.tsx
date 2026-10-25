@@ -195,4 +195,19 @@ describe("App component (6-Region Main Shell)", () => {
     });
     expect(screen.getByText("アイテム詳細")).toBeDefined();
   });
+
+  it("focuses search input on Ctrl+F keyboard shortcut (Phase 8.4)", async () => {
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    render(<App />);
+
+    const searchInput = document.getElementById("global-search-input") as HTMLInputElement;
+    expect(searchInput).not.toBeNull();
+
+    // Fire Ctrl+F
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    expect(document.activeElement).toBe(searchInput);
+  });
 });

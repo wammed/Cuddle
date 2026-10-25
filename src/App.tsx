@@ -400,6 +400,86 @@ export function App() {
     }
   };
 
+  // Global Keyboard Shortcuts (Phase 8.4)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Escape: Close any active modal
+      if (e.key === "Escape") {
+        if (bulkRenameOpen) {
+          setBulkRenameOpen(false);
+          return;
+        }
+        if (pipelineModalOpen) {
+          setPipelineModalOpen(false);
+          return;
+        }
+        if (exitBackupOpen) {
+          setExitBackupOpen(false);
+          return;
+        }
+      }
+
+      // Check for modifier keys (Ctrl on Windows/Linux, Cmd on macOS)
+      const isModifier = e.ctrlKey || e.metaKey;
+      if (!isModifier) return;
+
+      const key = e.key.toLowerCase();
+
+      // Ctrl+F: Focus Search Input
+      if (key === "f") {
+        e.preventDefault();
+        const searchInput = document.getElementById("global-search-input") as HTMLInputElement | null;
+        if (searchInput) {
+          searchInput.focus();
+          searchInput.select();
+        }
+        return;
+      }
+
+      // Ctrl+R: Open Bulk Rename Modal (if files staged)
+      if (key === "r") {
+        e.preventDefault();
+        if (stagedFiles.length > 0) {
+          setBulkRenameOpen(true);
+        }
+        return;
+      }
+
+      // Ctrl+P: Open Pipeline Modal (if files staged)
+      if (key === "p") {
+        e.preventDefault();
+        if (stagedFiles.length > 0) {
+          setPipelineModalOpen(true);
+        }
+        return;
+      }
+
+      // Ctrl+Z: Undo last bulk rename (if available and not inside input/textarea)
+      if (key === "z") {
+        const activeTag = document.activeElement?.tagName.toLowerCase();
+        if (activeTag === "input" || activeTag === "textarea") {
+          // Allow default native text undo
+          return;
+        }
+        if (canUndo) {
+          e.preventDefault();
+          handleUndoBatch();
+        }
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    bulkRenameOpen,
+    pipelineModalOpen,
+    exitBackupOpen,
+    stagedFiles.length,
+    canUndo,
+    handleUndoBatch,
+  ]);
+
   const handleBackupSuccess = async (result: BackupResultDto) => {
     const successMsg = t("backup.backup_success", {
       path: result.archive_path,

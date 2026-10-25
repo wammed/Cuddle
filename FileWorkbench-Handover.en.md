@@ -5,7 +5,7 @@
 </p>
 
 **Document Date:** 2026-10-25  
-**Status:** Phase 3.1 Completed, Ready for Phase 3.2  
+**Status:** Phase 5 Completed, Ready for Phase 6  
 **Target Audience:** Development, Architecture, and QA Teams; Next Working Session Maintainers  
 
 ---
@@ -178,6 +178,23 @@
   * UI execution integration in `App.tsx` with automatic directory re-scanning to synchronize size and timestamps
   * Full bilingual dictionary expansion (`reflection.*`)
   * Automated testing: 71 Cargo tests 100% pass, 13 Vitest tests 100% pass, Clippy zero warnings, Vite build success
+* [x] **Phase 5.1 (Normalization & Batch Rename Rules Engine with Dry-Run): Completed**
+  * Implemented bulk renaming & normalization engine in `batch.rs` (Regex substitution, Unicode NFC/NFD/NFKC/NFKD normalization, fullwidth/halfwidth conversion, sequence numbering, datetime stamping, prefix/suffix)
+  * Real-time collision detection (`ConflictDuplicate` within batch, `ConflictExistsOnDisk` in directory, `InvalidFilename` character safety)
+  * Instant generation and validation of virtual mapping plans (`BatchPlanDto`, `PlannedOperationDto`)
+  * Implemented responsive `BulkRenameModal.tsx` with rule builders, dry-run summary badges, preview table, and execution guardrails
+  * `ts-rs` automated TypeScript type synchronization (`BatchPlanDto.ts`, `PlannedOperationDto.ts`, `RenameRule.ts`, `BulkRenameOptions.ts`, etc.)
+  * Full bilingual dictionary expansion (`bulk_rename.*`)
+* [x] **Phase 5.2 (Two-Phase Rename & Deterministic Atomic Rollback): Completed**
+  * Safe resolution of file swaps and duplicate sequential numbering via temporary UUID intermediate parking (Phase 1) followed by target commitment (Phase 2)
+  * Comprehensive deterministic atomic rollback (RollbackAll) restoring initial staging states if any single step encounters an error
+  * Real-time workspace and browser synchronization via `WorkspaceManager::update_staged_path`
+* [x] **Phase 5.3 (Rollback Journal & Atomic One-Click Undo): Completed**
+  * Thread-safe bulk rename history management via `BatchJournalManager`
+  * Dynamic reverse plan generation and two-phase atomic execution for one-click rollback (`undo_last_bulk_rename`)
+  * Strict separation between internal disk UUID prefixes and user-facing display names (`display_name`) ensuring pristine restoration
+  * Header undo button (`RotateCcw`) integration and floating toast notification banner for instant visual confirmation
+  * Automated testing: 96 Cargo tests 100% pass, 20 Vitest tests 100% pass, Clippy zero warnings, Vite build success
 
 ---
 
@@ -194,31 +211,31 @@ All future development must strictly adhere to the following protocol:
    * **Color Themes:** Notify and form user consensus at the start of the final UI polishing phase (Phases 8–9).
    * **Pipeline Presets:** Notify and form user consensus at the recommended timing (Phase 7: Pipeline Runner).
 4. **Mandatory Manual Testing on Major Phase Transitions:**  
-   At major phase boundaries (e.g. Phase 1 → 2, Phase 2 → 3, Phase 3 → 4, Phase 4 → 5), the assistant must present a concrete manual verification checklist on real hardware/GUI/CLI and confirm functionality before proceeding to the next major phase.
+   At major phase boundaries (e.g. Phase 1 → 2, Phase 2 → 3, Phase 3 → 4, Phase 4 → 5, Phase 5 → 6), the assistant must present a concrete manual verification checklist on real hardware/GUI/CLI and confirm functionality before proceeding to the next major phase.
 
 ---
 
-## 6. Next Session Startup Guide (Phase 5.1 Tasks)
+## 6. Next Session Startup Guide (Phase 6 Tasks)
 
-Having completed Major Phase 4 (Workspace Separation, Diff Comparison & Atomic Reflection), the project proceeds to Major Phase 5 (Batch Renaming, Normalization & Safe Dry-Run) **after manual testing verification**.
+Having completed Major Phase 5 (Advanced Bulk Operations & Normalization) manual verification, the project transitions to Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) **after user consensus on the pre-phase decision gate**.
 
-### 6.1 Phase 5.1 Architecture & Design Decisions (Normalization & Batch Rename Rules Engine with Dry-Run)
-* **Rule Engine Construction (`src-tauri/src/renamer.rs`):**
-  * Strict Original Protection: Renaming rules are applied exclusively to workspace copies, generating a virtual pre/post mapping table (Dry-Run).
-  * **Rule Capabilities:**
-    * Unicode NFC/NFD Normalization (resolves separated voiced sound marks in Japanese filenames)
-    * Full-width / Half-width conversion (alphanumerics and symbols)
-    * Case conversion (lowercase, UPPERCASE, camelCase, snake_case, kebab-case)
-    * Sequential numbering (zero-padding, prefixes, suffixes, custom start/step)
-    * Regular expression substitution (regex pattern matching with capture group references)
-  * **Collision & Anomaly Detection (Dry-Run Validation):**
-    * In-directory collision detection (preventing duplicate target names)
-    * Filesystem forbidden character validation (`/`, NULL bytes, newlines)
-    * 255-byte filename length limit checks (Linux ext4/xfs constraints)
-  * **Dual-Key Compatibility:** Lossless handling for non-UTF-8 filenames.
-  * **TypeScript Bindings & Frontend Integration via `ts-rs`:**
-    * Automated generation of `RenameRuleDto`, `RenamePreviewItemDto`, `RenameResultDto`.
-    * UI for configuring rules and displaying real-time dry-run preview tables.
+### 6.1 Phase 6.1 Architecture & Design Decisions (Operation History, Persistent Journal & Separation Model)
+* **Persistent Operation History & Journal:**
+  * Log operations (bulk rename, reflection, staging, resets) with timestamp, inode, operation type, paths, and execution status.
+  * Explicit determination of undoability (verifying whether backing data exists and is safe to revert).
+* **History Inspector UI:**
+  * Localized timeline view in the bottom "History" panel tab.
+  * Direct invocation of undo or restoration from history entries.
+
+### 6.2 Phase 6.2 Architecture & Design Decisions (Session Restoration Engine)
+* **Workspace Staging Session Manifest:**
+  * Persist active `workspace-temp/` staging states across application restarts or unexpected terminations.
+  * Validate external origin conflicts (TOCTOU) and auto-restore staged working copies upon app startup.
+
+### 6.3 Phase 6.3 Architecture & Design Decisions (Exit Confirmation & Safe Tar Archiving)
+* **Exit Guardrail Flow:**
+  * Intercept window closing when unreflected modified working copies exist.
+  * Safe options: "Archive & Exit (tar.zst/tar.gz)", "Discard & Exit", or "Cancel".
 
 ---
 

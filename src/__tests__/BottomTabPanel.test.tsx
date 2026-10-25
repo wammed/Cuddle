@@ -5,6 +5,7 @@ import { changeLanguage } from "../i18n";
 import type { FileItem } from "../types/FileItem";
 import type { StagedItemDto } from "../types/StagedItemDto";
 import type { FileDiffResultDto } from "../types/FileDiffResultDto";
+import type { OperationHistoryDto } from "../types/OperationHistoryDto";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockImplementation((cmd: string, args?: Record<string, unknown>) => {
@@ -308,6 +309,110 @@ describe("BottomTabPanel & Diff Operations (Phase 4.2)", () => {
 
     // Close button should now be available
     expect(screen.getByText("閉じる")).toBeDefined();
+  });
+
+  it("displays SQLite WAL operation history timeline with badges and details (Phase 6.1)", async () => {
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    const sampleHistories: OperationHistoryDto[] = [
+      {
+        id: 1n,
+        operation_id: "op-rename-1",
+        timestamp_ms: 1729750000000n,
+        operation_type: "BulkRename",
+        display_name: "photo_001.jpg",
+        original_path: "/home/susie/pictures/photo_001.jpg",
+        staged_path: "/home/susie/.cuddle-temp/stage-1_photo_001.jpg",
+        inode: 12345n,
+        status: "Success",
+        can_undo: true,
+        details: "Prefix: 20261025_",
+      },
+      {
+        id: 2n,
+        operation_id: "op-reflect-1",
+        timestamp_ms: 1729750005000n,
+        operation_type: "Reflect",
+        display_name: "doc_v2.md",
+        original_path: "/home/susie/docs/doc_v2.md",
+        staged_path: "/home/susie/.cuddle-temp/stage-2_doc_v2.md",
+        inode: 23456n,
+        status: "Success",
+        can_undo: false,
+        details: "SHA-256 verified match",
+      },
+    ];
+
+    const handleClear = vi.fn();
+
+    render(
+      <BottomTabPanel
+        selectedItem={null}
+        extractedInfo={null}
+        appConfig={null}
+        logs={[]}
+        history={[]}
+        historyItems={sampleHistories}
+        onClearHistory={handleClear}
+        stagedItems={[]}
+        onClose={vi.fn()}
+      />
+    );
+
+    // Switch to history tab
+    const historyTabBtn = screen.getByText("操作履歴");
+    await act(async () => {
+      fireEvent.click(historyTabBtn);
+    });
+
+    // Verify history panel header
+    expect(screen.getByText("操作履歴 (SQLite WAL)")).toBeDefined();
+    expect(screen.getByText("2 件の記録 (上限 50 件)")).toBeDefined();
+
+    // Verify operation badges
+    expect(screen.getByText("一括リネーム")).toBeDefined();
+    expect(screen.getByText("原本反映")).toBeDefined();
+
+    // Verify file display names and details
+    expect(screen.getByText("photo_001.jpg")).toBeDefined();
+    expect(screen.getByText("Prefix: 20261025_")).toBeDefined();
+    expect(screen.getByText("doc_v2.md")).toBeDefined();
+    expect(screen.getByText("SHA-256 verified match")).toBeDefined();
+
+    // Click clear history button
+    const clearBtn = screen.getByText("履歴を消去");
+    await act(async () => {
+      fireEvent.click(clearBtn);
+    });
+    expect(handleClear).toHaveBeenCalled();
+  });
+
+  it("displays empty history message when historyItems is empty (Phase 6.1)", async () => {
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    render(
+      <BottomTabPanel
+        selectedItem={null}
+        extractedInfo={null}
+        appConfig={null}
+        logs={[]}
+        history={[]}
+        historyItems={[]}
+        onClose={vi.fn()}
+      />
+    );
+
+    // Switch to history tab
+    const historyTabBtn = screen.getByText("操作履歴");
+    await act(async () => {
+      fireEvent.click(historyTabBtn);
+    });
+
+    expect(screen.getByText("操作履歴はありません")).toBeDefined();
   });
 });
 

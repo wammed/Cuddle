@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { Eye, History, Shield, Terminal, X, RotateCcw, GitCompare, AlertCircle, CheckCircle2, Upload, AlertTriangle } from "lucide-react";
+import { Eye, History, Shield, Terminal, X, RotateCcw, GitCompare, AlertCircle, CheckCircle2, Upload, AlertTriangle, Trash2, Database } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
@@ -7,6 +7,7 @@ import type { ExtractedTextDto } from "../types/ExtractedTextDto";
 import type { AppConfig } from "../types/AppConfig";
 import type { StagedItemDto } from "../types/StagedItemDto";
 import type { FileDiffResultDto } from "../types/FileDiffResultDto";
+import type { OperationHistoryDto } from "../types/OperationHistoryDto";
 
 interface BottomTabPanelProps {
   selectedItem: FileItem | null;
@@ -14,6 +15,8 @@ interface BottomTabPanelProps {
   appConfig: AppConfig | null;
   logs: string[];
   history: string[];
+  historyItems?: OperationHistoryDto[];
+  onClearHistory?: () => void;
   stagedItems?: StagedItemDto[];
   onResetStagedItem?: (stageId: string) => void;
   onReflectStagedItem?: (stageId: string) => Promise<void> | void;
@@ -26,6 +29,8 @@ export function BottomTabPanel({
   appConfig,
   logs,
   history,
+  historyItems,
+  onClearHistory,
   stagedItems = [],
   onResetStagedItem,
   onReflectStagedItem,
@@ -122,6 +127,73 @@ export function BottomTabPanel({
     } finally {
       setIsReflecting(false);
     }
+  };
+
+  const getOpBadgeClass = (opType: string) => {
+    switch (opType) {
+      case "BulkRename":
+        return "badge-op badge-rename";
+      case "UndoBulkRename":
+        return "badge-op badge-undo";
+      case "Reflect":
+        return "badge-op badge-reflect";
+      case "Stage":
+        return "badge-op badge-stage";
+      case "Unstage":
+        return "badge-op badge-unstage";
+      case "Reset":
+        return "badge-op badge-reset";
+      case "ClearWorkspace":
+        return "badge-op badge-clear";
+      default:
+        return "badge-op";
+    }
+  };
+
+  const getOpLabel = (opType: string) => {
+    switch (opType) {
+      case "BulkRename":
+        return t("history.type_bulk_rename");
+      case "UndoBulkRename":
+        return t("history.type_undo_rename");
+      case "Reflect":
+        return t("history.type_reflect");
+      case "Stage":
+        return t("history.type_stage");
+      case "Unstage":
+        return t("history.type_unstage");
+      case "Reset":
+        return t("history.type_reset");
+      case "ClearWorkspace":
+        return t("history.type_clear");
+      default:
+        return opType;
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    if (status === "Success") {
+      return (
+        <span className="history-status-badge success" title="Success">
+          <CheckCircle2 size={12} />
+          <span>{t("history.status_success")}</span>
+        </span>
+      );
+    }
+    if (status === "Undone") {
+      return (
+        <span className="history-status-badge undone" title="Undone">
+          <RotateCcw size={12} />
+          <span>{t("history.status_undone")}</span>
+        </span>
+      );
+    }
+    return (
+      <span className="history-status-badge failed" title={status}>
+        <AlertCircle size={12} />
+        <span>{status}</span>
+      </span>
+    );
   };
 
   return (
@@ -248,6 +320,9 @@ export function BottomTabPanel({
           >
             <History size={13} />
             <span>{t("panels.tab_history")}</span>
+            {historyItems !== undefined && historyItems.length > 0 && (
+              <span className="tab-badge-accent">{historyItems.length}</span>
+            )}
           </button>
 
           <button
@@ -412,7 +487,79 @@ export function BottomTabPanel({
 
         {activeTab === "history" && (
           <div className="tab-history-content">
-            {history.length > 0 ? (
+            <div className="history-header-bar">
+              <div className="history-header-left">
+                <Database size={14} className="text-cyan-400" />
+                <span className="history-title">{t("history.title")}</span>
+                <span className="history-stat-tag">
+                  {t("history.record_count", {
+                    count: historyItems !== undefined ? historyItems.length : history.length,
+                  })}
+                </span>
+              </div>
+              {onClearHistory && (
+                <div className="history-header-right">
+                  <button
+                    type="button"
+                    className="history-clear-btn"
+                    onClick={onClearHistory}
+                    title={t("history.clear_btn")}
+                  >
+                    <Trash2 size={12} />
+                    <span>{t("history.clear_btn")}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {historyItems !== undefined ? (
+              historyItems.length > 0 ? (
+                <div className="history-table-scroll">
+                  <table className="history-table">
+                    <thead>
+                      <tr>
+                        <th className="th-time">{t("history.col_time")}</th>
+                        <th className="th-type">{t("history.col_type")}</th>
+                        <th className="th-target">{t("history.col_target")}</th>
+                        <th className="th-status">{t("history.col_status")}</th>
+                        <th className="th-details">{t("history.col_details")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historyItems.map((item) => {
+                        const timeStr = new Date(Number(item.timestamp_ms)).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        });
+                        return (
+                          <tr key={item.id.toString()} className="history-row">
+                            <td className="history-col-time font-mono">{timeStr}</td>
+                            <td className="history-col-type">
+                              <span className={getOpBadgeClass(item.operation_type)}>
+                                {getOpLabel(item.operation_type)}
+                              </span>
+                            </td>
+                            <td className="history-col-target">
+                              <span className="history-target-name font-mono">{item.display_name}</span>
+                              {item.original_path && (
+                                <span className="history-target-sub font-mono">{item.original_path}</span>
+                              )}
+                            </td>
+                            <td className="history-col-status">{getStatusBadge(item.status)}</td>
+                            <td className="history-col-details font-mono text-muted">
+                              {item.details || "-"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="tab-empty-text">{t("history.empty")}</p>
+              )
+            ) : history.length > 0 ? (
               <ul className="history-list">
                 {history.map((entry, idx) => (
                   <li key={idx} className="history-entry">
@@ -422,7 +569,7 @@ export function BottomTabPanel({
                 ))}
               </ul>
             ) : (
-              <p className="tab-empty-text">No operations performed in this session.</p>
+              <p className="tab-empty-text">{t("history.empty")}</p>
             )}
           </div>
         )}

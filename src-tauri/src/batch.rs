@@ -665,6 +665,20 @@ pub fn execute_batch_rename_internal(
             operations: affected_items.clone(),
             is_undone: false,
         });
+
+        // Record persistent operation history in SQLite WAL database
+        let hist_mgr = crate::history::get_history_manager();
+        let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
+            operation_id: plan.batch_id.clone(),
+            operation_type: "BulkRename".to_string(),
+            display_name: format!("{} files renamed", count),
+            original_path: None,
+            staged_path: None,
+            inode: None,
+            status: "Success".to_string(),
+            can_undo: true,
+            details: Some(format!("Batch ID: {}", plan.batch_id)),
+        });
     }
 
     Ok(BatchExecutionResultDto {
@@ -719,13 +733,14 @@ impl BatchJournalManager {
             .rposition(|entry| !entry.is_undone)
             .ok_or_else(|| "No bulk rename operation available to undo".to_string())?;
 
-        let entry = &hist[last_idx];
+        let target_batch_id = hist[last_idx].batch_id.clone();
+        let operations_to_reverse = hist[last_idx].operations.clone();
 
         // Construct reverse BatchPlanDto
-        let undo_batch_id = format!("undo_{}", entry.batch_id);
-        let mut reverse_ops = Vec::with_capacity(entry.operations.len());
+        let undo_batch_id = format!("undo_{}", target_batch_id);
+        let mut reverse_ops = Vec::with_capacity(operations_to_reverse.len());
 
-        for op in &entry.operations {
+        for op in &operations_to_reverse {
             reverse_ops.push(PlannedOperationDto {
                 item_id: op.item_id.clone(),
                 original_path: op.target_path.clone(), // Current path on disk is target_path
@@ -739,10 +754,10 @@ impl BatchJournalManager {
         }
 
         let reverse_plan = BatchPlanDto {
-            batch_id: undo_batch_id,
+            batch_id: undo_batch_id.clone(),
             operations: reverse_ops,
-            total_count: entry.operations.len(),
-            changed_count: entry.operations.len(),
+            total_count: operations_to_reverse.len(),
+            changed_count: operations_to_reverse.len(),
             conflict_count: 0,
             error_count: 0,
             is_executable: true,
@@ -751,8 +766,22 @@ impl BatchJournalManager {
         // Execute reverse rename without re-recording it into the journal
         let result = execute_batch_rename_internal(reverse_plan, false)?;
 
-        // Mark entry as undone
+        // Mark entry as undone in memory and SQLite persistent history
         hist[last_idx].is_undone = true;
+
+        let hist_mgr = crate::history::get_history_manager();
+        let _ = hist_mgr.mark_as_undone(&target_batch_id);
+        let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
+            operation_id: undo_batch_id,
+            operation_type: "UndoBulkRename".to_string(),
+            display_name: format!("Restored {} files", result.succeeded_count),
+            original_path: None,
+            staged_path: None,
+            inode: None,
+            status: "Success".to_string(),
+            can_undo: false,
+            details: Some(format!("Undid batch: {}", target_batch_id)),
+        });
 
         Ok(result)
     }

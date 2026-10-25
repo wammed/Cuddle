@@ -208,7 +208,21 @@ impl WorkspaceManager {
 
         // 6. Record in active staging registry
         let mut map = self.staged_items.lock().unwrap();
-        map.insert(stage_id, staged_dto.clone());
+        map.insert(stage_id.clone(), staged_dto.clone());
+
+        // 7. Record operation in SQLite persistent history
+        let hist_mgr = crate::history::get_history_manager();
+        let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
+            operation_id: stage_id,
+            operation_type: "Stage".to_string(),
+            display_name: item.display_name.clone(),
+            original_path: Some(canonical_src.to_string_lossy().to_string()),
+            staged_path: Some(staged_dto.staged_path.clone()),
+            inode: Some(staged_dto.original_snapshot.inode as i64),
+            status: "Success".to_string(),
+            can_undo: true,
+            details: Some(format!("Cloned via {:?}", staged_dto.clone_method)),
+        });
 
         Ok(staged_dto)
     }
@@ -216,35 +230,43 @@ impl WorkspaceManager {
     /// Unstages a file: securely deletes the staged copy (ORIGINAL IS NEVER TOUCHED).
     pub fn unstage_file(&self, stage_id: &str) -> Result<(), WorkspaceError> {
         let mut map = self.staged_items.lock().unwrap();
-        if let Some(staged) = map.remove(stage_id) {
+        let target_staged = if let Some(staged) = map.remove(stage_id) {
+            Some(staged)
+        } else {
+            let found_key = map.iter().find_map(|(k, v)| {
+                if v.original_item_id == stage_id
+                    || v.raw_base64 == stage_id
+                    || v.staged_raw_base64 == stage_id
+                    || v.display_name == stage_id
+                {
+                    Some(k.clone())
+                } else {
+                    None
+                }
+            });
+            found_key.and_then(|k| map.remove(&k))
+        };
+
+        if let Some(staged) = target_staged {
             let path = decode_path_from_base64(&staged.staged_raw_base64)?;
             if path.exists() {
                 let _ = fs::remove_file(path);
             }
+
+            let hist_mgr = crate::history::get_history_manager();
+            let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
+                operation_id: uuid::Uuid::new_v4().to_string(),
+                operation_type: "Unstage".to_string(),
+                display_name: staged.display_name.clone(),
+                original_path: Some(staged.original_snapshot.canonical_path.clone()),
+                staged_path: Some(staged.staged_path.clone()),
+                inode: Some(staged.original_snapshot.inode as i64),
+                status: "Success".to_string(),
+                can_undo: false,
+                details: None,
+            });
+
             return Ok(());
-        }
-
-        // Defensive fallback: lookup by original_item_id, raw_base64, or display_name
-        let found_key = map.iter().find_map(|(k, v)| {
-            if v.original_item_id == stage_id
-                || v.raw_base64 == stage_id
-                || v.staged_raw_base64 == stage_id
-                || v.display_name == stage_id
-            {
-                Some(k.clone())
-            } else {
-                None
-            }
-        });
-
-        if let Some(key) = found_key {
-            if let Some(staged) = map.remove(&key) {
-                let path = decode_path_from_base64(&staged.staged_raw_base64)?;
-                if path.exists() {
-                    let _ = fs::remove_file(path);
-                }
-                return Ok(());
-            }
         }
 
         Err(WorkspaceError::NotFound(stage_id.to_string()))
@@ -319,6 +341,19 @@ impl WorkspaceManager {
         staged.clone_method = method;
         staged.status = StageStatus::Staged;
 
+        let hist_mgr = crate::history::get_history_manager();
+        let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
+            operation_id: uuid::Uuid::new_v4().to_string(),
+            operation_type: "Reset".to_string(),
+            display_name: staged.display_name.clone(),
+            original_path: Some(staged.original_snapshot.canonical_path.clone()),
+            staged_path: Some(staged.staged_path.clone()),
+            inode: Some(staged.original_snapshot.inode as i64),
+            status: "Success".to_string(),
+            can_undo: false,
+            details: Some("Reset staged copy back to pristine original".to_string()),
+        });
+
         Ok(staged.clone())
     }
 
@@ -386,6 +421,19 @@ impl WorkspaceManager {
         staged.original_snapshot = new_snapshot;
         staged.status = StageStatus::Reflected;
 
+        let hist_mgr = crate::history::get_history_manager();
+        let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
+            operation_id: uuid::Uuid::new_v4().to_string(),
+            operation_type: "Reflect".to_string(),
+            display_name: staged.display_name.clone(),
+            original_path: Some(staged.original_snapshot.canonical_path.clone()),
+            staged_path: Some(staged.staged_path.clone()),
+            inode: Some(updated_item.inode as i64),
+            status: "Success".to_string(),
+            can_undo: false,
+            details: Some(format!("Reflected atomic replace to {}", orig_path.display())),
+        });
+
         Ok(staged.clone())
     }
 
@@ -405,6 +453,20 @@ impl WorkspaceManager {
                 }
             }
         }
+
+        let hist_mgr = crate::history::get_history_manager();
+        let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
+            operation_id: uuid::Uuid::new_v4().to_string(),
+            operation_type: "ClearWorkspace".to_string(),
+            display_name: "Cleared workspace".to_string(),
+            original_path: None,
+            staged_path: None,
+            inode: None,
+            status: "Success".to_string(),
+            can_undo: false,
+            details: None,
+        });
+
         Ok(())
     }
 }

@@ -11,6 +11,7 @@ import type { StagedItemDto } from "./types/StagedItemDto";
 import type { SystemPathsDto } from "./types/SystemPathsDto";
 import type { ResolvedPathDto } from "./types/ResolvedPathDto";
 import type { BatchExecutionResultDto } from "./types/BatchExecutionResultDto";
+import type { OperationHistoryDto } from "./types/OperationHistoryDto";
 import { Header } from "./components/Header";
 import { SearchPanel } from "./components/SearchPanel";
 import { FolderTreePanel } from "./components/FolderTreePanel";
@@ -52,6 +53,7 @@ export function App() {
 
   const [logs, setLogs] = useState<string[]>([]);
   const [history, setHistory] = useState<string[]>([]);
+  const [historyItems, setHistoryItems] = useState<OperationHistoryDto[]>([]);
 
   const [layoutKey, setLayoutKey] = useState(0);
 
@@ -88,6 +90,26 @@ export function App() {
       setCanUndo(false);
     }
   }, []);
+
+  const loadHistory = useCallback(async () => {
+    try {
+      const items = await invoke<OperationHistoryDto[]>("get_operation_history", { limit: 50 });
+      setHistoryItems(items);
+    } catch (err) {
+      console.error("Failed to load operation history:", err);
+    }
+  }, []);
+
+  const handleClearHistory = useCallback(async () => {
+    try {
+      await invoke("clear_operation_history");
+      await loadHistory();
+      showToast(t("history.clear_success"));
+      addLog("Cleared persistent SQLite operation history");
+    } catch (err) {
+      addLog(`Failed to clear history: ${String(err)}`);
+    }
+  }, [loadHistory, showToast, addLog, t]);
 
   // Scans a directory via Tauri IPC
   const scanDirectory = useCallback(
@@ -142,6 +164,7 @@ export function App() {
       .catch((err) => console.error(err));
 
     checkCanUndo();
+    loadHistory();
 
     // Get system paths and start scanning from Home
     invoke<SystemPathsDto>("get_system_paths")
@@ -152,7 +175,7 @@ export function App() {
       .catch(() => {
         scanDirectory(".");
       });
-  }, [scanDirectory, addLog, checkCanUndo]);
+  }, [scanDirectory, addLog, checkCanUndo, loadHistory]);
 
   const handleStageFile = async (item: FileItem) => {
     try {
@@ -178,6 +201,7 @@ export function App() {
       setSelectedItem(stagedAsFileItem);
       addHistory(`Staged "${item.display_name}" via ${staged.clone_method}`);
       addLog(`Staged file "${item.display_name}" (${staged.clone_method}) -> ${staged.staged_path}`);
+      await loadHistory();
     } catch (err) {
       addLog(`Failed to stage "${item.display_name}": ${String(err)}`);
     }
@@ -220,6 +244,7 @@ export function App() {
       const displayName = target?.display_name ?? stageId;
       addHistory(`Unstaged "${displayName}"`);
       addLog(`Unstaged file "${displayName}" from staging area`);
+      await loadHistory();
     } catch (err) {
       addLog(`Failed to unstage item ${stageId}: ${String(err)}`);
     }
@@ -233,6 +258,7 @@ export function App() {
       addHistory("Cleared all items from workspace-temp/");
       addLog("Cleared workspace-temp/ staging area");
       await checkCanUndo();
+      await loadHistory();
     } catch (err) {
       addLog(`Failed to clear workspace: ${String(err)}`);
     }
@@ -244,6 +270,7 @@ export function App() {
       setStagedItems((prev) => prev.map((s) => (s.stage_id === stageId ? resetItem : s)));
       addHistory(`Reset "${resetItem.display_name}" in workspace-temp to original state`);
       addLog(`Reset staged file "${resetItem.display_name}" back to original`);
+      await loadHistory();
     } catch (err) {
       addLog(`Failed to reset staged item ${stageId}: ${String(err)}`);
     }
@@ -257,6 +284,7 @@ export function App() {
       addLog(`Reflected staged item "${updated.display_name}" to original: ${updated.original_snapshot.canonical_path}`);
       // Refresh browser items to update size/mtime
       await scanDirectory(currentPath);
+      await loadHistory();
     } catch (err) {
       addLog(`Failed to reflect staged item ${stageId}: ${String(err)}`);
       throw err;
@@ -288,11 +316,12 @@ export function App() {
         addLog(`Bulk rename executed successfully: batch ${result.batch_id} (${result.succeeded_count} items renamed)`);
         showToast(successMsg);
         await checkCanUndo();
+        await loadHistory();
       } catch (err) {
         addLog(`Failed to refresh staged items after bulk rename: ${String(err)}`);
       }
     },
-    [addHistory, addLog, checkCanUndo, showToast, t]
+    [addHistory, addLog, checkCanUndo, loadHistory, showToast, t]
   );
 
   const handleUndoBatch = async () => {
@@ -326,6 +355,7 @@ export function App() {
         showToast(`❌ ${errMsg}`);
       }
       await checkCanUndo();
+      await loadHistory();
     } catch (err) {
       addLog(`Failed to undo bulk rename: ${String(err)}`);
       await checkCanUndo();
@@ -508,6 +538,8 @@ export function App() {
                       appConfig={appConfig}
                       logs={logs}
                       history={history}
+                      historyItems={historyItems}
+                      onClearHistory={handleClearHistory}
                       stagedItems={stagedItems}
                       onResetStagedItem={handleResetStagedItem}
                       onReflectStagedItem={handleReflectStagedItem}
@@ -555,10 +587,12 @@ export function App() {
         <div className="statusbar-left">
           <span className="status-label">Cuddle</span>
           <span className="status-sep">|</span>
-          <span>Phase 5.2 Two-Phase Rename &amp; Atomic Rollback Active</span>
+          <span>Phase 6.1 SQLite WAL Operation History &amp; Timeline Active</span>
         </div>
         <div className="statusbar-right">
           <span>Staged: {stagedFiles.length} files</span>
+          <span className="status-sep">|</span>
+          <span>History: {historyItems.length} records</span>
           <span className="status-sep">|</span>
           <span>Nerd Font: Pre-required</span>
         </div>

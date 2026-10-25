@@ -246,5 +246,29 @@
     "executing": "一括リネーム実行中 (一時待避 -> 確定)...",
     "execute_success": "一括リネーム完了: {{count}} 件のファイルを安全に変更しました",
     "execute_failed": "一括リネーム失敗: 全体ロールバックが実行され、ファイルは元の状態へ復元されました"
+  },
+  "history": {
+    "title": "操作履歴 (SQLite WAL)",
+    "subtitle": "永続化された直近50件のファイル操作タイムライン",
+    "clear_btn": "履歴を消去",
+    "clear_confirm": "操作履歴をすべて消去しますか？（作業領域内のファイル自体は削除されません）",
+    "clear_success": "操作履歴を消去しました",
+    "col_time": "日時",
+    "col_type": "操作種別",
+    "col_target": "対象アイテム",
+    "col_status": "ステータス",
+    "col_details": "詳細情報",
+    "type_stage": "作業領域へ",
+    "type_unstage": "作業解除",
+    "type_bulk_rename": "一括リネーム",
+    "type_undo_rename": "リネーム取消",
+    "type_reset": "原本復元",
+    "type_reflect": "原本反映",
+    "type_clear": "全解除",
+    "status_success": "成功",
+    "status_undone": "取消済",
+    "status_failed": "失敗",
+    "empty": "操作履歴はありません",
+    "record_count": "{{count}} 件の記録 (上限 50 件)"
   }
 }

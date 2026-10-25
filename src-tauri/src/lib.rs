@@ -2,6 +2,7 @@ pub mod batch;
 pub mod config;
 pub mod diff;
 pub mod extractor;
+pub mod history;
 pub mod models;
 pub mod policy;
 pub mod sandbox;
@@ -255,6 +256,18 @@ fn undo_last_bulk_rename() -> Result<batch::BatchExecutionResultDto, String> {
     batch::undo_last_batch()
 }
 
+#[tauri::command]
+fn get_operation_history(limit: Option<usize>) -> Result<Vec<history::OperationHistoryDto>, String> {
+    let mgr = history::get_history_manager();
+    mgr.list_history(limit.unwrap_or(50))
+}
+
+#[tauri::command]
+fn clear_operation_history() -> Result<(), String> {
+    let mgr = history::get_history_manager();
+    mgr.clear_history()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -285,7 +298,9 @@ pub fn run() {
             generate_bulk_rename_plan,
             execute_bulk_rename,
             can_undo_bulk_rename,
-            undo_last_bulk_rename
+            undo_last_bulk_rename,
+            get_operation_history,
+            clear_operation_history
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

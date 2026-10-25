@@ -246,5 +246,29 @@
     "executing": "Executing Bulk Rename...",
     "execute_success": "Bulk rename completed: {{count}} files safely renamed",
     "execute_failed": "Bulk rename failed: Entire batch was safely rolled back to original state"
+  },
+  "history": {
+    "title": "Operation History (SQLite WAL)",
+    "subtitle": "Persistent timeline of up to 50 recent file operations",
+    "clear_btn": "Clear History",
+    "clear_confirm": "Clear all operation history? (Files in workspace will not be deleted)",
+    "clear_success": "Operation history cleared",
+    "col_time": "Time",
+    "col_type": "Operation",
+    "col_target": "Target Item",
+    "col_status": "Status",
+    "col_details": "Details",
+    "type_stage": "Stage",
+    "type_unstage": "Unstage",
+    "type_bulk_rename": "Bulk Rename",
+    "type_undo_rename": "Undo Rename",
+    "type_reset": "Reset to Original",
+    "type_reflect": "Reflect to Original",
+    "type_clear": "Clear Workspace",
+    "status_success": "Success",
+    "status_undone": "Undone",
+    "status_failed": "Failed",
+    "empty": "No operation history recorded",
+    "record_count": "{{count}} records (capped at 50)"
   }
 }

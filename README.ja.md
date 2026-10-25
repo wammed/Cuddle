@@ -1,95 +1,99 @@
 <p align="center">
-  <img src="images/Cuddle-Banner.jpeg" alt="Cuddle バナー" width="100%" />
+  <img src="images/Cuddle-Banner.jpeg" alt="Cuddle Banner" width="100%" />
 </p>
 
 <p align="center">
-  <img src="images/Cuddle-Icon.svg" alt="Cuddle アイコン" width="96" height="96" />
-</p>
-
-# Cuddle
-
-<p align="center">
-  <strong>File Workbench</strong><br />
-  <em>原本を大切に抱きしめ、絶対に傷つけない高信頼 Linux ファイルワークベンチ</em>
+  <a href="README.md">English</a> | <strong>日本語</strong>
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> | <strong>日本語</strong> | <a href="IP_COMPLIANCE.ja.md">知的財産コンプライアンス記録</a>
+  <img src="https://img.shields.io/badge/プラットフォーム-Linux%20(Wayland%20%2F%20X11)-teal.svg" alt="Platform" />
+  <img src="https://img.shields.io/badge/セキュリティ-Linux%20Landlock%20LSM-emerald.svg" alt="Security" />
+  <img src="https://img.shields.io/badge/基盤-Tauri%202%20%2B%20Rust-orange.svg" alt="Engine" />
+  <img src="https://img.shields.io/badge/ライセンス-MIT-blue.svg" alt="License" />
 </p>
 
 ---
 
-## 1. プロジェクト概要
+# Cuddle - 原本保護型ファイル作業環境 (File Workbench)
 
-**Cuddle** は、Linux デスクトップ（CachyOS、COSMIC DE、Wayland、HiDPI 環境）向けに設計された、原本保護型ファイル管理・全文検索・一括バッチ処理ワークベンチです。
+**Cuddle** は、Linux デスクトップ環境（Wayland, COSMIC DE, GNOME, KDE）向けに設計された、高信頼原本保護型ファイル作業環境・高速検索アプリケーションです。
 
-**「原本を抱きしめる（Cuddle）」** というコア思想のもと、外部ツール実行や一括リネームなどのすべての作業を完全に隔離された作業コピー（`workspace-temp/`）内で行い、ユーザーが明示的に確定するまで原本を物理的に一切変更しない安全機構を備えています。
-
----
-
-## 2. コア設計思想・基本方針
-
-1. **原本保護の絶対性：**  
-   原本ファイルは常に読み取り専用（Read-Only）として扱います。すべての編集・フォーマット変換・バッチ処理は独立した作業コピーに対してのみ実行されます。
-2. **確定操作と原本反映の完全分離：**  
-   パイプライン実行や一括操作の中で原本を直接インプレース更新することは絶対にありません。成果物確認後、ユーザーの明示的な確定操作によってのみ原本へ反映されます。
-3. **カーネルレベル隔離（Linux Landlock LSM）：**  
-   外部プロセス（ImageMagick、ffmpeg、cwebp等）の起動直前に Linux Landlock ルールセットを適用し、原本や `$HOME` への書き込みをカーネルレベルで物理的に遮断します。
-4. **決定論的ロールバック（RollbackAll）：**  
-   一括操作中に 1 件でもエラーが発生した場合、全体を失敗とみなし、開始前の完全な初期状態へと確実に復元します。
-5. **二重キーによる非 UTF-8 ファイル名耐性：**  
-   Rust 内部では `[u8]` の生バイト列を一貫保持し、IPC 境界では Base64 キー（`raw_base64`）と安全な表示名（`display_name`）を併載。UUID で追跡することで文字化けによるクラッシュを完全排除します。
-6. **完全動的バイリンガル対応（日英両言語）：**  
-   アプリ内のすべてのメニュー、警告、メッセージ、ダイアログは日本語と英語の完全バイリンガル仕様であり、再起動不要で即時切り替えが可能です。
+従来のファイルマネージャーやユーティリティは、原本ファイルを直接インプレースで編集・変更します。万一、一括リネームで同名衝突が発生したり、外部スクリプトの引数が狂ったり、予期せぬエラーが起きた場合、原本データは破損・喪失してしまいます。**Cuddle は、原本保護の絶対原則によりこのリスクを根本から解決します。**
 
 ---
 
-## 3. UI/UX コンセプト & デザインシステム
+## 主要な基本方針 & コア思想
 
-### 「シンプルだけど超リッチな見た目」（Dark Velvet & Radiant Protection）
-- **無駄を削ぎ落とした洗練（シンプル）：** 開発者やパワーユーザーが作業に没頭できるよう、情報の優先度を整理したクリーンで高密度なレイアウト。
-- **奥行きと質感（超リッチ）：** 半透明のグラスモーフィズムサーフェス（`backdrop-filter: blur(16px)`）、極細のヘアラインボーダー（`1px rgba(255, 255, 255, 0.08)`）、呼吸するように発光する安全インジケーター（ソフトグロー）。
-- **デスクトップとの調和：** モダンな Linux デスクトップ環境と調和するダークチャコール基調に、保護（シアン）、安全（エメラルド）、警告（アンバー）の発光アクセントを配置。
-
-### タイポグラフィ & フォント選定（Nerd Font 前提条件仕様）
-- **フォントバイナリの非同梱（Zero Font Bundling）：** Cuddle はアプリパッケージ内に大容量のフォントバイナリ（Nerd Font等）を**一切同梱しません**。軽量・安全でライセンスに配慮した配布を実現します。
-- **前提条件としてのシステムフォントスタック（Pre-required）：**
-  - **UI（サンセリフ）：** `Inter`、システムフォント、高品質和文フォント（`Noto Sans CJK JP` / `Noto Sans JP` 等）。
-  - **コード・パス（モノスペース）：** `JetBrains Mono`、`Fira Code`、`Noto Sans Mono CJK JP`。
-  - **アイコン・グリフ（Nerd Font フォールバック）：** `Symbols Nerd Font`、`JetBrainsMono Nerd Font`。
-- **堅牢なフォールバック設計：** システムに Nerd Font がインストールされていない環境でも、CSS フォールバックスタックと内蔵の `lucide-react` SVG ベクターアイコンにより、文字化け（豆腐化）や表示崩れを一切発生させず、100% 美しい UI 描画を保証します。
-
----
-
-## 4. 動作前提条件（Prerequisites）
-
-- **OS：** Linux カーネル 5.13 以上（Landlock LSM ABI V1〜V5 対応。実機検証: CachyOS / COSMIC DE）
-- **Node.js：** v20 以上 / pnpm v9 以上
-- **Rust：** 1.80 以上（Edition 2021）
-- **推奨フォント（任意・前提条件）：**  
-  ファイルグリフやステータスアイコンを Nerd Font で楽しむ場合、システムのパッケージマネージャー等から `ttf-nerd-fonts-symbols` や各種 Nerd Font を事前にインストールしておくことを推奨します（例: Arch/CachyOS の場合 `sudo pacman -S ttf-nerd-fonts-symbols`）。
+1. **原本保護の絶対性（Original Protection）：**  
+   原本ファイルを**決して直接触りません**。すべての変換、リネーム、属性変更、外部コマンド実行は、隔離された一時作業領域（`workspace-temp/`）内の作業コピーに対してのみ安全に適用されます。
+2. **作業確定と原本反映の完全分離（Reflection Isolation）：**  
+   作業成果物は、ユーザーが明示的に「原本へ変更を反映」を選択した場合にのみ、2段階確認と TOCTOU（Time-of-Check to Time-of-Use）競合検知を経て安全に原本へ反映されます。
+3. **Linux Landlock LSM によるカーネルレベル隔離（Landlock Sandbox）：**  
+   外部ツール（ImageMagick, FFmpeg, cwebp, pdftotext 等）やユーザー定義パイプラインの実行時、Rust 起動直前に Linux Landlock ルールセットを適用。作業領域外および `$HOME` への書き込みを Linux カーネルレベルで物理的に遮断します。
+4. **Reflink (CoW) による瞬時ステージング：**  
+   原本と同一ファイルシステムボリューム上の一時領域を優先利用し、Linux `ioctl(FICLONE)` によるコピーオンライトを活用して、容量消費ゼロ・ミリ秒単位で作業コピーを生成します。
+5. **決定論的アトミックロールバック（RollbackAll）：**  
+   一括リネームや属性・日時変更は厳格な Two-Phase 方式で処理されます。1件でもエラーが発生した場合は全体を中断し、変更前状態へ自動的に完全ロールバックします。
+6. **SQLite WAL 永続操作履歴 & アンドゥ：**  
+   ステージング、解除、リネーム、属性変更、パイプライン等の全操作は ACID SQLite WAL ジャーナルに自動永続化され、ワンクリックでの一括アンドゥ（取り消し）に対応しています。
+7. **フォント同梱ゼロ（Zero Font Bundling） & サイバーダーク美学：**  
+   巨大なフォントアセットを同梱せず、OS の洗練されたフォントスタック（Inter, Noto Sans CJK JP, JetBrains Mono, Symbols Nerd Font）を動的フォールバック参照。白背景を完全根絶した 30 色の Midnight Teal / Cyber Dark カラーテーマを搭載しています。
+8. **100% 日英完全バイリンガル同期：**  
+   日本語と英語の表示言語を、アプリ再起動不要で即時に動的切り替え可能です。
 
 ---
 
-## 5. 開発 & テスト手順
+## 機能マトリクス
+
+| 機能 | 詳細説明 |
+| :--- | :--- |
+| **6領域アダプティブレイアウト** | 検索結果、ディレクトリツリー、ファイルブラウザ、作業領域、詳細インスペクター、下部タブ（差分・履歴・Git・ログ）を美しく統合。 |
+| **仮想スクロール描画** | `@tanstack/react-virtual` により、最大 10,000 件のファイル一覧を 60fps で滑らかに描画。3 段階の情報密度（コンパクト／標準／ゆったり）に対応。 |
+| **一括リネーム & Unicode 正規化** | 正規表現置換、Unicode 正規化（NFC/NFD/NFKC/NFKD）、全角半角変換、連番付与、日時スタンプ、およびリアルタイム Dry-Run 衝突検証テーブル。 |
+| **vidir 型エディタ連携** | 対象ファイル名をタブ区切りテキストとしてアプリ内エディタまたは外部エディタ（`$EDITOR`, VS Code, nano 等）で一括編集。行削除はファイル削除ではなく安全に「変更なし」として維持。 |
+| **30種の定義済みパイプライン** | 画像軽量化（WebP, OGP, アイコン, Retina）、動画・音声マスタリング、PDF 二値化・統合、ログ機密マスキング、クリーンソース配布パッケージ生成など。 |
+| **ユーザー作成パイプライン** | 設計書 8.3 の必須安全フローに準拠。リスク説明、事前 Dry-Run 検証、および Landlock LSM 隔離実行による 2 段階確認を強制。 |
+| **ファイル属性の一括変更 (chmod)** | 8進数（644, 755等）およびシンボリック（`u+x`, `go-w`等）指定。3x3 権限マトリクスと特殊ビット（setuid/setgid/sticky）警告を完備。 |
+| **タイムスタンプの一括変更 (touch)** | 現在時刻更新（touch）、絶対日時指定、相対時間シフト（+/- 秒・時間・日）、および写真 EXIF 撮影日時の mtime 自動同期。 |
+| **ワークスペース tar エクスポート** | 作業中のファイルを原本を汚染せず `.tar` または `.tar.gz` 形式でアーカイブ出力（変更のみ／全ファイル／選択中のみ）。 |
+| **日本語形態素 全文検索** | Tantivy 0.26 ＋ Lindera 形態素解析（`ipadic`）による高精度な日本語本文検索とリアルタイム抜粋スニペット表示。 |
+| **plocate 高速インデックス検索** | ミリ秒単位のファイル名検索。plocate 未利用時は `walkdir` 直接走査へ安全に自動フォールバック。 |
+| **リッチプレビュー** | 10種以上の主要言語のシンタックスハイライト、Markdown レンダリング、サンドボックス iframe による HTML プレビュー。 |
+| **Git ステータスダッシュボード** | リポジトリ稼働状況、ブランチ、Upstream 同期情報（Ahead / Behind）、最新コミット、および変更ファイルの内訳を表示。 |
+
+---
+
+## クイックスタート & ビルド方法
+
+ソースコードから Cuddle をビルド・実行する手順：
 
 ```bash
+# リポジトリのクローン
+git clone https://github.com/wammed/Cuddle.git
+cd Cuddle
+
 # フロントエンド依存関係のインストール
 pnpm install
 
-# フロントエンドテストの実行 (Vitest)
-pnpm test
-
-# Rust 単体テスト & Landlock 遮断テストの実行
-cd src-tauri && cargo test && cd ..
-
-# 開発用デスクトップアプリの起動
-pnpm tauri dev
+# 開発モードでの起動（Tauri 2 デスクトップシェルが起動します）
+pnpm run tauri dev
 ```
+
+詳細な Linux 前提環境、システムパッケージ、推奨外部ツール、および本番バイナリのビルド手順については、**[BUILD.ja.md](BUILD.ja.md)**（または英語版 **[BUILD.md](BUILD.md)**）を参照してください。
 
 ---
 
-## 6. ライセンス & コンプライアンス
+## 関連ドキュメント
 
-- **コード：** MIT License に基づき配布されます。詳細は [LICENSE](LICENSE) を参照してください。
-- **アイコン & ブランド意匠：** AI 支援生成の来歴および知的財産デューデリジェンスの記録は [IP_COMPLIANCE.ja.md](IP_COMPLIANCE.ja.md) を参照してください。
+* **[BUILD.ja.md](BUILD.ja.md)** / **[BUILD.md](BUILD.md)**: ビルド・環境構築・依存パッケージ導入ガイド
+* **[FileWorkbench-Design-ver0.9.ja.md](FileWorkbench-Design-ver0.9.ja.md)** / **[FileWorkbench-Design-ver0.9.en.md](FileWorkbench-Design-ver0.9.en.md)**: 統合基本設計書（残課題解決・バイリンガル仕様確定版）
+* **[FileWorkbench-Handover.ja.md](FileWorkbench-Handover.ja.md)** / **[FileWorkbench-Handover.en.md](FileWorkbench-Handover.en.md)**: 開発引き継ぎ書・実装進捗詳細記録
+* **[IP_COMPLIANCE.ja.md](IP_COMPLIANCE.ja.md)** / **[IP_COMPLIANCE.md](IP_COMPLIANCE.md)**: ブランドアイコン・知的財産コンプライアンス記録
+
+---
+
+## ライセンス
+
+本ソフトウェアは [MIT License](LICENSE) の下で公開されています。  
+Copyright (c) 2026 wammed and Cuddle Contributors.

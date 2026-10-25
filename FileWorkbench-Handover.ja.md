@@ -5,7 +5,7 @@
 </p>
 
 **文書作成日：** 2026-10-25  
-**ステータス：** Phase 8（UI/UX 最終調整 & カラーテーマ・下部固定アクションバー）完了、Phase 9（パッケージング & 最終検証）着手準備完了  
+**ステータス：** 全フェーズ（Phase 1〜9）実装・検証完了、ソース公開配布準備完了（MIT License / README / BUILD / CI Actions 整備完了）  
 **対象：** 開発・設計・テスト担当者、次期作業セッション担当  
 
 ---
@@ -32,6 +32,9 @@
 
 | ドキュメント (日本語版) | ドキュメント (英語版) | 説明 |
 | :--- | :--- | :--- |
+| [`README.ja.md`](file:///home/susie/git/wammed/Cuddle/README.ja.md) | [`README.md`](file:///home/susie/git/wammed/Cuddle/README.md) | プロジェクト概要・主要機能・クイックスタート案内 |
+| [`BUILD.ja.md`](file:///home/susie/git/wammed/Cuddle/BUILD.ja.md) | [`BUILD.md`](file:///home/susie/git/wammed/Cuddle/BUILD.md) | ビルド環境構築・依存関係・テスト・本番ビルド手順書 |
+| [`LICENSE`](file:///home/susie/git/wammed/Cuddle/LICENSE) | [`LICENSE`](file:///home/susie/git/wammed/Cuddle/LICENSE) | MIT License オープンソースライセンス条項 |
 | [`FileWorkbench-Design-ver0.9.ja.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Design-ver0.9.ja.md) | [`FileWorkbench-Design-ver0.9.en.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Design-ver0.9.en.md) | 統合基本設計書（残課題解決・バイリンガル仕様確定版） |
 | [`FileWorkbench-Handover.ja.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Handover.ja.md) | [`FileWorkbench-Handover.en.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Handover.en.md) | 開発引き継ぎ書（本ドキュメント） |
 | [`roadmap.ja.md`](file:///home/susie/.gemini/antigravity-ide/brain/45a8eaa8-509d-4ed8-9e6c-255c45bac425/roadmap.ja.md) | [`roadmap.en.md`](file:///home/susie/.gemini/antigravity-ide/brain/45a8eaa8-509d-4ed8-9e6c-255c45bac425/roadmap.en.md) | 詳細実装ロードマップ（全9フェーズ・28サブフェーズ） |
@@ -542,6 +545,17 @@
   * `timestamp` および `tar_export` セクションの全キー（タイトル、タブ、説明、プレースホルダー、ステータス、ボタン等）を日英完全同期。
 * **テスト検証：**
   * Vitest 65 件全件 100% パス（`TimestampModal.test.tsx`, `TarExportModal.test.tsx` 追加）、Cargo test 167 件全件 100% パス、TypeScript 型チェック / Vite ビルド完全成功。
+
+### 9.5 実装内容（Phase 9.4: ソース公開配布体制の整備 & CI 自動検証）：完了
+* **ライセンス選定 & LICENSE 作成：**
+  * ユーザー意思決定ゲートに基づき、最も汎用性が高く標準的な **MIT License** を採用（`LICENSE` 作成完了）。
+* **バイリンガル README ドキュメント（`README.md`, `README.ja.md`）：**
+  * プロジェクト概要、公式バナー（`images/Cuddle-Banner.jpeg`）、8大コア方針、全機能マトリクス、クイックスタート、各ドキュメントへのリンクを日英完全同期で整備。
+* **ビルド & 開発環境構築ガイド（`BUILD.md`, `BUILD.ja.md`）：**
+  * 対象 Linux 環境（CachyOS, Arch, Ubuntu, Fedora, Debian）、カーネル Landlock 要件、Tauri 2 システムライブラリ依存関係、パイプライン用外部 CLI パッケージ、開発起動コマンド、全テストスイート実行コマンド、本番リリースバイナリビルド手順、FAQ・トラブルシューティングを日英完全同期で作成。
+* **GitHub Actions CI 自動検証ワークフロー（`.github/workflows/ci.yml`）：**
+  * `main` ブランチへの Push および Pull Request をトリガーとし、Ubuntu ランナー上で Rust ツールチェーン、Tauri 2 Linux ネイティブ依存関係、Node.js 20、pnpm をセットアップ。
+  * `cargo test`（全 167 テスト）、`pnpm test`（全 65 テスト）、`pnpm run build`（TypeScript 型チェック ＋ Vite 本番バンドル）を自動実行・検証する CI パイプラインを構築。
 
 ---
 

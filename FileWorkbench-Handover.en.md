@@ -5,7 +5,7 @@
 </p>
 
 **Document Date:** 2026-10-25  
-**Status:** Phase 8 (UI/UX Polish, Midnight Teal Theme, Fixed Action Bars) Completed, Ready for Phase 9  
+**Status:** All Phases (Phase 1–9) Implementation & Verification Completed; Source Distribution Ready (MIT License / README / BUILD / GitHub Actions CI)  
 **Target Audience:** Development, Architecture, and QA Teams; Next Working Session Maintainers  
 
 ---
@@ -32,6 +32,9 @@
 
 | Japanese Document | English Document | Description |
 | :--- | :--- | :--- |
+| [`README.ja.md`](file:///home/susie/git/wammed/Cuddle/README.ja.md) | [`README.md`](file:///home/susie/git/wammed/Cuddle/README.md) | Project Overview, Features Matrix, and Quick Start Guide |
+| [`BUILD.ja.md`](file:///home/susie/git/wammed/Cuddle/BUILD.ja.md) | [`BUILD.md`](file:///home/susie/git/wammed/Cuddle/BUILD.md) | Build Environment Setup, Dependencies, Testing, and Release Guide |
+| [`LICENSE`](file:///home/susie/git/wammed/Cuddle/LICENSE) | [`LICENSE`](file:///home/susie/git/wammed/Cuddle/LICENSE) | MIT License Open Source Terms & Conditions |
 | [`FileWorkbench-Design-ver0.9.ja.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Design-ver0.9.ja.md) | [`FileWorkbench-Design-ver0.9.en.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Design-ver0.9.en.md) | Integrated Basic Design Document (Definitive Edition) |
 | [`FileWorkbench-Handover.ja.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Handover.ja.md) | [`FileWorkbench-Handover.en.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Handover.en.md) | Development Handover Document (this document) |
 | [`roadmap.ja.md`](file:///home/susie/.gemini/antigravity-ide/brain/45a8eaa8-509d-4ed8-9e6c-255c45bac425/roadmap.ja.md) | [`roadmap.en.md`](file:///home/susie/.gemini/antigravity-ide/brain/45a8eaa8-509d-4ed8-9e6c-255c45bac425/roadmap.en.md) | Detailed Implementation Roadmap (9 Phases / 28 Subphases) |
@@ -540,6 +543,17 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
   * Full parity across Japanese and English locales for all `timestamp.*` and `tar_export.*` keys.
 * **Verification & Testing:**
   * 65 Vitest unit tests passing (100%, added `TimestampModal.test.tsx` and `TarExportModal.test.tsx`), 167 Cargo unit tests passing (100%), TypeScript and Vite production builds passing cleanly.
+
+### 9.5 Implementation Details (Phase 9.4: Source Release Packaging & CI Validation): Completed
+* **License Selection & LICENSE Creation:**
+  * Approved via the user decision gate to adopt the universally recognized and flexible **MIT License** (`LICENSE` file created).
+* **Bilingual README Documentation (`README.md`, `README.ja.md`):**
+  * Fully synchronized English and Japanese overviews, official hero banner (`images/Cuddle-Banner.jpeg`), 8 core principles, complete features matrix, quick start guide, and links to all specifications.
+* **Build & Development Environment Guide (`BUILD.md`, `BUILD.ja.md`):**
+  * Target Linux distributions (CachyOS, Arch, Ubuntu, Fedora, Debian), kernel Landlock LSM requirements, Tauri 2 system library dependencies, optional CLI utilities for rich pipelines, dev start commands, full test execution, native release packaging, and FAQ / troubleshooting.
+* **GitHub Actions CI Automation Workflow (`.github/workflows/ci.yml`):**
+  * Triggered on Push and Pull Request to `main`, setting up Rust stable, Tauri 2 Linux system packages, Node.js 20, and pnpm on an Ubuntu runner.
+  * Automated pipeline executing `cargo test` (167 tests), `pnpm test` (65 tests), and `pnpm run build` (TypeScript check and Vite bundle).
 
 ---
 

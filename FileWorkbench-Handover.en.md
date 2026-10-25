@@ -195,6 +195,15 @@
   * Strict separation between internal disk UUID prefixes and user-facing display names (`display_name`) ensuring pristine restoration
   * Header undo button (`RotateCcw`) integration and floating toast notification banner for instant visual confirmation
   * Automated testing: 96 Cargo tests 100% pass, 20 Vitest tests 100% pass, Clippy zero warnings, Vite build success
+* [x] **Phase 6.1 (Operation History, Persistent SQLite WAL Journal & Undo Separation): Completed**
+  * Persistent SQLite WAL operation history manager with synchronous NORMAL mode using `rusqlite` bundled (`src-tauri/src/history.rs`)
+  * Automatic recording for all key file operations: Staging, Unstaging, Bulk Rename, Undo Rename, Reset to Original, Reflect to Original, and Clear Workspace
+  * Automated history trimming retaining the most recent 50 operations
+  * Tauri IPC commands `get_operation_history` and `clear_operation_history`
+  * Overhauled `BottomTabPanel.tsx` "Operation History" tab: Structured timeline featuring timestamps, color-coded operation badges, original and staged file paths, status indicators, and operation details
+  * History clearing action with immediate UI synchronization and global status bar record count integration
+  * Complete bilingual dictionary sync (`history.*`) in English and Japanese
+  * Automated testing: 100 Cargo tests 100% pass, 22 Vitest tests 100% pass, Clippy zero warnings, Vite build success
 
 ---
 

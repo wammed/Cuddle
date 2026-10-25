@@ -240,7 +240,17 @@
   * **UI ダークモード徹底:** 「原本スナップショット記録済み」「テキスト抽出 & インデックス登録」ボタン等の白っぽさを完全解消し、深みのある Dark Velvet Slate（`rgba(15, 23, 42, 0.9)`、文字 `#e2e8f0`、枠線 `rgba(255, 255, 255, 0.14)`）へ統一。テキストボックス・モーダル・ポップアップの白背景完全禁止を徹底。
   * **完全バイリンガル同期:** 日英両言語の辞書（`pipeline.*`）を完全同期。
   * **型自動同期:** `ts-rs` による TypeScript 型自動生成（`PipelineCategory.ts`, `PipelinePresetDto.ts`, `PipelineParameterDef.ts`, `ExecutePipelineRequestDto.ts`, `PipelineExecutionResultDto.ts`, `PipelineExecutionItemResultDto.ts`）。
-  * **テスト・ビルド検証:** Cargo テスト 127 件 100% パス、Vitest 37 件 100% パス、Clippy 警告ゼロ、Vite ビルド成功。
+* [x] **Phase 7.3（リアルタイム進捗通知 & キャンセル制御 & UI 統合）：完了**
+  * **非同期ストリーミング通知:** 各ファイルの処理開始・完了・失敗状況を Tauri イベント（`"pipeline-progress"`）でリアルタイム emit。
+  * **ジョブ単位のキャンセル管理:** `PipelineCancellationManager` によるアトミックフラグ管理（`cancel_pipeline` コマンド）。
+  * **子プロセスの即時 SIGKILL:** 外部ツール（ImageMagick、FFmpeg 等）実行中であっても、ユーザーのキャンセル要求を検知して即時に子プロセスを終了し安全に中断。
+  * **UI 統合（プログレスバー & 中断制御）:**
+    * 実行中にパーセンテージ、進捗件数（例: `1 / 5`）、現在処理中のファイル名をプログレスバーと共にリアルタイム表示。
+    * 「パイプラインを実行」ボタンが実行中に赤系ダークサーフェスの「処理を中断（キャンセル）」ボタン（`StopCircle` アイコン）に切り替わり、多重クリックを防止。
+    * ユーザーキャンセル時にアンバー色警告バナー（`AlertTriangle`）で中断完了状況を明確にフィードバック。
+  * **UI ダークモード徹底:** プログレスバー（Dark Velvet Slate ベース）、キャンセルボタン、警告バナーすべて白背景を完全排除。
+  * **完全バイリンガル同期:** 日英辞書に進捗・キャンセル関連キーを追加・同期。
+  * **テスト・ビルド検証:** Cargo テスト 130 件 100% パス、Vitest 38 件 100% パス、Clippy 警告ゼロ、Vite ビルド成功。
 
 ---
 

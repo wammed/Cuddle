@@ -240,7 +240,17 @@
   * **Dark Mode Enforcement:** Completely eliminated pale/whitish tints on secondary buttons ("Original Snapshot Recorded", "Text Extraction & Indexing") by establishing deep Dark Velvet Slate surfaces (`rgba(15, 23, 42, 0.9)`, text `#e2e8f0`, border `rgba(255, 255, 255, 0.14)`). Strictly prohibited white backgrounds in textboxes, modals, and popups.
   * **Bilingual Synchronization:** Full English and Japanese dictionaries synchronized (`pipeline.*`).
   * **Automated Type Sync:** `ts-rs` generation of `PipelineCategory.ts`, `PipelinePresetDto.ts`, `PipelineParameterDef.ts`, `ExecutePipelineRequestDto.ts`, `PipelineExecutionResultDto.ts`, and `PipelineExecutionItemResultDto.ts`.
-  * **Verification:** 127 Cargo tests 100% pass, 37 Vitest tests 100% pass, Clippy zero warnings, Vite build success.
+* [x] **Phase 7.3 (Real-time Progress UI & Cancellation Controls): Completed**
+  * **Asynchronous Progress Streaming:** Dispatched `"pipeline-progress"` Tauri events in real time as each staged file begins, succeeds, or fails.
+  * **Job-based Cancellation Management:** Implemented `PipelineCancellationManager` with atomic cancellation flags accessible via Tauri command `cancel_pipeline`.
+  * **Immediate Process Termination (SIGKILL):** Interrupted external child processes (ImageMagick, FFmpeg, etc.) immediately when cancellation is requested, preventing runaway resource usage.
+  * **UI Integration (`PipelineModal.tsx` & `App.css`):**
+    * Displayed real-time progress bar with percentage, item count (e.g. `1 / 5`), and active target filename.
+    * Converted "Execute Pipeline" button during execution into a prominent, dark crimson "Cancel Execution" button (`StopCircle` icon).
+    * Rendered amber warning banner (`AlertTriangle`) when execution is cancelled by user, detailing successfully processed files prior to termination.
+  * **Dark Mode Enforcement:** Guaranteed zero white surfaces across progress bars, cancel buttons, and warning banners, maintaining high contrast Dark Velvet Slate styling.
+  * **Bilingual Synchronization:** Full English and Japanese dictionaries synchronized with all new keys.
+  * **Verification:** 130 Cargo tests 100% pass, 38 Vitest tests 100% pass, Clippy zero warnings, Vite build success.
 
 ---
 

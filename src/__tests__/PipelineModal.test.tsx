@@ -85,6 +85,19 @@ const mockStagedFiles: StagedItemDto[] = [
   },
 ];
 
+let progressListenerCallback: ((event: { payload: unknown }) => void) | null = null;
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn().mockImplementation((event: string, cb: (e: { payload: unknown }) => void) => {
+    if (event === "pipeline-progress") {
+      progressListenerCallback = cb;
+    }
+    return Promise.resolve(() => {
+      progressListenerCallback = null;
+    });
+  }),
+}));
+
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockImplementation((cmd: string) => {
     if (cmd === "get_pipeline_presets") {
@@ -93,12 +106,16 @@ vi.mock("@tauri-apps/api/core", () => ({
     if (cmd === "probe_external_tools") {
       return Promise.resolve(mockTools);
     }
+    if (cmd === "cancel_pipeline") {
+      return Promise.resolve(true);
+    }
     if (cmd === "execute_pipeline_preset") {
       return Promise.resolve({
         preset_id: "text_mask_secrets",
         total_count: 1,
         success_count: 1,
         failure_count: 0,
+        is_cancelled: false,
         item_results: [
           {
             stage_id: "stage-1",
@@ -204,6 +221,100 @@ describe("PipelineModal (Phase 7.2)", () => {
       expect(screen.getByText("Pipeline Workflow Runner (Phase 7.2)")).toBeDefined();
       expect(screen.getByText("Execute Pipeline")).toBeDefined();
       expect(screen.getAllByText("Log Secrets Masking").length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it("handles cancellation request during pipeline execution (Phase 7.3)", async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    let resolveExecute: (val: unknown) => void = () => {};
+    const executePromise = new Promise((resolve) => {
+      resolveExecute = resolve;
+    });
+
+    // Mock execute_pipeline_preset to remain pending until cancelled
+    vi.mocked(invoke).mockImplementationOnce((cmd: string) => {
+      if (cmd === "get_pipeline_presets") return Promise.resolve(mockPresets);
+      return Promise.resolve("");
+    });
+    vi.mocked(invoke).mockImplementationOnce((cmd: string) => {
+      if (cmd === "probe_external_tools") return Promise.resolve(mockTools);
+      return Promise.resolve("");
+    });
+    let capturedJobId = "";
+    vi.mocked(invoke).mockImplementation((cmd: string, args?: any) => {
+      if (cmd === "execute_pipeline_preset") {
+        capturedJobId = args?.request?.job_id ?? "";
+        return executePromise as any;
+      }
+      if (cmd === "cancel_pipeline") return Promise.resolve(true);
+      return Promise.resolve("");
+    });
+
+    render(
+      <PipelineModal
+        stagedFiles={mockStagedFiles}
+        onClose={vi.fn()}
+        onExecuteSuccess={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("パイプラインを実行")).toBeDefined();
+    });
+
+    const runBtn = screen.getByText("パイプラインを実行");
+    await act(async () => {
+      fireEvent.click(runBtn);
+    });
+
+    // Simulate backend emitting progress event
+    if (progressListenerCallback) {
+      await act(async () => {
+        progressListenerCallback!({
+          payload: {
+            job_id: capturedJobId,
+            preset_id: "text_mask_secrets",
+            current_index: 1,
+            total_items: 1,
+            current_filename: "app.log",
+            stage_id: "stage-1",
+            status: "Processing",
+            percent: 50.0,
+            message: null,
+          },
+        });
+      });
+    }
+
+    // Cancel button should appear during execution
+    await waitFor(() => {
+      expect(screen.getByText("処理を中断（キャンセル）")).toBeDefined();
+      expect(screen.getByText(/処理中 \(1 \/ 1\)/)).toBeDefined();
+    });
+
+    // Click Cancel
+    const cancelBtn = screen.getByText("処理を中断（キャンセル）");
+    await act(async () => {
+      fireEvent.click(cancelBtn);
+    });
+
+    // Verify cancel_pipeline was invoked
+    expect(invoke).toHaveBeenCalledWith("cancel_pipeline", expect.objectContaining({ jobId: expect.any(String) }));
+
+    // Finish execute promise with cancelled result
+    await act(async () => {
+      resolveExecute({
+        preset_id: "text_mask_secrets",
+        total_count: 1,
+        success_count: 0,
+        failure_count: 0,
+        is_cancelled: true,
+        item_results: [],
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/ユーザーにより処理が中断されました/)).toBeDefined();
     });
   });
 });

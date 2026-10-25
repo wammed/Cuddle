@@ -4,4 +4,4 @@ import type { PipelineExecutionItemResultDto } from "./PipelineExecutionItemResu
 /**
  * Aggregated result of running a pipeline preset.
  */
-export type PipelineExecutionResultDto = { preset_id: string, total_count: number, success_count: number, failure_count: number, item_results: Array<PipelineExecutionItemResultDto>, };
+export type PipelineExecutionResultDto = { preset_id: string, total_count: number, success_count: number, failure_count: number, is_cancelled: boolean, item_results: Array<PipelineExecutionItemResultDto>, };

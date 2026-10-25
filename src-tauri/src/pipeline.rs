@@ -1,5 +1,8 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -158,6 +161,7 @@ pub struct PipelinePresetDto {
 #[derive(Serialize, Deserialize, TS, Clone, Debug)]
 #[ts(export, export_to = "../../src/types/")]
 pub struct ExecutePipelineRequestDto {
+    pub job_id: Option<String>,
     pub preset_id: String,
     pub stage_ids: Vec<String>,
     pub custom_parameters: std::collections::HashMap<String, String>,
@@ -183,7 +187,79 @@ pub struct PipelineExecutionResultDto {
     pub total_count: usize,
     pub success_count: usize,
     pub failure_count: usize,
+    pub is_cancelled: bool,
     pub item_results: Vec<PipelineExecutionItemResultDto>,
+}
+
+/// Real-time progress event emitted during pipeline preset execution.
+#[derive(Serialize, Deserialize, TS, Clone, Debug)]
+#[ts(export, export_to = "../../src/types/")]
+pub struct PipelineProgressEvent {
+    pub job_id: String,
+    pub preset_id: String,
+    pub current_index: usize,
+    pub total_items: usize,
+    pub current_filename: String,
+    pub stage_id: String,
+    pub status: String, // "Processing", "Completed", "Failed", "Cancelled"
+    pub percent: f32,
+    pub message: Option<String>,
+}
+
+/// Thread-safe manager for canceling active pipeline runs by job ID.
+pub struct PipelineCancellationManager {
+    jobs: Mutex<HashMap<String, Arc<AtomicBool>>>,
+}
+
+impl PipelineCancellationManager {
+    pub fn new() -> Self {
+        Self {
+            jobs: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Registers a new active pipeline job with an atomic cancellation flag.
+    pub fn register_job(&self, job_id: &str) -> Arc<AtomicBool> {
+        let mut map = self.jobs.lock().unwrap();
+        let flag = Arc::new(AtomicBool::new(false));
+        map.insert(job_id.to_string(), Arc::clone(&flag));
+        flag
+    }
+
+    /// Cancels a running pipeline job by setting its atomic flag to true.
+    pub fn cancel_job(&self, job_id: &str) -> bool {
+        let map = self.jobs.lock().unwrap();
+        if let Some(flag) = map.get(job_id) {
+            flag.store(true, Ordering::SeqCst);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Checks if a job has been flagged for cancellation.
+    pub fn is_cancelled(&self, job_id: &str) -> bool {
+        let map = self.jobs.lock().unwrap();
+        map.get(job_id).map(|f| f.load(Ordering::SeqCst)).unwrap_or(false)
+    }
+
+    /// Unregisters a completed or cancelled pipeline job.
+    pub fn unregister_job(&self, job_id: &str) {
+        let mut map = self.jobs.lock().unwrap();
+        map.remove(job_id);
+    }
+}
+
+impl Default for PipelineCancellationManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Global singleton for pipeline cancellation management.
+pub fn get_cancellation_manager() -> &'static PipelineCancellationManager {
+    static MGR: OnceLock<PipelineCancellationManager> = OnceLock::new();
+    MGR.get_or_init(PipelineCancellationManager::new)
 }
 
 /// Tool detector that checks existence of binaries in `$PATH`.
@@ -296,6 +372,16 @@ impl SandboxedExecutor {
         args: &[String],
         options: &CommandExecutionOptionsDto,
     ) -> Result<CommandExecutionResultDto, AppErrorDto> {
+        Self::execute_with_cancellation(executable, args, options, None)
+    }
+
+    /// Executes a command with Landlock LSM confinement, timeout, and an optional cancellation flag.
+    pub fn execute_with_cancellation(
+        executable: &str,
+        args: &[String],
+        options: &CommandExecutionOptionsDto,
+        cancel_flag: Option<&Arc<AtomicBool>>,
+    ) -> Result<CommandExecutionResultDto, AppErrorDto> {
         let exe_path = ToolDetector::find_binary_in_path(executable)
             .unwrap_or_else(|| PathBuf::from(executable));
 
@@ -351,8 +437,26 @@ impl SandboxedExecutor {
             AppErrorDto::new("ERR_PROCESS_SPAWN_FAILED", format!("Failed to spawn {}: {}", executable, e))
         })?;
 
-        // Monitor process with timeout
+        // Monitor process with timeout and cancellation check
         loop {
+            // Check cancellation request
+            if let Some(flag) = cancel_flag {
+                if flag.load(Ordering::SeqCst) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let duration_ms = start_time.elapsed().as_millis() as u64;
+                    return Ok(CommandExecutionResultDto {
+                        success: false,
+                        exit_code: None,
+                        stdout: String::new(),
+                        stderr: "Process cancelled by user".to_string(),
+                        duration_ms,
+                        timed_out: false,
+                        error_message: Some("Process cancelled by user".to_string()),
+                    });
+                }
+            }
+
             match child.try_wait() {
                 Ok(Some(status)) => {
                     let duration_ms = start_time.elapsed().as_millis() as u64;
@@ -1088,6 +1192,15 @@ impl PipelineRunner {
         req: &ExecutePipelineRequestDto,
         workspace_manager: &crate::workspace::WorkspaceManager,
     ) -> Result<PipelineExecutionResultDto, AppErrorDto> {
+        Self::execute_with_progress(req, workspace_manager, None)
+    }
+
+    /// Executes a pipeline preset with real-time progress callbacks and cancellation check.
+    pub fn execute_with_progress(
+        req: &ExecutePipelineRequestDto,
+        workspace_manager: &crate::workspace::WorkspaceManager,
+        progress_callback: Option<Box<dyn Fn(PipelineProgressEvent) + Send + Sync>>,
+    ) -> Result<PipelineExecutionResultDto, AppErrorDto> {
         let preset = PipelineRegistry::find_preset(&req.preset_id)
             .ok_or_else(|| AppErrorDto::new("PresetNotFound", format!("Preset {} not found", req.preset_id)))?;
 
@@ -1111,12 +1224,37 @@ impl PipelineRunner {
             }
         }
 
+        let job_id = req.job_id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let cancel_mgr = get_cancellation_manager();
+        let cancel_flag = cancel_mgr.register_job(&job_id);
+
         let staged_items = workspace_manager.list_staged();
         let mut item_results = Vec::new();
         let mut success_count = 0;
         let mut failure_count = 0;
+        let mut is_cancelled = false;
+        let total_items = req.stage_ids.len();
 
-        for stage_id in &req.stage_ids {
+        for (idx, stage_id) in req.stage_ids.iter().enumerate() {
+            // Check cancellation request before processing next item
+            if cancel_flag.load(Ordering::SeqCst) {
+                is_cancelled = true;
+                if let Some(ref cb) = progress_callback {
+                    cb(PipelineProgressEvent {
+                        job_id: job_id.clone(),
+                        preset_id: req.preset_id.clone(),
+                        current_index: idx,
+                        total_items,
+                        current_filename: String::new(),
+                        stage_id: stage_id.clone(),
+                        status: "Cancelled".to_string(),
+                        percent: if total_items > 0 { ((idx as f32) / (total_items as f32)) * 100.0 } else { 0.0 },
+                        message: Some("Pipeline execution cancelled by user".to_string()),
+                    });
+                }
+                break;
+            }
+
             let start = Instant::now();
             let staged = staged_items.iter().find(|s| &s.stage_id == stage_id);
 
@@ -1150,8 +1288,23 @@ impl PipelineRunner {
                 continue;
             }
 
-            // Run transformation
-            match Self::apply_preset_to_file(&preset, &staged_path, &staged.display_name, &req.custom_parameters) {
+            // Emit Processing event
+            if let Some(ref cb) = progress_callback {
+                cb(PipelineProgressEvent {
+                    job_id: job_id.clone(),
+                    preset_id: req.preset_id.clone(),
+                    current_index: idx + 1,
+                    total_items,
+                    current_filename: staged.display_name.clone(),
+                    stage_id: stage_id.clone(),
+                    status: "Processing".to_string(),
+                    percent: if total_items > 0 { ((idx as f32) / (total_items as f32)) * 100.0 } else { 0.0 },
+                    message: None,
+                });
+            }
+
+            // Run transformation with cancel_flag support
+            match Self::apply_preset_to_file(&preset, &staged_path, &staged.display_name, &req.custom_parameters, Some(&cancel_flag)) {
                 Ok(new_name) => {
                     let elapsed = start.elapsed().as_millis() as u64;
                     // Update display name if changed
@@ -1167,27 +1320,75 @@ impl PipelineRunner {
                         execution_time_ms: elapsed,
                     });
                     success_count += 1;
+
+                    if let Some(ref cb) = progress_callback {
+                        cb(PipelineProgressEvent {
+                            job_id: job_id.clone(),
+                            preset_id: req.preset_id.clone(),
+                            current_index: idx + 1,
+                            total_items,
+                            current_filename: staged.display_name.clone(),
+                            stage_id: stage_id.clone(),
+                            status: "Completed".to_string(),
+                            percent: if total_items > 0 { (((idx + 1) as f32) / (total_items as f32)) * 100.0 } else { 100.0 },
+                            message: None,
+                        });
+                    }
                 }
                 Err(err) => {
                     let elapsed = start.elapsed().as_millis() as u64;
+                    let was_cancelled = cancel_flag.load(Ordering::SeqCst);
                     item_results.push(PipelineExecutionItemResultDto {
                         stage_id: stage_id.clone(),
                         original_name: staged.display_name.clone(),
                         output_name: staged.display_name.clone(),
                         success: false,
-                        error_message: Some(err.message),
+                        error_message: Some(err.message.clone()),
                         execution_time_ms: elapsed,
                     });
                     failure_count += 1;
+
+                    if was_cancelled {
+                        is_cancelled = true;
+                        if let Some(ref cb) = progress_callback {
+                            cb(PipelineProgressEvent {
+                                job_id: job_id.clone(),
+                                preset_id: req.preset_id.clone(),
+                                current_index: idx + 1,
+                                total_items,
+                                current_filename: staged.display_name.clone(),
+                                stage_id: stage_id.clone(),
+                                status: "Cancelled".to_string(),
+                                percent: if total_items > 0 { (((idx + 1) as f32) / (total_items as f32)) * 100.0 } else { 100.0 },
+                                message: Some("Process cancelled by user".to_string()),
+                            });
+                        }
+                        break;
+                    } else if let Some(ref cb) = progress_callback {
+                        cb(PipelineProgressEvent {
+                            job_id: job_id.clone(),
+                            preset_id: req.preset_id.clone(),
+                            current_index: idx + 1,
+                            total_items,
+                            current_filename: staged.display_name.clone(),
+                            stage_id: stage_id.clone(),
+                            status: "Failed".to_string(),
+                            percent: if total_items > 0 { (((idx + 1) as f32) / (total_items as f32)) * 100.0 } else { 100.0 },
+                            message: Some(err.message),
+                        });
+                    }
                 }
             }
         }
+
+        cancel_mgr.unregister_job(&job_id);
 
         Ok(PipelineExecutionResultDto {
             preset_id: req.preset_id.clone(),
             total_count: req.stage_ids.len(),
             success_count,
             failure_count,
+            is_cancelled,
             item_results,
         })
     }
@@ -1198,6 +1399,7 @@ impl PipelineRunner {
         file_path: &Path,
         display_name: &str,
         params: &std::collections::HashMap<String, String>,
+        cancel_flag: Option<&Arc<AtomicBool>>,
     ) -> Result<String, AppErrorDto> {
         let parent_dir = file_path.parent().unwrap_or_else(|| Path::new("/tmp"));
 
@@ -1372,8 +1574,11 @@ impl PipelineRunner {
                     working_dir: Some(parent_dir.to_string_lossy().to_string()),
                 };
 
-                let res = SandboxedExecutor::execute(exe, &args, &options)?;
+                let res = SandboxedExecutor::execute_with_cancellation(exe, &args, &options, cancel_flag)?;
                 if !res.success {
+                    if res.error_message.as_deref() == Some("Process cancelled by user") {
+                        return Err(AppErrorDto::new("Cancelled", "Process cancelled by user"));
+                    }
                     return Err(AppErrorDto::new("ToolExecutionFailed", res.stderr));
                 }
                 Ok(out_name)
@@ -1403,8 +1608,11 @@ impl PipelineRunner {
                     working_dir: Some(parent_dir.to_string_lossy().to_string()),
                 };
 
-                let res = SandboxedExecutor::execute(exe, &args, &options)?;
+                let res = SandboxedExecutor::execute_with_cancellation(exe, &args, &options, cancel_flag)?;
                 if !res.success {
+                    if res.error_message.as_deref() == Some("Process cancelled by user") {
+                        return Err(AppErrorDto::new("Cancelled", "Process cancelled by user"));
+                    }
                     return Err(AppErrorDto::new("ToolExecutionFailed", res.stderr));
                 }
                 Ok(out_name)
@@ -1471,6 +1679,7 @@ mod tests {
             parameters: vec![],
         };
         let _ = ExecutePipelineRequestDto {
+            job_id: None,
             preset_id: "id".to_string(),
             stage_ids: vec!["s1".to_string()],
             custom_parameters: std::collections::HashMap::new(),
@@ -1488,7 +1697,19 @@ mod tests {
             total_count: 1,
             success_count: 1,
             failure_count: 0,
+            is_cancelled: false,
             item_results: vec![],
+        };
+        let _ = PipelineProgressEvent {
+            job_id: "job-1".to_string(),
+            preset_id: "id".to_string(),
+            current_index: 1,
+            total_items: 1,
+            current_filename: "file.txt".to_string(),
+            stage_id: "stage-1".to_string(),
+            status: "Processing".to_string(),
+            percent: 50.0,
+            message: None,
         };
     }
 
@@ -1556,6 +1777,45 @@ mod tests {
             assert!(!result.success);
             assert!(result.timed_out, "Process should be killed due to timeout");
             assert!(result.stderr.contains("timed out"));
+        }
+    }
+
+    #[test]
+    fn test_sandboxed_executor_cancellation() {
+        let sleep_bin = ToolDetector::find_binary_in_path("sleep")
+            .unwrap_or_else(|| PathBuf::from("/bin/sleep"));
+
+        if sleep_bin.exists() {
+            let cancel_flag = Arc::new(AtomicBool::new(false));
+            let cancel_flag_clone = Arc::clone(&cancel_flag);
+
+            // Spawn thread to cancel after 100ms
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(100));
+                cancel_flag_clone.store(true, Ordering::SeqCst);
+            });
+
+            let options = CommandExecutionOptionsDto {
+                timeout_secs: Some(10),
+                max_memory_bytes: Some(128 * 1024 * 1024),
+                allowed_read_paths: vec!["/bin".to_string(), "/usr".to_string()],
+                allowed_write_paths: vec![std::env::temp_dir().to_string_lossy().to_string()],
+                working_dir: None,
+            };
+
+            let start = Instant::now();
+            let res = SandboxedExecutor::execute_with_cancellation(
+                &sleep_bin.to_string_lossy(),
+                &["10".to_string()],
+                &options,
+                Some(&cancel_flag),
+            );
+
+            assert!(res.is_ok());
+            let result = res.unwrap();
+            assert!(!result.success);
+            assert_eq!(result.error_message.as_deref(), Some("Process cancelled by user"));
+            assert!(start.elapsed() < Duration::from_secs(3), "Should cancel quickly without waiting for 10s");
         }
     }
 
@@ -1660,7 +1920,7 @@ mod tests {
         let log_file = temp_dir.join("app.log");
         std::fs::write(&log_file, "User admin@corp.internal logged in from 10.0.0.1 token=secret-tok-12345678").unwrap();
         let preset = PipelineRegistry::find_preset("text_mask_secrets").unwrap();
-        let res = PipelineRunner::apply_preset_to_file(&preset, &log_file, "app.log", &std::collections::HashMap::new());
+        let res = PipelineRunner::apply_preset_to_file(&preset, &log_file, "app.log", &std::collections::HashMap::new(), None);
         assert!(res.is_ok());
         let updated_text = std::fs::read_to_string(&log_file).unwrap();
         assert!(!updated_text.contains("admin@corp.internal"));
@@ -1668,7 +1928,7 @@ mod tests {
 
         // Test file_clean_names
         let preset_clean = PipelineRegistry::find_preset("file_clean_names").unwrap();
-        let res_clean = PipelineRunner::apply_preset_to_file(&preset_clean, &log_file, "My%20Sample%20Report%202026.pdf", &std::collections::HashMap::new());
+        let res_clean = PipelineRunner::apply_preset_to_file(&preset_clean, &log_file, "My%20Sample%20Report%202026.pdf", &std::collections::HashMap::new(), None);
         assert!(res_clean.is_ok());
         assert_eq!(res_clean.unwrap(), "my-sample-report-2026.pdf");
 
@@ -1676,10 +1936,25 @@ mod tests {
         let preset_pad = PipelineRegistry::find_preset("file_zero_padding").unwrap();
         let mut params = std::collections::HashMap::new();
         params.insert("digits".to_string(), "4".to_string());
-        let res_pad = PipelineRunner::apply_preset_to_file(&preset_pad, &log_file, "frame_42.png", &params);
+        let res_pad = PipelineRunner::apply_preset_to_file(&preset_pad, &log_file, "frame_42.png", &params, None);
         assert!(res_pad.is_ok());
         assert_eq!(res_pad.unwrap(), "frame_0042.png");
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_pipeline_progress_callback_and_cancellation() {
+        let job_id = "test-job-cancel-123".to_string();
+        let cancel_mgr = get_cancellation_manager();
+        let _ = cancel_mgr.register_job(&job_id);
+
+        // Immediate cancel
+        let cancelled = cancel_mgr.cancel_job(&job_id);
+        assert!(cancelled);
+        assert!(cancel_mgr.is_cancelled(&job_id));
+
+        cancel_mgr.unregister_job(&job_id);
+        assert!(!cancel_mgr.is_cancelled(&job_id));
     }
 }

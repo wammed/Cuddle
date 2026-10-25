@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
 import {
   Workflow,
@@ -12,6 +13,8 @@ import {
   Cpu,
   Wrench,
   FileCheck,
+  Loader2,
+  StopCircle,
 } from "lucide-react";
 import type { PipelinePresetDto } from "../types/PipelinePresetDto";
 import type { ExternalToolStatusDto } from "../types/ExternalToolStatusDto";
@@ -19,6 +22,7 @@ import type { StagedItemDto } from "../types/StagedItemDto";
 import type { ExecutePipelineRequestDto } from "../types/ExecutePipelineRequestDto";
 import type { PipelineExecutionResultDto } from "../types/PipelineExecutionResultDto";
 import type { PipelineCategory } from "../types/PipelineCategory";
+import type { PipelineProgressEvent } from "../types/PipelineProgressEvent";
 
 interface PipelineModalProps {
   stagedFiles: StagedItemDto[];
@@ -40,8 +44,53 @@ export function PipelineModal({
   const [selectedPresetId, setSelectedPresetId] = useState<string>("");
   const [parameters, setParameters] = useState<Record<string, string>>({});
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
+  const [isCancelling, setIsCancelling] = useState<boolean>(false);
   const [executionResult, setExecutionResult] = useState<PipelineExecutionResultDto | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const activeJobIdRef = useRef<string | null>(null);
+  activeJobIdRef.current = activeJobId;
+
+  const [progress, setProgress] = useState<{
+    currentIndex: number;
+    totalItems: number;
+    currentFilename: string;
+    percent: number;
+    status: string;
+  } | null>(null);
+
+  // Listen to pipeline-progress events from backend
+  useEffect(() => {
+    let unlisten: UnlistenFn | null = null;
+    let isMounted = true;
+
+    listen<PipelineProgressEvent>("pipeline-progress", (event) => {
+      if (!isMounted) return;
+      const payload = event.payload;
+      if (activeJobIdRef.current && payload.job_id !== activeJobIdRef.current) {
+        return;
+      }
+      setProgress({
+        currentIndex: payload.current_index,
+        totalItems: payload.total_items,
+        currentFilename: payload.current_filename,
+        percent: payload.percent,
+        status: payload.status,
+      });
+    }).then((fn) => {
+      if (isMounted) {
+        unlisten = fn;
+      } else {
+        fn();
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      if (unlisten) unlisten();
+    };
+  }, []);
 
   // Load presets and external tools status on mount
   useEffect(() => {
@@ -148,11 +197,25 @@ export function PipelineModal({
       return;
     }
 
+    const jobId = typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `job-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+    setActiveJobId(jobId);
     setIsExecuting(true);
+    setIsCancelling(false);
     setErrorMessage(null);
     setExecutionResult(null);
+    setProgress({
+      currentIndex: 0,
+      totalItems: stagedFiles.length,
+      currentFilename: stagedFiles[0]?.display_name ?? "",
+      percent: 0,
+      status: "Starting",
+    });
 
     const req: ExecutePipelineRequestDto = {
+      job_id: jobId,
       preset_id: selectedPreset.id,
       stage_ids: stagedFiles.map((f) => f.stage_id),
       custom_parameters: parameters,
@@ -171,6 +234,18 @@ export function PipelineModal({
       setErrorMessage(msg);
     } finally {
       setIsExecuting(false);
+      setIsCancelling(false);
+      setActiveJobId(null);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!activeJobId || isCancelling) return;
+    setIsCancelling(true);
+    try {
+      await invoke("cancel_pipeline", { jobId: activeJobId });
+    } catch (err) {
+      console.error("Failed to cancel pipeline:", err);
     }
   };
 
@@ -403,6 +478,37 @@ export function PipelineModal({
                   </div>
                 )}
 
+                {/* Real-time Progress Bar */}
+                {isExecuting && progress && (
+                  <div className="pipeline-progress-container">
+                    <div className="progress-info-row">
+                      <span className="progress-label">
+                        {t("pipeline.progress_running", {
+                          current: progress.currentIndex,
+                          total: progress.totalItems,
+                        })}
+                      </span>
+                      <span className="progress-percent font-mono">
+                        {Math.round(progress.percent)}%
+                      </span>
+                    </div>
+                    <div className="pipeline-progress-track">
+                      <div
+                        className="pipeline-progress-fill"
+                        style={{
+                          width: `${Math.min(100, Math.max(0, progress.percent))}%`,
+                        }}
+                      />
+                    </div>
+                    {progress.currentFilename && (
+                      <div className="progress-current-filename font-mono">
+                        <Loader2 size={12} className="animate-spin text-cyan-400" />
+                        <span>{t("pipeline.processing_file")}: {progress.currentFilename}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Error Banner */}
                 {errorMessage && (
                   <div className="dialog-error-banner">
@@ -411,8 +517,21 @@ export function PipelineModal({
                   </div>
                 )}
 
+                {/* Cancelled Banner */}
+                {executionResult && executionResult.is_cancelled && (
+                  <div className="dialog-warning-banner">
+                    <AlertTriangle size={15} className="text-amber-400" />
+                    <span>
+                      {t("pipeline.exec_cancelled", {
+                        success: executionResult.success_count,
+                        total: executionResult.total_count,
+                      })}
+                    </span>
+                  </div>
+                )}
+
                 {/* Success Banner */}
-                {executionResult && (
+                {executionResult && !executionResult.is_cancelled && (
                   <div className="dialog-success-banner">
                     <CheckCircle2 size={15} className="text-emerald-400" />
                     <span>
@@ -441,20 +560,31 @@ export function PipelineModal({
               >
                 {t("bulk_rename.cancel")}
               </button>
-              <button
-                type="button"
-                className="dialog-btn primary pipeline-run-action-btn"
-                onClick={handleExecute}
-                disabled={
-                  isExecuting ||
-                  !selectedPreset ||
-                  !toolAvailability.isAvailable ||
-                  stagedFiles.length === 0
-                }
-              >
-                <Play size={13} className={isExecuting ? "animate-spin" : ""} />
-                <span>{isExecuting ? t("pipeline.running") : t("pipeline.run_pipeline_btn")}</span>
-              </button>
+              {isExecuting ? (
+                <button
+                  type="button"
+                  className="dialog-btn danger pipeline-cancel-btn"
+                  onClick={handleCancel}
+                  disabled={isCancelling}
+                >
+                  <StopCircle size={13} className={isCancelling ? "animate-spin" : ""} />
+                  <span>{isCancelling ? t("pipeline.cancelling") : t("pipeline.cancel_btn")}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="dialog-btn primary pipeline-run-action-btn"
+                  onClick={handleExecute}
+                  disabled={
+                    !selectedPreset ||
+                    !toolAvailability.isAvailable ||
+                    stagedFiles.length === 0
+                  }
+                >
+                  <Play size={13} />
+                  <span>{t("pipeline.run_pipeline_btn")}</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

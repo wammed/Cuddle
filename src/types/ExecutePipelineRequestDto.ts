@@ -3,4 +3,4 @@
 /**
  * Request to execute a pipeline preset on selected staged items.
  */
-export type ExecutePipelineRequestDto = { preset_id: string, stage_ids: Array<string>, custom_parameters: { [key in string]: string }, };
+export type ExecutePipelineRequestDto = { job_id: string | null, preset_id: string, stage_ids: Array<string>, custom_parameters: { [key in string]: string }, };

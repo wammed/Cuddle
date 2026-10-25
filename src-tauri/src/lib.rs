@@ -404,24 +404,53 @@ fn get_pipeline_presets() -> Vec<pipeline::PipelinePresetDto> {
 }
 
 #[tauri::command]
-fn execute_pipeline_preset(
+fn cancel_pipeline(job_id: String) -> Result<bool, models::AppErrorDto> {
+    let cancel_mgr = pipeline::get_cancellation_manager();
+    let cancelled = cancel_mgr.cancel_job(&job_id);
+    Ok(cancelled)
+}
+
+#[tauri::command]
+async fn execute_pipeline_preset(
+    app: tauri::AppHandle,
     request: pipeline::ExecutePipelineRequestDto,
 ) -> Result<pipeline::PipelineExecutionResultDto, models::AppErrorDto> {
+    use tauri::Emitter;
+
     let mgr = workspace::get_workspace_manager();
-    let res = pipeline::PipelineRunner::execute(&request, &mgr)?;
+    let app_handle = app.clone();
+
+    // Run blocking workload on Tokio threadpool so the command thread is not blocked, allowing cancellation requests
+    let res = tokio::task::spawn_blocking(move || {
+        let callback = Box::new(move |event: pipeline::PipelineProgressEvent| {
+            let _ = app_handle.emit("pipeline-progress", event);
+        });
+        pipeline::PipelineRunner::execute_with_progress(&request, &mgr, Some(callback))
+    })
+    .await
+    .map_err(|e| models::AppErrorDto::new("TaskJoinError", e.to_string()))??;
 
     // Record into SQLite persistent history
     let hist_mgr = history::get_history_manager();
     let _ = hist_mgr.record_operation(&history::NewHistoryEntry {
         operation_id: uuid::Uuid::new_v4().to_string(),
         operation_type: "Pipeline".to_string(),
-        display_name: format!("Preset: {}", request.preset_id),
+        display_name: format!("Preset: {}", res.preset_id),
         original_path: None,
         staged_path: None,
         inode: None,
-        status: if res.failure_count == 0 { "Success".to_string() } else { "Failed".to_string() },
+        status: if res.is_cancelled {
+            "Cancelled".to_string()
+        } else if res.failure_count == 0 {
+            "Success".to_string()
+        } else {
+            "Failed".to_string()
+        },
         can_undo: false,
-        details: Some(format!("Executed on {} items ({} success, {} failed)", res.total_count, res.success_count, res.failure_count)),
+        details: Some(format!(
+            "Executed on {} items ({} success, {} failed, cancelled: {})",
+            res.total_count, res.success_count, res.failure_count, res.is_cancelled
+        )),
     });
 
     Ok(res)
@@ -468,6 +497,7 @@ pub fn run() {
             execute_sandboxed_command,
             run_builtin_text_transform,
             get_pipeline_presets,
+            cancel_pipeline,
             execute_pipeline_preset
         ])
         .run(tauri::generate_context!())

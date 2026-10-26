@@ -187,9 +187,12 @@
   },
   "browser": {
     "col_name": "Name",
+    "col_name_details": "Name & Details",
     "col_size": "Size",
     "col_mtime": "Modified",
     "col_inode": "inode",
+    "col_actions": "Actions",
+    "dir_type": "Folder",
     "empty_folder": "This directory is empty",
     "stage_to_workspace": "Stage to Workspace",
     "stage_selected": "Stage Selected",

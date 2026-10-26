@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   Search,
   FileSearch,
@@ -44,6 +45,8 @@ export function SearchPanel({ onSelectItem, onLog, currentPath }: SearchPanelPro
   const [indexStats, setIndexStats] = useState<IndexStatsDto | null>(null);
   const [indexStatusMsg, setIndexStatusMsg] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
 
   const fetchStats = async () => {
     try {
@@ -54,22 +57,75 @@ export function SearchPanel({ onSelectItem, onLog, currentPath }: SearchPanelPro
     }
   };
 
+  const updateMenuPosition = () => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      const menuWidth = 290;
+      const menuHeight = 280;
+      let top = rect.bottom + 6;
+      if (typeof window !== "undefined" && window.innerHeight > 0) {
+        if (top + menuHeight > window.innerHeight - 8) {
+          top = Math.max(8, rect.top - menuHeight - 6);
+        }
+      }
+      let left = rect.right - menuWidth;
+      if (left < 8) {
+        left = Math.max(8, rect.left);
+      }
+      setMenuPosition({ top, left });
+    }
+  };
+
+  const toggleMenu = () => {
+    if (isMenuOpen) {
+      setIsMenuOpen(false);
+    } else {
+      fetchStats();
+      updateMenuPosition();
+      setIsMenuOpen(true);
+    }
+  };
+
   useEffect(() => {
     fetchStats();
   }, []);
 
-  // Close dropdown menu when clicking outside
+  // Close dropdown menu when clicking outside or pressing Escape, reposition on resize/scroll
   useEffect(() => {
+    if (!isMenuOpen) return;
+
+    const handleScrollOrResize = () => {
+      updateMenuPosition();
+    };
+
     const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(target) &&
+        triggerRef.current &&
+        !triggerRef.current.contains(target)
+      ) {
         setIsMenuOpen(false);
       }
     };
-    if (isMenuOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", handleScrollOrResize);
+    window.addEventListener("scroll", handleScrollOrResize, true);
+
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", handleScrollOrResize);
+      window.removeEventListener("scroll", handleScrollOrResize, true);
     };
   }, [isMenuOpen]);
 
@@ -200,15 +256,13 @@ export function SearchPanel({ onSelectItem, onLog, currentPath }: SearchPanelPro
           </button>
 
           {/* Index Operation Dropdown Switch */}
-          <div className="index-dropdown-container" ref={menuRef}>
+          <div className="index-dropdown-container">
             <button
               type="button"
               id="index-management-dropdown-btn"
+              ref={triggerRef}
               className={`index-dropdown-trigger-btn ${isIndexing ? "indexing" : ""}`}
-              onClick={() => {
-                fetchStats();
-                setIsMenuOpen((prev) => !prev);
-              }}
+              onClick={toggleMenu}
               title={t("search.index_button_title")}
               disabled={isIndexing}
             >
@@ -221,92 +275,103 @@ export function SearchPanel({ onSelectItem, onLog, currentPath }: SearchPanelPro
               <ChevronDown size={11} className={`chevron-icon ${isMenuOpen ? "open" : ""}`} />
             </button>
 
-            {isMenuOpen && (
-              <div className="index-dropdown-menu">
-                <div className="index-dropdown-header">
-                  <div className="index-header-title">
-                    <Database size={12} />
-                    <span>{t("search.index_mode_label")}</span>
+            {isMenuOpen &&
+              createPortal(
+                <div
+                  ref={menuRef}
+                  className="index-dropdown-menu"
+                  style={{
+                    position: "fixed",
+                    top: `${menuPosition?.top ?? 70}px`,
+                    left: `${menuPosition?.left ?? 20}px`,
+                    zIndex: 99999,
+                  }}
+                >
+                  <div className="index-dropdown-header">
+                    <div className="index-header-title">
+                      <Database size={12} />
+                      <span>{t("search.index_mode_label")}</span>
+                    </div>
+                    {indexStats && (
+                      <span className="index-stats-pill">
+                        {t("search.index_stats", { count: indexStats.total_documents })}
+                      </span>
+                    )}
                   </div>
-                  {indexStats && (
-                    <span className="index-stats-pill">
-                      {t("search.index_stats", { count: indexStats.total_documents })}
+
+                  <div className="index-target-info">
+                    <span className="target-label">{t("search.index_target_label")}:</span>
+                    <span className="target-path" title={currentPath || "."}>
+                      {currentPath
+                        ? currentPath.length > 25
+                          ? "..." + currentPath.slice(-22)
+                          : currentPath
+                        : "."}
                     </span>
-                  )}
-                </div>
+                  </div>
 
-                <div className="index-target-info">
-                  <span className="target-label">{t("search.index_target_label")}:</span>
-                  <span className="target-path" title={currentPath || "."}>
-                    {currentPath
-                      ? currentPath.length > 25
-                        ? "..." + currentPath.slice(-22)
-                        : currentPath
-                      : "."}
-                  </span>
-                </div>
+                  <div className="index-dropdown-items">
+                    <button
+                      type="button"
+                      className="index-dropdown-item"
+                      onClick={() => handleIndexOperation("IncrementalUpdate")}
+                    >
+                      <div className="item-icon-col icon-incremental">
+                        <RefreshCw size={13} />
+                      </div>
+                      <div className="item-text-col">
+                        <span className="item-title">{t("search.index_incremental")}</span>
+                        <span className="item-desc">{t("search.index_incremental_desc")}</span>
+                      </div>
+                    </button>
 
-                <div className="index-dropdown-items">
-                  <button
-                    type="button"
-                    className="index-dropdown-item"
-                    onClick={() => handleIndexOperation("IncrementalUpdate")}
-                  >
-                    <div className="item-icon-col icon-incremental">
-                      <RefreshCw size={13} />
-                    </div>
-                    <div className="item-text-col">
-                      <span className="item-title">{t("search.index_incremental")}</span>
-                      <span className="item-desc">{t("search.index_incremental_desc")}</span>
-                    </div>
-                  </button>
+                    <button
+                      type="button"
+                      className="index-dropdown-item"
+                      onClick={() => handleIndexOperation("IndexDirectory")}
+                    >
+                      <div className="item-icon-col icon-add">
+                        <FolderPlus size={13} />
+                      </div>
+                      <div className="item-text-col">
+                        <span className="item-title">{t("search.index_add_folder")}</span>
+                        <span className="item-desc">{t("search.index_add_folder_desc")}</span>
+                      </div>
+                    </button>
 
-                  <button
-                    type="button"
-                    className="index-dropdown-item"
-                    onClick={() => handleIndexOperation("IndexDirectory")}
-                  >
-                    <div className="item-icon-col icon-add">
-                      <FolderPlus size={13} />
-                    </div>
-                    <div className="item-text-col">
-                      <span className="item-title">{t("search.index_add_folder")}</span>
-                      <span className="item-desc">{t("search.index_add_folder_desc")}</span>
-                    </div>
-                  </button>
+                    <button
+                      type="button"
+                      className="index-dropdown-item"
+                      onClick={() => handleIndexOperation("FullRebuild")}
+                    >
+                      <div className="item-icon-col icon-rebuild">
+                        <RotateCcw size={13} />
+                      </div>
+                      <div className="item-text-col">
+                        <span className="item-title">{t("search.index_rebuild")}</span>
+                        <span className="item-desc">{t("search.index_rebuild_desc")}</span>
+                      </div>
+                    </button>
 
-                  <button
-                    type="button"
-                    className="index-dropdown-item"
-                    onClick={() => handleIndexOperation("FullRebuild")}
-                  >
-                    <div className="item-icon-col icon-rebuild">
-                      <RotateCcw size={13} />
-                    </div>
-                    <div className="item-text-col">
-                      <span className="item-title">{t("search.index_rebuild")}</span>
-                      <span className="item-desc">{t("search.index_rebuild_desc")}</span>
-                    </div>
-                  </button>
+                    <div className="index-dropdown-divider" />
 
-                  <div className="index-dropdown-divider" />
-
-                  <button
-                    type="button"
-                    className="index-dropdown-item danger"
-                    onClick={() => handleIndexOperation("ResetClear")}
-                  >
-                    <div className="item-icon-col icon-reset">
-                      <Trash2 size={13} />
-                    </div>
-                    <div className="item-text-col">
-                      <span className="item-title">{t("search.index_reset")}</span>
-                      <span className="item-desc">{t("search.index_reset_desc")}</span>
-                    </div>
-                  </button>
-                </div>
-              </div>
-            )}
+                    <button
+                      type="button"
+                      className="index-dropdown-item danger"
+                      onClick={() => handleIndexOperation("ResetClear")}
+                    >
+                      <div className="item-icon-col icon-reset">
+                        <Trash2 size={13} />
+                      </div>
+                      <div className="item-text-col">
+                        <span className="item-title">{t("search.index_reset")}</span>
+                        <span className="item-desc">{t("search.index_reset_desc")}</span>
+                      </div>
+                    </button>
+                  </div>
+                </div>,
+                document.body
+              )}
           </div>
         </form>
 

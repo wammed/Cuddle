@@ -775,7 +775,7 @@ export function App() {
           className="main-panel-group"
         >
           {/* LEFT COLUMN: Top: Search Results, Bottom: Folder Tree */}
-          <Panel defaultSize={22} minSize={14} className="panel-left-col">
+          <Panel defaultSize={18} minSize={14} className="panel-left-col">
             <Group orientation="vertical" id="cuddle-left-v-panels">
               <Panel defaultSize={48} minSize={20} className="subpanel-wrap">
                 <SearchPanel
@@ -825,7 +825,7 @@ export function App() {
           <Separator className="cuddle-resize-handle-h" />
 
           {/* CENTER & BOTTOM COLUMN */}
-          <Panel defaultSize={sidebarVisible ? 56 : 78} minSize={30} className="panel-center-col">
+          <Panel defaultSize={sidebarVisible ? 63 : 82} minSize={30} className="panel-center-col">
             <Group orientation="vertical" id="cuddle-center-v-panels">
               {/* TOP: Center-Left Browser & Center-Right Workspace */}
               <Panel defaultSize={bottomVisible ? 68 : 100} minSize={30} className="subpanel-wrap">
@@ -910,7 +910,7 @@ export function App() {
           {sidebarVisible && (
             <>
               <Separator className="cuddle-resize-handle-h" />
-              <Panel defaultSize={22} minSize={15} className="panel-right-col subpanel-wrap">
+              <Panel defaultSize={19} minSize={15} className="panel-right-col subpanel-wrap">
                 <DetailsSidebarPanel
                   item={selectedItem}
                   onClose={() => setSidebarVisible(false)}

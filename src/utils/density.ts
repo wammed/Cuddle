@@ -3,24 +3,24 @@ import type { Density, DensityConfig } from "../types/Density";
 export const DENSITY_CONFIGS: Record<Density, DensityConfig> = {
   compact: {
     id: "compact",
-    rowHeight: 32,
-    iconSize: 14,
+    rowHeight: 42,
+    iconSize: 15,
     fontSize: "11px",
-    paddingY: "2px",
+    paddingY: "3px",
   },
   normal: {
     id: "normal",
-    rowHeight: 42,
-    iconSize: 16,
+    rowHeight: 52,
+    iconSize: 17,
     fontSize: "12px",
     paddingY: "6px",
   },
   spacious: {
     id: "spacious",
-    rowHeight: 52,
+    rowHeight: 64,
     iconSize: 20,
     fontSize: "13px",
-    paddingY: "10px",
+    paddingY: "9px",
   },
 };
 

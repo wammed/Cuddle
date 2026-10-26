@@ -196,43 +196,49 @@ export function VirtualFileList({
                 )}
               </div>
 
-              <div className="row-col-name" title={item.display_name}>
-                <span className="file-name-text">{item.display_name}</span>
-                {isNonUtf8 && <span className="warning-pill-sm">Non-UTF-8</span>}
-                {isWorkspace && statusMap?.[item.item_id] === "Conflict" && (
-                  <span
-                    className="conflict-pill-sm"
-                    title={t("workspace.status_conflict")}
-                  >
-                    <AlertTriangle size={10} />
-                    <span>{t("workspace.status_conflict")}</span>
+              <div className="row-main-content">
+                <div className="row-line-primary">
+                  <span className="file-name-text" title={item.display_name}>
+                    {item.display_name}
                   </span>
-                )}
-                {isWorkspace && (
-                  <span
-                    className={`reflink-pill-sm ${cloneMethodMap?.[item.item_id] === "Reflink" ? "is-reflink" : ""}`}
-                    title={
-                      cloneMethodMap?.[item.item_id] === "Reflink"
-                        ? t("workspace.clone_method_reflink")
-                        : t("workspace.clone_method_standard")
-                    }
-                  >
-                    <Shield size={10} />
-                    <span>{cloneMethodMap?.[item.item_id] === "Reflink" ? "Reflink" : "Copy"}</span>
+                  {isNonUtf8 && <span className="warning-pill-sm">Non-UTF-8</span>}
+                  {isWorkspace && statusMap?.[item.item_id] === "Conflict" && (
+                    <span
+                      className="conflict-pill-sm"
+                      title={t("workspace.status_conflict")}
+                    >
+                      <AlertTriangle size={10} />
+                      <span>{t("workspace.status_conflict")}</span>
+                    </span>
+                  )}
+                  {isWorkspace && (
+                    <span
+                      className={`reflink-pill-sm ${cloneMethodMap?.[item.item_id] === "Reflink" ? "is-reflink" : ""}`}
+                      title={
+                        cloneMethodMap?.[item.item_id] === "Reflink"
+                          ? t("workspace.clone_method_reflink")
+                          : t("workspace.clone_method_standard")
+                      }
+                    >
+                      <Shield size={10} />
+                      <span>{cloneMethodMap?.[item.item_id] === "Reflink" ? "Reflink" : "Copy"}</span>
+                    </span>
+                  )}
+                </div>
+
+                <div className="row-line-secondary">
+                  <span className="file-meta-item file-meta-size">
+                    {item.is_dir ? t("browser.dir_type") : formatBytes(Number(item.size))}
                   </span>
-                )}
-              </div>
-
-              <div className="row-col-size">
-                {item.is_dir ? "-" : formatBytes(Number(item.size))}
-              </div>
-
-              <div className="row-col-mtime">
-                {formatTimestamp(Number(item.mtime_ms))}
-              </div>
-
-              <div className="row-col-inode" title={`inode: ${item.inode}`}>
-                #{item.inode}
+                  <span className="file-meta-separator">•</span>
+                  <span className="file-meta-item file-meta-mtime">
+                    {formatTimestamp(Number(item.mtime_ms))}
+                  </span>
+                  <span className="file-meta-separator">•</span>
+                  <span className="file-meta-item file-meta-inode" title={`inode: ${item.inode}`}>
+                    #{item.inode}
+                  </span>
+                </div>
               </div>
 
               <div className="row-col-actions">

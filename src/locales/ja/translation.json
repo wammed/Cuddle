@@ -187,9 +187,12 @@
   },
   "browser": {
     "col_name": "名前",
+    "col_name_details": "名前・詳細情報",
     "col_size": "サイズ",
     "col_mtime": "更新日時",
     "col_inode": "inode",
+    "col_actions": "操作",
+    "dir_type": "フォルダ",
     "empty_folder": "このフォルダは空です",
     "stage_to_workspace": "作業領域へコピー",
     "stage_selected": "選択を作業領域へ",

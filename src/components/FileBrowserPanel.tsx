@@ -142,12 +142,9 @@ export function FileBrowserPanel({
       </div>
 
       <div className="browser-table-header">
-        <div className="col-header col-icon" />
-        <div className="col-header col-name">{t("browser.col_name")}</div>
-        <div className="col-header col-size">{t("browser.col_size")}</div>
-        <div className="col-header col-mtime">{t("browser.col_mtime")}</div>
-        <div className="col-header col-inode">{t("browser.col_inode")}</div>
-        <div className="col-header col-actions" />
+        <div className="col-header col-header-icon" />
+        <div className="col-header col-header-name">{t("browser.col_name_details")}</div>
+        <div className="col-header col-header-actions">{t("browser.col_actions")}</div>
       </div>
 
       <div className="browser-table-body">

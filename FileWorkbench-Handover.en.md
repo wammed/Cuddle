@@ -4,8 +4,8 @@
   <strong>English</strong> | <a href="FileWorkbench-Handover.ja.md">日本語</a>
 </p>
 
-**Document Date:** 2026-10-25  
-**Status:** All Phases (Phase 1–9) Implementation & Verification Completed; Source Distribution Ready (MIT License / README / BUILD / GitHub Actions CI)  
+**Document Date:** 2026-10-26  
+**Status:** All Phases (Phase 1–9) Implementation & Verification Completed; Source Distribution Ready (MIT License / README / BUILD / GitHub Actions CI); On-Demand Search Indexing UI & systemd Periodic Timer Implemented  
 **Target Audience:** Development, Architecture, and QA Teams; Next Working Session Maintainers  
 
 ---
@@ -449,7 +449,7 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
 
 ---
 
-## 9. Phase 9 (Remaining Core Features & Source-Only Distribution): In Progress
+## 9. Phase 9 (Remaining Core Features & Source-Only Distribution): Completed
 
 ### 9.1 User Decisions (Decision Gate)
 1. **Distribution Policy:** For initial public release, avoid pre-built binary packages (deb, AppImage, Flatpak, etc.) to minimize licensing and compliance complexities. **Publish strictly as open source code accompanied by exhaustive build guides and prerequisite instructions (README / BUILD)**.
@@ -596,9 +596,56 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
   * `BUILD.ja.md` / `BUILD.md`: Added Section 8 "Desktop Launcher & System Integration (.desktop & Icons)".
   * `README.ja.md` / `README.md`: Added one-liner installation commands to the Quick Start section.
 
+### 9.8 Implementation Details (Full-text Search Index On-Demand UI & Section 7.3 Compliant systemd Periodic Timer): Completed
+* **Full-text Search Index On-Demand UI (`SearchPanel.tsx`, `App.css`, Panel Components):**
+  * Added dedicated index management dropdown (`Database` icon) directly adjacent to the search input field.
+  * **Real-time Statistics & Scope Indicators:**
+    * Displays active document count, index status badge (Ready), and current target directory indicator (current folder path or global).
+  * **4 Explicit Index Operation Modes (`IndexOperationMode`):**
+    1. **Incremental Update (`IncrementalUpdate` / Recommended):** Compares files against recorded index modification times (`mtime`) and extracts only newly added or modified files. Unchanged files are skipped at high speed.
+    2. **Index Directory (`IndexDirectory`):** Recursively traverses and indexes text, source code, and documents within the currently opened directory.
+    3. **Full Rebuild (`FullRebuild`):** Clears existing index documents and completely rescans and rebuilds full-text search indexes from scratch.
+    4. **Reset / Clear (`ResetClear`):** Safely deletes all documents from the Tantivy full-text index (resets to initial state).
+  * **Dynamic Feedback & Completion Summary Banner:**
+    * Shows animated spinner (`Loader2`) and disables dropdown buttons during execution to prevent concurrent operations.
+    * Renders an immediate completion summary banner showing processed count, new/updated count, skipped count, error count, and elapsed milliseconds.
+  * **Cyber Dark Styling Parity:** Eliminates all pure white backgrounds, adhering strictly to Dark Velvet Slate styling with color-coded iconography (neon green, cyan, amber, rose).
+* **Backend Index Operation Engine (`src-tauri/src/extractor.rs`, `src-tauri/src/search_fulltext.rs`):**
+  * `search_fulltext.rs`:
+    * `clear_all_documents`: Atomically deletes all index documents and commits changes.
+    * `get_total_documents`: Rapidly queries active document count.
+    * `get_indexed_mtime`: Tantivy 0.26 query (`item_id` / `raw_base64`) retrieving indexed `mtime` for incremental validation.
+    * `INIT_MUTEX` double-checked locking around `get_or_init_engine()` eliminates concurrent test race conditions on Tantivy index file locks.
+  * `extractor.rs`:
+    * `run_index_operation`: Unified worker executing `IncrementalUpdate`, `IndexDirectory`, `FullRebuild`, and `ResetClear`.
+    * Handles skipped files, PDF isolated workers (Landlock LSM + 256 MiB memory ceiling), and fault-tolerant continuous batch processing.
+* **Section 7.3 Architecture: Offline Periodic Indexing (`src-tauri/src/periodic_index.rs`):**
+  * **Kernel Exclusive Lock Control (`libc::flock`):**
+    * Uses `flock(LOCK_EX | LOCK_NB)` on `$XDG_DATA_HOME/Cuddle/cuddle.lock`.
+    * Cuddle GUI holds `GUI_LOCK` for its entire runtime.
+    * Headless periodic updater (`--index-update`) probes the lock on startup and exits immediately with code 0 if GUI is running (physically preventing Tantivy index corruption and lock contention).
+  * **Headless CLI Subcommands:**
+    * `cuddle --index-update [--quiet]`: Executes headless incremental full-text index updating.
+    * `cuddle --install-systemd-timer`: Generates, writes, and enables user systemd units (`cuddle-index.service` and `cuddle-index.timer`).
+    * `cuddle --uninstall-systemd-timer`: Stops, disables, and deletes systemd user timer units.
+    * `cuddle --systemd-timer-status`: Outputs systemd user timer status, active state, and next scheduled trigger.
+  * **systemd User Units (`systemd/cuddle-index.service`, `systemd/cuddle-index.timer`):**
+    * Configured with `Nice=19` and `IOSchedulingClass=idle` to ensure zero background impact on interactive desktop workflows.
+    * `OnCalendar=*-*-* 02:30:00` with `Persistent=true` ensures missed runs during laptop suspend/sleep are caught up cleanly.
+    * Integrated into installers (`scripts/install.sh`, `scripts/install-kde.sh`) and cleanly removed in `scripts/uninstall.sh`.
+* **Tauri IPC Commands & TypeScript DTO Synchronization:**
+  * Exposed and registered `get_index_stats`, `run_index_operation`, `get_systemd_timer_status`, `install_systemd_timer`, `uninstall_systemd_timer`.
+  * Auto-generated TypeScript types via `ts-rs` (`IndexStatsDto.ts`, `RunIndexOptions.ts`, `IndexOperationMode.ts`, `IndexOperationResultDto.ts`, `SystemdTimerStatusDto.ts`).
+* **Bilingual Synchronization (`ja/translation.json`, `en/translation.json`):**
+  * 100% parity across Japanese and English locales for all `search.index_*` keys.
+* **Verification & Testing:**
+  * 71 Vitest unit tests passing (100%, added `SearchPanel.test.tsx`).
+  * 184 Cargo unit tests passing (100%, added `test_run_index_operations_workflow`, `test_app_lock_exclusive`, etc.).
+  * Zero Cargo clippy warnings, TypeScript type checks and Vite production builds passing cleanly.
+
 ---
 
-## 7. Development Guardrails
+## 10. Development Guardrails
 
 * **Root Execution Prohibited:** The application must strictly execute with non-privileged user rights (no `sudo` / `pkexec` privilege escalation).
 * **Original File Protection:** In-place modifications to original files are categorically forbidden. Operations apply strictly to `workspace-temp/` copies and are reflected only upon explicit confirmation.

@@ -8,6 +8,7 @@ pub mod extractor;
 pub mod git;
 pub mod history;
 pub mod models;
+pub mod periodic_index;
 pub mod pipeline;
 pub mod policy;
 pub mod sandbox;
@@ -179,6 +180,41 @@ fn index_file_with_text(
     options: Option<extractor::ExtractTextOptions>,
 ) -> Result<extractor::ExtractedTextDto, String> {
     extractor::index_file_with_text(&path_base64, options).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_index_stats() -> Result<search_fulltext::IndexStatsDto, String> {
+    let engine = search_fulltext::get_or_init_engine().map_err(|e| e.to_string())?;
+    let path = search_fulltext::get_default_index_dir().map_err(|e| e.to_string())?;
+    Ok(search_fulltext::IndexStatsDto {
+        total_documents: engine.get_total_documents(),
+        index_path: path.to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
+async fn run_index_operation(
+    options: extractor::RunIndexOptions,
+) -> Result<extractor::IndexOperationResultDto, String> {
+    tokio::task::spawn_blocking(move || extractor::run_index_operation(options))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_systemd_timer_status() -> Result<periodic_index::SystemdTimerStatusDto, String> {
+    periodic_index::get_systemd_timer_status()
+}
+
+#[tauri::command]
+fn install_systemd_timer() -> Result<periodic_index::SystemdTimerStatusDto, String> {
+    periodic_index::install_systemd_timer()
+}
+
+#[tauri::command]
+fn uninstall_systemd_timer() -> Result<periodic_index::SystemdTimerStatusDto, String> {
+    periodic_index::uninstall_systemd_timer()
 }
 
 #[tauri::command]
@@ -507,7 +543,7 @@ fn execute_timestamp_plan(
     plan: timestamp::TimestampPlanDto,
 ) -> Result<timestamp::TimestampExecutionResultDto, String> {
     let hist_mgr = history::get_history_manager();
-    Ok(timestamp::execute_timestamp_plan(plan, Some(&hist_mgr)))
+    Ok(timestamp::execute_timestamp_plan(plan, Some(hist_mgr)))
 }
 
 #[tauri::command]
@@ -517,7 +553,7 @@ fn export_workspace_tar(
     let mgr = workspace::get_workspace_manager();
     let staged = mgr.list_staged();
     let hist_mgr = history::get_history_manager();
-    export_tar::export_workspace_to_tar(&staged, &options, Some(&hist_mgr))
+    export_tar::export_workspace_to_tar(&staged, &options, Some(hist_mgr))
         .map_err(|e| e.to_string())
 }
 
@@ -776,8 +812,26 @@ async fn execute_custom_pipeline(
     Ok(res)
 }
 
+static GUI_LOCK: std::sync::Mutex<Option<periodic_index::AppLock>> = std::sync::Mutex::new(None);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(res) = periodic_index::handle_cli_args(&args) {
+        match res {
+            Ok(()) => std::process::exit(0),
+            Err(e) => {
+                eprintln!("[Cuddle Error] {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // Acquire GUI lock so background periodic indexers skip when GUI is active
+    if let Ok(Some(lock)) = periodic_index::try_acquire_lock() {
+        *GUI_LOCK.lock().unwrap() = Some(lock);
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
@@ -793,6 +847,11 @@ pub fn run() {
             search_fulltext,
             extract_file_text,
             index_file_with_text,
+            get_index_stats,
+            run_index_operation,
+            get_systemd_timer_status,
+            install_systemd_timer,
+            uninstall_systemd_timer,
             check_operation_policy,
             create_original_snapshot,
             verify_original_conflict,

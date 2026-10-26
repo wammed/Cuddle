@@ -92,9 +92,10 @@ pub fn get_git_status(path_base64: String) -> Result<GitStatusDto, AppErrorDto> 
     };
 
     if !dir.exists() {
-        let mut res = GitStatusDto::default();
-        res.error_message = Some(format!("Directory does not exist: {}", dir.display()));
-        return Ok(res);
+        return Ok(GitStatusDto {
+            error_message: Some(format!("Directory does not exist: {}", dir.display())),
+            ..Default::default()
+        });
     }
 
     // 1. Check if git repo exists (git rev-parse --show-toplevel)
@@ -111,9 +112,10 @@ pub fn get_git_status(path_base64: String) -> Result<GitStatusDto, AppErrorDto> 
             return Ok(GitStatusDto::default());
         }
         Err(err) => {
-            let mut res = GitStatusDto::default();
-            res.error_message = Some(format!("Failed to invoke git: {err}"));
-            return Ok(res);
+            return Ok(GitStatusDto {
+                error_message: Some(format!("Failed to invoke git: {err}")),
+                ..Default::default()
+            });
         }
     };
 

@@ -140,7 +140,22 @@
     "placeholder_fulltext": "本文のキーワードを入力...",
     "search_button": "検索",
     "hits_count": "{{count}} 件ヒット",
-    "snippet_label": "本文スニペット"
+    "snippet_label": "本文スニペット",
+    "index_button_title": "インデックス操作 / 管理",
+    "index_stats": "インデックス: {{count}}件",
+    "index_target_label": "対象ディレクトリ",
+    "index_mode_label": "インデックス操作",
+    "index_incremental": "差分更新",
+    "index_incremental_desc": "変更・追加されたファイルのみ検出してインデックスを更新",
+    "index_add_folder": "フォルダをインデックス化",
+    "index_add_folder_desc": "現在フォルダ配下の対応ファイルを新規・差分登録",
+    "index_rebuild": "完全再構築",
+    "index_rebuild_desc": "既存インデックスを全消去し、フォルダ全体をゼロから再構築",
+    "index_reset": "インデックス初期化",
+    "index_reset_desc": "登録済みインデックスを全消去して空にする",
+    "index_running": "インデックス処理中...",
+    "index_completed": "インデックス処理が完了しました",
+    "index_result_summary": "完了: 追加 {{indexed}}件 / 更新 {{updated}}件 / 変更なし {{unchanged}}件 / スキップ {{skipped}}件 (合計 {{total}}件)"
   },
   "extractor": {
     "title": "テキスト抽出 & インデックス登録",

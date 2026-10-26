@@ -801,6 +801,7 @@ export function App() {
                     }
                   }}
                   onLog={addLog}
+                  currentPath={currentPath}
                 />
               </Panel>
 

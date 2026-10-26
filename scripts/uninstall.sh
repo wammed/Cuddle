@@ -144,4 +144,14 @@ elif command -v kbuildsycoca5 >/dev/null 2>&1; then
   kbuildsycoca5 --noincremental 2>/dev/null || true
 fi
 
+# 5. Remove Periodic Indexer systemd timer (Section 7.3)
+if [[ "${MODE}" == "user" ]] && command -v systemctl >/dev/null 2>&1; then
+  log_info "Removing periodic indexer systemd timer..."
+  systemctl --user stop cuddle-index.timer 2>/dev/null || true
+  systemctl --user disable cuddle-index.timer 2>/dev/null || true
+  rm -f "${HOME}/.config/systemd/user/cuddle-index.timer" "${HOME}/.config/systemd/user/cuddle-index.service"
+  systemctl --user daemon-reload 2>/dev/null || true
+  log_succ "Removed cuddle-index systemd user timer and service"
+fi
+
 printf "\n${GREEN}${BOLD}✔ Cuddle has been completely uninstalled.${RESET}\n\n"

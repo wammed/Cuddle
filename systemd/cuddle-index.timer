@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily Periodic Fulltext Index Timer for Cuddle (Section 7.3)
+Documentation=https://github.com/wammed/Cuddle
+
+[Timer]
+# Run daily at 02:30 AM
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target

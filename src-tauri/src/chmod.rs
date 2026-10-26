@@ -173,7 +173,7 @@ pub fn parse_symbolic_mode(current_mode: u32, expr: &str) -> Result<u32, String>
 
         // Find operator position (+, -, =)
         let op_pos = c
-            .find(|ch| ch == '+' || ch == '-' || ch == '=')
+            .find(['+', '-', '='])
             .ok_or_else(|| format!("Missing operator (+, -, =) in symbolic clause: '{}'", c))?;
 
         let who_str = &c[..op_pos];

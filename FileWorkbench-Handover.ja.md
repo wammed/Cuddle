@@ -4,8 +4,8 @@
   <a href="FileWorkbench-Handover.en.md">English</a> | <strong>日本語</strong>
 </p>
 
-**文書作成日：** 2026-10-25  
-**ステータス：** 全フェーズ（Phase 1〜9）実装・検証完了、ソース公開配布準備完了（MIT License / README / BUILD / CI Actions 整備完了）  
+**文書作成日：** 2026-10-26  
+**ステータス：** 全フェーズ（Phase 1〜9）実装・検証完了、ソース公開配布準備完了（MIT License / README / BUILD / CI Actions 整備完了）、検索インデックス明示的管理UI & systemd定期更新タイマー実装完了  
 **対象：** 開発・設計・テスト担当者、次期作業セッション担当  
 
 ---
@@ -451,7 +451,7 @@
 
 ---
 
-## 9. Phase 9（未実装コア機能 & ソース公開配布体制）：進行中
+## 9. Phase 9（未実装コア機能 & ソース公開配布体制）：完了
 
 ### 9.1 ユーザー合意事項（意思決定ゲート）
 1. **配布方針（Distribution Policy）：** 初期リリースではライセンス管理等の煩雑さを避けるためバイナリパッケージ（deb, AppImage, Flatpak 等）の配布は行わず、**ソースコードのみを公開し、必須前提パッケージおよびビルド手順（README / BUILD）を完全に明記する**。
@@ -595,9 +595,56 @@
   * `BUILD.ja.md` / `BUILD.md`: 第 8 項「デスクトップ環境へのインストール（ランチャー・アイコン登録）」を新設。
   * `README.ja.md` / `README.md`: クイックスタート内にワンライナーインストールコマンドを追記。
 
+### 9.8 実装内容（全文検索インデックス明示的管理UI & 設計書 7.3 準拠 systemd 定期更新タイマー）：完了
+* **検索インデックス明示的管理 UI（`SearchPanel.tsx`, `App.css`, 各種パネル）：**
+  * 検索入力枠右隣に専用の「インデックス管理（Database）」ドロップダウンスイッチを新設。
+  * **リアルタイム統計 ＆ 対象ディレクトリ表示：**
+    * 登録済みドキュメント件数、インデックス状態（Ready）、対象ディレクトリ（現在フォルダパスまたは全範囲）のステータスピルを配備。
+  * **4 つの明示的インデックス操作モード（`IndexOperationMode`）：**
+    1. **差分・増分更新（`IncrementalUpdate` / 推奨）：** 既存ドキュメントの最終更新日時（mtime）と照合し、新規作成または変更されたファイルのみを抽出・登録。未変更ファイルは高速スキップ。
+    2. **現在フォルダ登録（`IndexDirectory`）：** 現在開いているディレクトリ配下のテキスト・ソースコード・ドキュメントを再帰走査してインデックス化。
+    3. **全インデックス再構築（`FullRebuild`）：** 既存インデックスを全消去した上でホームおよび対象領域をゼロから完全再走査・再構築。
+    4. **インデックス初期化・全消去（`ResetClear`）：** Tantivy インデックス内の全登録ドキュメントを安全に消去（初期状態へリセット）。
+  * **実行中フィードバック ＆ 完了サマリーバナー：**
+    * 実行中はスピナー（`Loader2`）回転とボタン無効化による二重クリック防止。
+    * 完了後は総処理件数、新規・更新件数、スキップ件数、エラー件数、所要時間（ミリ秒）を表示するサマリーバナーを即時描画。
+  * **サイバーダーク統一：** 白背景を完全排除し、Dark Velvet Slate ＋ ネオングリーン／シアン／アンバー／ローズの色分けアイコンを採用。
+* **バックエンドインデックス操作エンジン（`src-tauri/src/extractor.rs`, `src-tauri/src/search_fulltext.rs`）：**
+  * `search_fulltext.rs`:
+    * `clear_all_documents`: インデックス内の全ドキュメントを一括削除してコミット。
+    * `get_total_documents`: 現在登録済みの有効ドキュメント数を高速取得。
+    * `get_indexed_mtime`: Tantivy 0.26 クエリ（`item_id` / `raw_base64`）によるインデックス済み mtime 取得（増分判定用）。
+    * `INIT_MUTEX` による二重チェックロッキングを導入し、並列テスト時の Tantivy `LockBusy` 競合を完全排除。
+  * `extractor.rs`:
+    * `run_index_operation`: `IncrementalUpdate`, `IndexDirectory`, `FullRebuild`, `ResetClear` の全モードを処理する統合ワーカー。
+    * 未変更ファイルのスキップ、PDF 分離ワーカー（Landlock LSM ＋ メモリ上限 256 MiB）呼び出し、エラー許容継続処理。
+* **設計書 7.3 準拠: アプリ停止中の定期更新（`src-tauri/src/periodic_index.rs`）：**
+  * **カーネル排他ロック（`libc::flock`）による安全制御：**
+    * `$XDG_DATA_HOME/Cuddle/cuddle.lock` に対する `flock(LOCK_EX | LOCK_NB)` を採用。
+    * Cuddle GUI 起動中は静的 `GUI_LOCK` によりロックを保持。
+    * バックグラウンド定期更新（`--index-update`）は起動時にロックを検査し、GUI が起動中であれば即座に終了コード 0 で正常終了（Tantivy インデックスの並行書き込み破損・ファイルロック競合を物理的に完全防止）。
+  * **ヘッドレス CLI サブコマンド体系：**
+    * `cuddle --index-update [--quiet]`: ヘッドレス増分インデックス更新の実行。
+    * `cuddle --install-systemd-timer`: systemd ユーザーユニット（service / timer）の自動配置と有効化。
+    * `cuddle --uninstall-systemd-timer`: systemd ユーザータイマーの停止・無効化・クリーン除去。
+    * `cuddle --systemd-timer-status`: タイマーの登録状態、稼働状態、次回実行予定を出力。
+  * **systemd ユーザーユニット（`systemd/cuddle-index.service`, `systemd/cuddle-index.timer`）：**
+    * `Nice=19`, `IOSchedulingClass=idle` により作業中のマシンへの負荷をゼロ化。
+    * `OnCalendar=*-*-* 02:30:00` かつ `Persistent=true` により、PC 起動時や深夜スリープ復帰時にも確実に増分更新を実行。
+    * インストーラー（`scripts/install.sh`, `scripts/install-kde.sh`）で自動配備・有効化、アンインストーラー（`scripts/uninstall.sh`）で自動削除。
+* **Tauri IPC コマンド & TypeScript 型同期：**
+  * `get_index_stats`, `run_index_operation`, `get_systemd_timer_status`, `install_systemd_timer`, `uninstall_systemd_timer` を公開・登録。
+  * `ts-rs` による TypeScript 型自動生成（`IndexStatsDto.ts`, `RunIndexOptions.ts`, `IndexOperationMode.ts`, `IndexOperationResultDto.ts`, `SystemdTimerStatusDto.ts`）。
+* **多言語同期（`ja/translation.json`, `en/translation.json`）：**
+  * `search.index_*` の全キー（タイトル、各操作モード名、説明、統計、ボタン、サマリーラベル等）を日英完全同期。
+* **テスト検証：**
+  * Vitest 71 件全件 100% パス（`SearchPanel.test.tsx` 新設）。
+  * Cargo test 184 件全件 100% パス（`test_run_index_operations_workflow`, `test_app_lock_exclusive` 等を追加）。
+  * Cargo clippy 警告ゼロ、TypeScript 型チェック / Vite ビルド完全成功。
+
 ---
 
-## 7. 開発上の重要制約（Guardrails）
+## 10. 開発上の重要制約（Guardrails）
 
 * **root 権限実行の禁止：** アプリは常に非特権一般ユーザー権限で動作させる（権限昇格 `sudo`/`pkexec` は行わない）。
 * **原本保護の徹底：** 原本ファイルに対する直接編集・インプレース更新は行わない。すべての変更は `workspace-temp/` 内の作業コピーに対して行い、明示的な反映操作でのみ置換する。

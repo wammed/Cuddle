@@ -1,5 +1,6 @@
 use crate::models::{decode_path_from_base64, FileItem};
 use crate::sandbox::LandlockSandbox;
+use crate::scanner::{self, ScanOptions};
 use crate::search_fulltext;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
@@ -70,6 +71,50 @@ pub struct ExtractedTextDto {
     pub encoding_used: String,
     pub truncated: bool,
     pub warning: Option<String>,
+}
+
+/// Operation mode for on-demand explicit index creation/maintenance.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "../../src/types/")]
+pub enum IndexOperationMode {
+    /// 差分更新 (Incremental Update): 変更・追加されたファイルのみ検出してインデックスを高速更新
+    IncrementalUpdate,
+    /// フォルダ追加 (Index Folder): 指定フォルダ内の対応ファイルを走査してインデックスに追加
+    IndexDirectory,
+    /// 全再構築 (Full Rebuild): 既存インデックスを全消去し、フォルダ全体をゼロから再構築
+    FullRebuild,
+    /// リセット・消去 (Reset & Clear): インデックスを全消去して空にする
+    ResetClear,
+}
+
+/// Options controlling explicit index batch execution.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "../../src/types/")]
+pub struct RunIndexOptions {
+    /// Base64-encoded target directory path. If None, falls back to current dir or user home.
+    pub target_raw_base64: Option<String>,
+    /// Operation mode: IncrementalUpdate | IndexDirectory | FullRebuild | ResetClear
+    pub mode: IndexOperationMode,
+    /// Maximum recursive traversal depth (None for unlimited)
+    pub max_depth: Option<usize>,
+    /// Whether to include hidden files (default: false)
+    pub include_hidden: bool,
+}
+
+/// Structured summary returned after an index operation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "../../src/types/")]
+pub struct IndexOperationResultDto {
+    pub mode: IndexOperationMode,
+    pub target_path: String,
+    pub indexed_count: usize,
+    pub updated_count: usize,
+    pub unchanged_count: usize,
+    pub skipped_count: usize,
+    pub failed_count: usize,
+    pub total_documents: usize,
+    pub elapsed_ms: u64,
+    pub message: String,
 }
 
 /// Checks whether a given path is a known plain-text or source-code extension.
@@ -403,6 +448,142 @@ pub fn index_file_with_text(
     Ok(extracted)
 }
 
+/// Executes an explicit index creation or maintenance operation (Incremental, Add, Full Rebuild, or Reset)
+/// across the specified target directory.
+pub fn run_index_operation(
+    options: RunIndexOptions,
+) -> Result<IndexOperationResultDto, ExtractorError> {
+    let start_time = std::time::Instant::now();
+    let engine = search_fulltext::get_or_init_engine()?;
+
+    let target_path = match &options.target_raw_base64 {
+        Some(b64) => decode_path_from_base64(b64)?,
+        None => dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")),
+    };
+
+    if options.mode == IndexOperationMode::ResetClear {
+        engine.clear_all_documents()?;
+        let elapsed_ms = start_time.elapsed().as_millis() as u64;
+        return Ok(IndexOperationResultDto {
+            mode: options.mode,
+            target_path: target_path.to_string_lossy().to_string(),
+            indexed_count: 0,
+            updated_count: 0,
+            unchanged_count: 0,
+            skipped_count: 0,
+            failed_count: 0,
+            total_documents: 0,
+            elapsed_ms,
+            message: "Fulltext search index cleared successfully.".to_string(),
+        });
+    }
+
+    if options.mode == IndexOperationMode::FullRebuild {
+        engine.clear_all_documents()?;
+    }
+
+    let scan_opts = ScanOptions {
+        max_depth: options.max_depth,
+        follow_symlinks: false,
+        include_hidden: options.include_hidden,
+    };
+
+    let items = scanner::scan_directory(&target_path, &scan_opts).map_err(|e| match e {
+        scanner::ScanError::Io(io_err) => ExtractorError::Io(io_err),
+        scanner::ScanError::Model(model_err) => ExtractorError::Model(model_err),
+        scanner::ScanError::PathNotFound(p) => ExtractorError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            p.to_string_lossy(),
+        )),
+    })?;
+
+    let mut indexed_count = 0;
+    let mut updated_count = 0;
+    let mut unchanged_count = 0;
+    let mut skipped_count = 0;
+    let mut failed_count = 0;
+
+    for item in &items {
+        if item.is_dir || item.is_symlink {
+            continue;
+        }
+
+        let item_path = match decode_path_from_base64(&item.raw_base64) {
+            Ok(p) => p,
+            Err(_) => {
+                failed_count += 1;
+                continue;
+            }
+        };
+
+        let ext = item_path.extension().and_then(|s| s.to_str()).unwrap_or("");
+        if !is_tier1_text_extension(ext) && !is_tier2_pdf_extension(ext) && !ext.is_empty() {
+            skipped_count += 1;
+            continue;
+        }
+
+        let existing_mtime = engine.get_indexed_mtime(&item.raw_base64);
+
+        if options.mode == IndexOperationMode::IncrementalUpdate {
+            if let Some(mtime) = existing_mtime {
+                if mtime == item.mtime_ms {
+                    unchanged_count += 1;
+                    continue;
+                }
+            }
+        }
+
+        match extract_file_text(&item_path, None) {
+            Ok(extracted) => {
+                if extracted.text.trim().is_empty() {
+                    skipped_count += 1;
+                } else {
+                    if let Err(e) = engine.index_document(item, &extracted.text) {
+                        eprintln!(
+                            "[Cuddle Indexer] Failed to index document {:?}: {}",
+                            item_path, e
+                        );
+                        failed_count += 1;
+                    } else if existing_mtime.is_some() {
+                        updated_count += 1;
+                    } else {
+                        indexed_count += 1;
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!(
+                    "[Cuddle Indexer] Extraction error on {:?}: {}",
+                    item_path, e
+                );
+                failed_count += 1;
+            }
+        }
+    }
+
+    engine.commit()?;
+
+    let elapsed_ms = start_time.elapsed().as_millis() as u64;
+    let total_documents = engine.get_total_documents();
+    let message = format!(
+        "Index operation completed: {} indexed, {} updated, {} unchanged, {} skipped, {} failed (total: {} docs)",
+        indexed_count, updated_count, unchanged_count, skipped_count, failed_count, total_documents
+    );
+
+    Ok(IndexOperationResultDto {
+        mode: options.mode,
+        target_path: target_path.to_string_lossy().to_string(),
+        indexed_count,
+        updated_count,
+        unchanged_count,
+        skipped_count,
+        failed_count,
+        total_documents,
+        elapsed_ms,
+        message,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -559,6 +740,81 @@ mod tests {
     }
 
     #[test]
+    fn test_run_index_operations_workflow() {
+        use crate::models::encode_path_to_base64;
+        let temp_dir = std::env::temp_dir().join(format!("cuddle-index-ops-{}", Uuid::new_v4()));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let file1 = temp_dir.join("note1.txt");
+        fs::write(&file1, "北海道の札幌で美味しい味噌ラーメンを食べました。").unwrap();
+
+        let file2 = temp_dir.join("note2.md");
+        fs::write(&file2, "沖縄の那覇で青い海と美ら海水族館を観光しました。").unwrap();
+
+        let b64 = encode_path_to_base64(&temp_dir);
+
+        // 1. Initial Index Directory
+        let res_initial = run_index_operation(RunIndexOptions {
+            target_raw_base64: Some(b64.clone()),
+            mode: IndexOperationMode::IndexDirectory,
+            max_depth: None,
+            include_hidden: false,
+        })
+        .unwrap();
+        assert_eq!(res_initial.indexed_count, 2);
+        assert_eq!(res_initial.unchanged_count, 0);
+
+        // 2. Incremental Update without modification -> both unchanged
+        let res_inc1 = run_index_operation(RunIndexOptions {
+            target_raw_base64: Some(b64.clone()),
+            mode: IndexOperationMode::IncrementalUpdate,
+            max_depth: None,
+            include_hidden: false,
+        })
+        .unwrap();
+        assert_eq!(res_inc1.indexed_count, 0);
+        assert_eq!(res_inc1.unchanged_count, 2);
+
+        // 3. Modify note1 and re-run incremental -> 1 updated, 1 unchanged
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        fs::write(&file1, "北海道の旭川で美味しい醤油ラーメンを食べました。").unwrap();
+        let res_inc2 = run_index_operation(RunIndexOptions {
+            target_raw_base64: Some(b64.clone()),
+            mode: IndexOperationMode::IncrementalUpdate,
+            max_depth: None,
+            include_hidden: false,
+        })
+        .unwrap();
+        assert_eq!(res_inc2.updated_count, 1);
+        assert_eq!(res_inc2.unchanged_count, 1);
+
+        // 4. Verify search matches updated content
+        let engine = search_fulltext::get_or_init_engine().unwrap();
+        let hits = engine
+            .search("旭川", &search_fulltext::FulltextSearchOptions::default())
+            .unwrap();
+        assert!(!hits.is_empty());
+        assert!(hits.iter().any(|h| h.display_name == "note1.txt"));
+
+        // 5. Reset and Clear Index
+        let res_clear = run_index_operation(RunIndexOptions {
+            target_raw_base64: Some(b64.clone()),
+            mode: IndexOperationMode::ResetClear,
+            max_depth: None,
+            include_hidden: false,
+        })
+        .unwrap();
+        assert_eq!(res_clear.total_documents, 0);
+
+        let hits_after = engine
+            .search("旭川", &search_fulltext::FulltextSearchOptions::default())
+            .unwrap();
+        assert!(hits_after.is_empty());
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
     fn test_export_typescript_bindings_extractor() {
         let _ = fs::create_dir_all("../src/types");
         let cfg = ts_rs::Config::default();
@@ -566,5 +822,10 @@ mod tests {
             .expect("Failed to export ExtractedTextDto TypeScript binding");
         ExtractTextOptions::export(&cfg)
             .expect("Failed to export ExtractTextOptions TypeScript binding");
+        IndexOperationMode::export(&cfg)
+            .expect("Failed to export IndexOperationMode TypeScript binding");
+        RunIndexOptions::export(&cfg).expect("Failed to export RunIndexOptions TypeScript binding");
+        IndexOperationResultDto::export(&cfg)
+            .expect("Failed to export IndexOperationResultDto TypeScript binding");
     }
 }

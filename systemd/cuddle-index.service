@@ -1,0 +1,13 @@
+[Unit]
+Description=Cuddle File Workbench - Periodic Fulltext Indexer (Section 7.3)
+Documentation=https://github.com/wammed/Cuddle
+After=default.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/cuddle --index-update --quiet
+StandardOutput=journal
+StandardError=journal
+Nice=19
+CPUSchedulingPolicy=idle
+IOSchedulingClass=idle

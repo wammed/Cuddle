@@ -1,17 +1,35 @@
-import { useState } from "react";
-import { Search, FileSearch, Sparkles, AlertCircle } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import {
+  Search,
+  FileSearch,
+  Sparkles,
+  AlertCircle,
+  Database,
+  RefreshCw,
+  FolderPlus,
+  RotateCcw,
+  Trash2,
+  ChevronDown,
+  Loader2,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import type { SearchResultDto } from "../types/SearchResultDto";
 import type { FulltextHitDto } from "../types/FulltextHitDto";
 import type { FileItem } from "../types/FileItem";
+import type { IndexStatsDto } from "../types/IndexStatsDto";
+import type { IndexOperationResultDto } from "../types/IndexOperationResultDto";
+import type { IndexOperationMode } from "../types/IndexOperationMode";
+import type { RunIndexOptions } from "../types/RunIndexOptions";
+import { encodePathToBase64 } from "../utils/path";
 
 interface SearchPanelProps {
   onSelectItem: (item: Partial<FileItem>) => void;
   onLog: (msg: string) => void;
+  currentPath?: string;
 }
 
-export function SearchPanel({ onSelectItem, onLog }: SearchPanelProps) {
+export function SearchPanel({ onSelectItem, onLog, currentPath }: SearchPanelProps) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<"filename" | "fulltext">("filename");
   const [query, setQuery] = useState("");
@@ -19,6 +37,41 @@ export function SearchPanel({ onSelectItem, onLog }: SearchPanelProps) {
   const [filenameResult, setFilenameResult] = useState<SearchResultDto | null>(null);
   const [fulltextResult, setFulltextResult] = useState<FulltextHitDto[] | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Explicit indexing controls state
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isIndexing, setIsIndexing] = useState(false);
+  const [indexStats, setIndexStats] = useState<IndexStatsDto | null>(null);
+  const [indexStatusMsg, setIndexStatusMsg] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const fetchStats = async () => {
+    try {
+      const stats = await invoke<IndexStatsDto>("get_index_stats");
+      setIndexStats(stats);
+    } catch {
+      // Ignore background stat fetch failure
+    }
+  };
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
+
+  // Close dropdown menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    if (isMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isMenuOpen]);
 
   const handleSearch = async () => {
     if (!query.trim()) return;
@@ -47,6 +100,48 @@ export function SearchPanel({ onSelectItem, onLog }: SearchPanelProps) {
       onLog(`Search error: ${msg}`);
     } finally {
       setIsSearching(false);
+    }
+  };
+
+  const handleIndexOperation = async (mode: IndexOperationMode) => {
+    setIsMenuOpen(false);
+    setIsIndexing(true);
+    setIndexStatusMsg(t("search.index_running"));
+    onLog(`[Index] Running operation: ${mode} on "${currentPath || "."}"...`);
+
+    try {
+      const targetB64 = currentPath && currentPath !== "." ? encodePathToBase64(currentPath) : null;
+      const options: RunIndexOptions = {
+        mode,
+        target_raw_base64: targetB64,
+        max_depth: null,
+        include_hidden: false,
+      };
+
+      const result = await invoke<IndexOperationResultDto>("run_index_operation", { options });
+
+      const summary = t("search.index_result_summary", {
+        indexed: result.indexed_count,
+        updated: result.updated_count,
+        unchanged: result.unchanged_count,
+        skipped: result.skipped_count,
+        total: result.total_documents,
+      });
+
+      setIndexStatusMsg(summary);
+      onLog(`[Index] ${result.message} (${result.elapsed_ms}ms)`);
+      await fetchStats();
+
+      // Clear summary message after 7 seconds
+      setTimeout(() => {
+        setIndexStatusMsg((prev) => (prev === summary ? null : prev));
+      }, 7000);
+    } catch (err: unknown) {
+      const msg = typeof err === "string" ? err : String(err);
+      setIndexStatusMsg(`Error: ${msg}`);
+      onLog(`[Index] Error: ${msg}`);
+    } finally {
+      setIsIndexing(false);
     }
   };
 
@@ -103,7 +198,123 @@ export function SearchPanel({ onSelectItem, onLog }: SearchPanelProps) {
           <button type="submit" className="search-submit-btn" disabled={isSearching}>
             {t("search.search_button")}
           </button>
+
+          {/* Index Operation Dropdown Switch */}
+          <div className="index-dropdown-container" ref={menuRef}>
+            <button
+              type="button"
+              id="index-management-dropdown-btn"
+              className={`index-dropdown-trigger-btn ${isIndexing ? "indexing" : ""}`}
+              onClick={() => {
+                fetchStats();
+                setIsMenuOpen((prev) => !prev);
+              }}
+              title={t("search.index_button_title")}
+              disabled={isIndexing}
+            >
+              {isIndexing ? (
+                <Loader2 size={13} className="spin-animation" />
+              ) : (
+                <Database size={13} />
+              )}
+              <ChevronDown size={11} className={`chevron-icon ${isMenuOpen ? "open" : ""}`} />
+            </button>
+
+            {isMenuOpen && (
+              <div className="index-dropdown-menu">
+                <div className="index-dropdown-header">
+                  <div className="index-header-title">
+                    <Database size={12} />
+                    <span>{t("search.index_mode_label")}</span>
+                  </div>
+                  {indexStats && (
+                    <span className="index-stats-pill">
+                      {t("search.index_stats", { count: indexStats.total_documents })}
+                    </span>
+                  )}
+                </div>
+
+                <div className="index-target-info">
+                  <span className="target-label">{t("search.index_target_label")}:</span>
+                  <span className="target-path" title={currentPath || "."}>
+                    {currentPath
+                      ? currentPath.length > 25
+                        ? "..." + currentPath.slice(-22)
+                        : currentPath
+                      : "."}
+                  </span>
+                </div>
+
+                <div className="index-dropdown-items">
+                  <button
+                    type="button"
+                    className="index-dropdown-item"
+                    onClick={() => handleIndexOperation("IncrementalUpdate")}
+                  >
+                    <div className="item-icon-col icon-incremental">
+                      <RefreshCw size={13} />
+                    </div>
+                    <div className="item-text-col">
+                      <span className="item-title">{t("search.index_incremental")}</span>
+                      <span className="item-desc">{t("search.index_incremental_desc")}</span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="index-dropdown-item"
+                    onClick={() => handleIndexOperation("IndexDirectory")}
+                  >
+                    <div className="item-icon-col icon-add">
+                      <FolderPlus size={13} />
+                    </div>
+                    <div className="item-text-col">
+                      <span className="item-title">{t("search.index_add_folder")}</span>
+                      <span className="item-desc">{t("search.index_add_folder_desc")}</span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="index-dropdown-item"
+                    onClick={() => handleIndexOperation("FullRebuild")}
+                  >
+                    <div className="item-icon-col icon-rebuild">
+                      <RotateCcw size={13} />
+                    </div>
+                    <div className="item-text-col">
+                      <span className="item-title">{t("search.index_rebuild")}</span>
+                      <span className="item-desc">{t("search.index_rebuild_desc")}</span>
+                    </div>
+                  </button>
+
+                  <div className="index-dropdown-divider" />
+
+                  <button
+                    type="button"
+                    className="index-dropdown-item danger"
+                    onClick={() => handleIndexOperation("ResetClear")}
+                  >
+                    <div className="item-icon-col icon-reset">
+                      <Trash2 size={13} />
+                    </div>
+                    <div className="item-text-col">
+                      <span className="item-title">{t("search.index_reset")}</span>
+                      <span className="item-desc">{t("search.index_reset_desc")}</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </form>
+
+        {indexStatusMsg && (
+          <div className="index-status-banner">
+            {isIndexing && <Loader2 size={12} className="spin-animation" />}
+            <span>{indexStatusMsg}</span>
+          </div>
+        )}
       </div>
 
       {errorMsg && (

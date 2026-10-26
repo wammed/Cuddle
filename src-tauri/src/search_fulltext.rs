@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tantivy::collector::TopDocs;
-use tantivy::query::QueryParser;
+use tantivy::query::{QueryParser, TermQuery};
 use tantivy::schema::*;
 use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyError};
 use thiserror::Error;
@@ -68,6 +68,14 @@ impl Default for FulltextSearchOptions {
     }
 }
 
+/// Statistics on the full-text search index state.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "../../src/types/")]
+pub struct IndexStatsDto {
+    pub total_documents: usize,
+    pub index_path: String,
+}
+
 /// Strongly-typed Tantivy schema field references.
 #[derive(Clone, Copy)]
 pub struct FulltextFields {
@@ -91,9 +99,15 @@ pub struct CuddleFulltextEngine {
 }
 
 static GLOBAL_ENGINE: std::sync::OnceLock<CuddleFulltextEngine> = std::sync::OnceLock::new();
+static INIT_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Returns the globally shared CuddleFulltextEngine instance, lazily initialized on first access.
 pub fn get_or_init_engine() -> Result<&'static CuddleFulltextEngine, FulltextError> {
+    if let Some(engine) = GLOBAL_ENGINE.get() {
+        return Ok(engine);
+    }
+
+    let _guard = INIT_MUTEX.lock().unwrap();
     if let Some(engine) = GLOBAL_ENGINE.get() {
         return Ok(engine);
     }
@@ -211,9 +225,11 @@ impl CuddleFulltextEngine {
     pub fn index_document(&self, item: &FileItem, body: &str) -> Result<(), FulltextError> {
         let writer = self.writer.lock().unwrap();
 
-        // Remove previous version if already indexed
-        let term = Term::from_field_text(self.fields.item_id, &item.item_id);
-        writer.delete_term(term);
+        // Remove previous version if already indexed by item_id or raw_base64
+        let term_id = Term::from_field_text(self.fields.item_id, &item.item_id);
+        writer.delete_term(term_id);
+        let term_path = Term::from_field_text(self.fields.raw_base64, &item.raw_base64);
+        writer.delete_term(term_path);
 
         let doc = doc!(
             self.fields.item_id => item.item_id.clone(),
@@ -236,6 +252,35 @@ impl CuddleFulltextEngine {
         let term = Term::from_field_text(self.fields.item_id, item_id);
         writer.delete_term(term);
         Ok(())
+    }
+
+    /// Deletes all documents from the full-text index.
+    pub fn clear_all_documents(&self) -> Result<(), FulltextError> {
+        let mut writer = self.writer.lock().unwrap();
+        writer.delete_all_documents()?;
+        writer.commit()?;
+        self.reader.reload()?;
+        Ok(())
+    }
+
+    /// Returns the total number of currently indexed active documents.
+    pub fn get_total_documents(&self) -> usize {
+        self.reader.searcher().num_docs() as usize
+    }
+
+    /// Looks up the indexed `mtime_ms` for a file by its Base64 path, if indexed.
+    pub fn get_indexed_mtime(&self, raw_base64: &str) -> Option<i64> {
+        let searcher = self.reader.searcher();
+        let term = Term::from_field_text(self.fields.raw_base64, raw_base64);
+        let query = TermQuery::new(term, IndexRecordOption::Basic);
+        if let Ok(docs) = searcher.search(&query, &TopDocs::with_limit(1).order_by_score()) {
+            if let Some((_score, doc_addr)) = docs.first() {
+                if let Ok(doc) = searcher.doc::<TantivyDocument>(*doc_addr) {
+                    return doc.get_first(self.fields.mtime_ms).and_then(|v| v.as_i64());
+                }
+            }
+        }
+        None
     }
 
     /// Commits all pending indexing/deletion operations and reloads the searcher.
@@ -389,6 +434,13 @@ mod tests {
         engine.commit().unwrap();
         let hits_deleted = engine.search("成田", &opts).unwrap();
         assert!(hits_deleted.is_empty());
+
+        // 6. Test clear all and stats
+        assert_eq!(engine.get_total_documents(), 1); // doc-2 remains
+        assert!(engine.get_indexed_mtime(&doc2.raw_base64).is_some());
+        engine.clear_all_documents().unwrap();
+        assert_eq!(engine.get_total_documents(), 0);
+        assert!(engine.get_indexed_mtime(&doc2.raw_base64).is_none());
     }
 
     #[test]
@@ -405,5 +457,6 @@ mod tests {
         let cfg = ts_rs::Config::default();
         let _ = FulltextHitDto::export(&cfg);
         let _ = FulltextSearchOptions::export(&cfg);
+        let _ = IndexStatsDto::export(&cfg);
     }
 }

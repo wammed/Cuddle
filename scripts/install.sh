@@ -390,7 +390,20 @@ case "${DETECTED_DE}" in
         ;;
 esac
 
-# 8. Check PATH configuration
+# 8. Configure Periodic Fulltext Indexing systemd User Timer (Section 7.3)
+if [[ "${INSTALL_MODE}" == "user" ]] && command -v systemctl >/dev/null 2>&1; then
+    log_step "Configuring periodic fulltext indexing systemd user timer (Section 7.3)..."
+    USER_SYSTEMD_DIR="${HOME}/.config/systemd/user"
+    mkdir -p "${USER_SYSTEMD_DIR}"
+    install -m 644 "${ROOT_DIR}/systemd/cuddle-index.service" "${USER_SYSTEMD_DIR}/cuddle-index.service"
+    install -m 644 "${ROOT_DIR}/systemd/cuddle-index.timer" "${USER_SYSTEMD_DIR}/cuddle-index.timer"
+    systemctl --user daemon-reload 2>/dev/null || true
+    if systemctl --user enable --now cuddle-index.timer 2>/dev/null; then
+        log_info "Enabled systemd user timer: cuddle-index.timer (Daily 02:30 AM, lock-guarded)"
+    fi
+fi
+
+# 9. Check PATH configuration
 echo ""
 log_success "Cuddle has been successfully installed to your desktop environment!"
 echo -e "${C_MUTED}------------------------------------------------------------------------------${C_RESET}"

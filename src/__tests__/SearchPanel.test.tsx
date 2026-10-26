@@ -81,7 +81,7 @@ describe("SearchPanel with Explicit Indexing Dropdown", () => {
     expect(screen.getByPlaceholderText(/ファイル名を入力/)).toBeDefined();
     expect(screen.getByRole("button", { name: "検索" })).toBeDefined();
     expect(
-      screen.getByRole("button", { name: "インデックス操作 / 管理" })
+      screen.getByRole("button", { name: /インデックス/ })
     ).toBeDefined();
   });
 
@@ -99,7 +99,7 @@ describe("SearchPanel with Explicit Indexing Dropdown", () => {
       );
     });
 
-    const switchBtn = screen.getByRole("button", { name: "インデックス操作 / 管理" });
+    const switchBtn = screen.getByRole("button", { name: /インデックス/ });
     await act(async () => {
       fireEvent.click(switchBtn);
     });
@@ -125,7 +125,7 @@ describe("SearchPanel with Explicit Indexing Dropdown", () => {
       );
     });
 
-    const switchBtn = screen.getByRole("button", { name: "インデックス操作 / 管理" });
+    const switchBtn = screen.getByRole("button", { name: /インデックス/ });
     await act(async () => {
       fireEvent.click(switchBtn);
     });

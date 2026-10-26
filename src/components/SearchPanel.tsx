@@ -217,6 +217,7 @@ export function SearchPanel({ onSelectItem, onLog, currentPath }: SearchPanelPro
               ) : (
                 <Database size={13} />
               )}
+              <span className="index-btn-label">{t("search.index_button_label")}</span>
               <ChevronDown size={11} className={`chevron-icon ${isMenuOpen ? "open" : ""}`} />
             </button>
 

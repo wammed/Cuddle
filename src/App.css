@@ -640,10 +640,12 @@ body {
 .search-input-form {
   display: flex;
   gap: 6px;
+  align-items: stretch;
 }
 
 .search-input-field {
   flex: 1;
+  min-width: 0;
   background: var(--bg-surface-input);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
@@ -660,6 +662,8 @@ body {
 }
 
 .search-submit-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
   background: rgba(56, 189, 248, 0.15);
   border: 1px solid rgba(56, 189, 248, 0.3);
   color: var(--accent-brand);
@@ -678,33 +682,43 @@ body {
 .index-dropdown-container {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: stretch;
+  flex-shrink: 0;
 }
 
 .index-dropdown-trigger-btn {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
+  background: rgba(45, 212, 191, 0.12);
+  border: 1px solid rgba(45, 212, 191, 0.35);
+  color: #2dd4bf;
   border-radius: var(--radius-sm);
-  padding: 0 8px;
+  padding: 0 9px;
   height: 100%;
+  min-height: 28px;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   cursor: pointer;
+  white-space: nowrap;
   transition: all var(--transition-fast);
 }
 
+.index-btn-label {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
 .index-dropdown-trigger-btn:hover:not(:disabled) {
-  background: rgba(56, 189, 248, 0.15);
-  border-color: rgba(56, 189, 248, 0.35);
-  color: var(--accent-brand);
+  background: rgba(45, 212, 191, 0.22);
+  border-color: rgba(45, 212, 191, 0.6);
+  color: #5eead4;
+  box-shadow: 0 0 12px rgba(45, 212, 191, 0.25);
 }
 
 .index-dropdown-trigger-btn.indexing {
-  background: rgba(56, 189, 248, 0.2);
-  border-color: var(--accent-brand);
-  color: var(--accent-brand);
+  background: rgba(45, 212, 191, 0.25);
+  border-color: #2dd4bf;
+  color: #5eead4;
 }
 
 .chevron-icon {

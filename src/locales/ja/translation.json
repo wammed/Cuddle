@@ -141,6 +141,7 @@
     "search_button": "検索",
     "hits_count": "{{count}} 件ヒット",
     "snippet_label": "本文スニペット",
+    "index_button_label": "インデックス",
     "index_button_title": "インデックス操作 / 管理",
     "index_stats": "インデックス: {{count}}件",
     "index_target_label": "対象ディレクトリ",

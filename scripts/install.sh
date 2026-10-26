@@ -42,7 +42,8 @@ log_error() {
 INSTALL_MODE="user"
 TARGET_DE="auto"
 USE_DEBUG="false"
-BUILD_MODE="auto" # "auto" (build if missing), "always" (--build), "never" (--no-build)
+BUILD_MODE="auto" # "auto" (rebuild if missing, stale, or unbundled), "always" (--build), "never" (--no-build)
+BUILD_BUNDLE="false"
 CUSTOM_BIN=""
 
 print_usage() {
@@ -62,14 +63,15 @@ ${C_BOLD}OPTIONS:${C_RESET}
                        Desktop: /usr/local/share/applications/
                        Icons:   /usr/local/share/icons/hicolor/
     --de <NAME>        Target Desktop Environment: auto (default), cosmic, gnome, kde, xfce, generic
-    --build            Force compile production release binary before installing (pnpm tauri build)
+    --build            Force compile production release binary before installing
     --no-build         Do not auto-build; fail if release binary is not found
-    --debug            Use debug build (src-tauri/target/debug/fileworkbench, requires dev server)
+    --bundle           Generate distribution packages (deb, rpm, AppImage) during build
+    --debug            Use debug binary (src-tauri/target/debug/fileworkbench, requires dev server)
     --bin <PATH>       Use custom binary at specified path
     -h, --help         Show this help message
 
 ${C_BOLD}EXAMPLES:${C_RESET}
-    # Standard user installation (auto-builds release binary if missing)
+    # Standard user installation (auto-detects changes and builds self-contained binary)
     bash scripts/install.sh
 
     # CachyOS + COSMIC DE specific install
@@ -106,6 +108,10 @@ while [[ $# -gt 0 ]]; do
             BUILD_MODE="never"
             shift
             ;;
+        --bundle)
+            BUILD_BUNDLE="true"
+            shift
+            ;;
         --debug)
             USE_DEBUG="true"
             shift
@@ -127,22 +133,68 @@ while [[ $# -gt 0 ]]; do
 done
 
 build_release_binary() {
-    log_step "Building production release binary (pnpm tauri build)..."
+    log_step "Building self-contained production release binary (tauri build)..."
     log_info "Compiling and bundling self-contained assets (no localhost server needed)..."
     cd "${ROOT_DIR}"
+
+    local bundle_arg="--no-bundle"
+    if [[ "${BUILD_BUNDLE}" == "true" ]]; then
+        bundle_arg=""
+    fi
+
     if command -v pnpm &>/dev/null; then
-        pnpm tauri build
+        pnpm tauri build ${bundle_arg}
     elif command -v npm &>/dev/null; then
-        npm run tauri build
+        npm run tauri build -- ${bundle_arg}
     else
         log_error "Neither pnpm nor npm found. Please install Node.js and pnpm."
         exit 1
     fi
+
+    mkdir -p "${ROOT_DIR}/src-tauri/target/release"
+    touch "${ROOT_DIR}/src-tauri/target/release/.tauri-bundled"
+}
+
+is_binary_stale() {
+    local bin="$1"
+    if [[ ! -f "$bin" ]]; then
+        return 0 # Stale (does not exist)
+    fi
+
+    local marker="${ROOT_DIR}/src-tauri/target/release/.tauri-bundled"
+    if [[ ! -f "${marker}" ]]; then
+        return 0
+    fi
+
+    # If the marker is older than the binary, the binary was overwritten by a bare cargo build
+    # without tauri build embedding frontend assets.
+    if [[ "${marker}" -ot "$bin" ]]; then
+        return 0
+    fi
+
+    # Check if any source files are newer than the binary
+    local newer_file
+    newer_file=$(find "${ROOT_DIR}/src" "${ROOT_DIR}/src-tauri/src" \
+        "${ROOT_DIR}/src-tauri/Cargo.toml" "${ROOT_DIR}/src-tauri/tauri.conf.json" \
+        "${ROOT_DIR}/index.html" "${ROOT_DIR}/package.json" \
+        -type f -newer "$bin" -print -quit 2>/dev/null || true)
+
+    if [[ -n "$newer_file" ]]; then
+        return 0 # Stale
+    fi
+
+    return 1 # Fresh
 }
 
 echo -e "${C_TEAL}${C_BOLD}==============================================================================${C_RESET}"
 echo -e "${C_TEAL}${C_BOLD}   Cuddle (File Workbench) - Desktop Launcher Installer                       ${C_RESET}"
 echo -e "${C_TEAL}${C_BOLD}==============================================================================${C_RESET}"
+
+# Check for running processes before proceeding
+if pgrep -x cuddle &>/dev/null || pgrep -x fileworkbench &>/dev/null; then
+    log_warn "An active Cuddle process is currently running."
+    log_warn "Please note that running instances must be restarted after install to load new updates."
+fi
 
 # 1. Locate Binary
 log_step "Locating application executable..."
@@ -172,18 +224,26 @@ else
         RELEASE_BIN="${ROOT_DIR}/src-tauri/target/release/cuddle"
     fi
 
-    if [[ "${BUILD_MODE}" == "always" ]] || { [[ -z "${RELEASE_BIN}" ]] && [[ "${BUILD_MODE}" == "auto" ]]; }; then
+    if [[ "${BUILD_MODE}" == "always" ]]; then
+        log_info "Forced rebuild requested (--build). Triggering production build..."
+        build_release_binary
+    elif [[ "${BUILD_MODE}" == "auto" ]]; then
         if [[ -z "${RELEASE_BIN}" ]]; then
             log_info "Release binary not found. Triggering automatic production build..."
+            build_release_binary
+        elif is_binary_stale "${RELEASE_BIN}"; then
+            log_info "Detected modified source code or unbundled binary. Rebuilding production binary..."
+            build_release_binary
         else
-            log_info "Forced rebuild requested (--build). Triggering production build..."
+            log_info "Found fresh self-contained release binary. Skipping compilation."
         fi
-        build_release_binary
-        if [[ -f "${ROOT_DIR}/src-tauri/target/release/fileworkbench" ]]; then
-            RELEASE_BIN="${ROOT_DIR}/src-tauri/target/release/fileworkbench"
-        elif [[ -f "${ROOT_DIR}/src-tauri/target/release/cuddle" ]]; then
-            RELEASE_BIN="${ROOT_DIR}/src-tauri/target/release/cuddle"
-        fi
+    fi
+
+    # Re-evaluate release binary after potential build
+    if [[ -f "${ROOT_DIR}/src-tauri/target/release/fileworkbench" ]]; then
+        RELEASE_BIN="${ROOT_DIR}/src-tauri/target/release/fileworkbench"
+    elif [[ -f "${ROOT_DIR}/src-tauri/target/release/cuddle" ]]; then
+        RELEASE_BIN="${ROOT_DIR}/src-tauri/target/release/cuddle"
     fi
 
     if [[ -n "${RELEASE_BIN}" ]]; then
@@ -191,7 +251,7 @@ else
     else
         log_error "No release binary found and auto-build was disabled (--no-build)."
         log_error "Please build Cuddle release binary or run installer without --no-build:"
-        echo -e "    ${C_CYAN}pnpm run tauri build${C_RESET}"
+        echo -e "    ${C_CYAN}pnpm run tauri build --no-bundle${C_RESET}"
         exit 1
     fi
 fi
@@ -395,7 +455,9 @@ if [[ "${INSTALL_MODE}" == "user" ]] && command -v systemctl >/dev/null 2>&1; th
     log_step "Configuring periodic fulltext indexing systemd user timer (Section 7.3)..."
     USER_SYSTEMD_DIR="${HOME}/.config/systemd/user"
     mkdir -p "${USER_SYSTEMD_DIR}"
-    install -m 644 "${ROOT_DIR}/systemd/cuddle-index.service" "${USER_SYSTEMD_DIR}/cuddle-index.service"
+    # Ensure ExecStart points directly to the installed cuddle binary path
+    sed "s|%h/.local/bin/cuddle|${BIN_DIR}/cuddle|g" "${ROOT_DIR}/systemd/cuddle-index.service" > "${USER_SYSTEMD_DIR}/cuddle-index.service"
+    chmod 644 "${USER_SYSTEMD_DIR}/cuddle-index.service"
     install -m 644 "${ROOT_DIR}/systemd/cuddle-index.timer" "${USER_SYSTEMD_DIR}/cuddle-index.timer"
     systemctl --user daemon-reload 2>/dev/null || true
     if systemctl --user enable --now cuddle-index.timer 2>/dev/null; then

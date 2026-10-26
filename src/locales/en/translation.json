@@ -141,6 +141,7 @@
     "search_button": "Search",
     "hits_count": "{{count}} hit(s)",
     "snippet_label": "Content Snippet",
+    "index_button_label": "Index",
     "index_button_title": "Index Operations & Management",
     "index_stats": "Index: {{count}} doc(s)",
     "index_target_label": "Target Directory",

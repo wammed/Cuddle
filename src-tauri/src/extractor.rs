@@ -160,7 +160,44 @@ pub fn is_tier1_text_extension(ext: &str) -> bool {
             | "patch"
             | "gitignore"
             | "desktop"
+            | "cfg"
+            | "service"
+            | "lua"
+            | "vim"
+            | "fish"
+            | "rc"
+            | "properties"
+            | "theme"
+            | "rules"
+            | "ninja"
+            | "vue"
+            | "svelte"
     )
+}
+
+/// Determines if a path component belongs to heavy cache/build/VCS directories that should be skipped during full-text index crawling.
+pub fn is_index_excluded_path(path: &Path) -> bool {
+    for comp in path.components() {
+        if let std::path::Component::Normal(c) = comp {
+            if let Some(s) = c.to_str() {
+                if matches!(
+                    s,
+                    ".git"
+                        | ".cache"
+                        | "node_modules"
+                        | ".cargo"
+                        | ".rustup"
+                        | ".npm"
+                        | ".yarn"
+                        | ".pnpm-store"
+                        | ".Trash"
+                ) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// Checks whether a given path is a PDF document requiring Tier 2 isolation.
@@ -516,6 +553,11 @@ pub fn run_index_operation(
             }
         };
 
+        if is_index_excluded_path(&item_path) {
+            skipped_count += 1;
+            continue;
+        }
+
         let ext = item_path.extension().and_then(|s| s.to_str()).unwrap_or("");
         if !is_tier1_text_extension(ext) && !is_tier2_pdf_extension(ext) && !ext.is_empty() {
             skipped_count += 1;
@@ -810,6 +852,64 @@ mod tests {
             .search("旭川", &search_fulltext::FulltextSearchOptions::default())
             .unwrap();
         assert!(hits_after.is_empty());
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_index_dot_directory_and_dot_files() {
+        use crate::models::encode_path_to_base64;
+        let temp_dir = std::env::temp_dir().join(format!("cuddle-dotfiles-{}", Uuid::new_v4()));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        // 1. Create a dotfile (.bashrc)
+        let bashrc_path = temp_dir.join(".bashrc");
+        fs::write(&bashrc_path, "export EDITOR=nvim\nalias ll='ls -la'").unwrap();
+
+        // 2. Create a dot directory (.config/app/settings.toml)
+        let config_dir = temp_dir.join(".config").join("app");
+        fs::create_dir_all(&config_dir).unwrap();
+        let settings_path = config_dir.join("settings.toml");
+        fs::write(
+            &settings_path,
+            "[server]\nport = 8080\nhost = \"127.0.0.1\"",
+        )
+        .unwrap();
+
+        // 3. Create an excluded .git directory (.git/HEAD)
+        let git_dir = temp_dir.join(".git");
+        fs::create_dir_all(&git_dir).unwrap();
+        let git_head = git_dir.join("HEAD");
+        fs::write(&git_head, "ref: refs/heads/main").unwrap();
+
+        // 4. Run index operation with include_hidden: true
+        let b64 = encode_path_to_base64(&temp_dir);
+        let res = run_index_operation(RunIndexOptions {
+            target_raw_base64: Some(b64.clone()),
+            mode: IndexOperationMode::IndexDirectory,
+            max_depth: None,
+            include_hidden: true,
+        })
+        .unwrap();
+
+        // .bashrc and settings.toml must be indexed (2 files), .git/HEAD must be skipped
+        assert_eq!(res.indexed_count, 2);
+        assert!(res.skipped_count >= 1);
+
+        let engine = search_fulltext::get_or_init_engine().unwrap();
+        let opts = search_fulltext::FulltextSearchOptions::default();
+
+        // Search for .bashrc content
+        let hits_bash = engine.search("EDITOR", &opts).unwrap();
+        assert!(hits_bash.iter().any(|h| h.display_name == ".bashrc"));
+
+        // Search for .config/app/settings.toml content
+        let hits_toml = engine.search("settings", &opts).unwrap();
+        assert!(hits_toml.iter().any(|h| h.display_name == "settings.toml"));
+
+        // Verify .git was excluded
+        let hits_git = engine.search("refs/heads/main", &opts).unwrap();
+        assert!(!hits_git.iter().any(|h| h.display_name == "HEAD"));
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

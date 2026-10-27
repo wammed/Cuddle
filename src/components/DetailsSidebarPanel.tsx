@@ -1,5 +1,18 @@
 import { useState, useEffect } from "react";
-import { Info, X, Shield, FileText, Binary, Layers, CheckCircle2, AlertTriangle, RefreshCw, CornerDownRight } from "lucide-react";
+import {
+  Info,
+  X,
+  Shield,
+  FileText,
+  Binary,
+  Layers,
+  CheckCircle2,
+  AlertTriangle,
+  RefreshCw,
+  CornerDownRight,
+  Copy,
+  Check,
+} from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
@@ -7,6 +20,7 @@ import type { ExtractedTextDto } from "../types/ExtractedTextDto";
 import type { PolicyCheckResultDto } from "../types/PolicyCheckResultDto";
 import type { OriginalSnapshotDto } from "../types/OriginalSnapshotDto";
 import { formatBytes, formatTimestamp } from "../utils/format";
+import { decodePathFromBase64 } from "../utils/path";
 
 interface DetailsSidebarPanelProps {
   item: FileItem | null;
@@ -32,6 +46,17 @@ export function DetailsSidebarPanel({
   const [snapshot, setSnapshot] = useState<OriginalSnapshotDto | null>(null);
   const [isCheckingPolicy, setIsCheckingPolicy] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const fullPath = item ? decodePathFromBase64(item.raw_base64) : "";
+
+  const handleCopyPath = () => {
+    if (fullPath) {
+      navigator.clipboard.writeText(fullPath);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   useEffect(() => {
     if (!item) {
@@ -156,6 +181,25 @@ export function DetailsSidebarPanel({
                 ? t("details.file_type_symlink")
                 : t("details.file_type_file")}
             </span>
+          </div>
+        </div>
+
+        {/* Full Path Inspector Card */}
+        <div className="details-path-card">
+          <div className="details-path-header">
+            <span className="section-label">{t("details.full_path")}</span>
+            <button
+              type="button"
+              className="copy-path-btn"
+              onClick={handleCopyPath}
+              title={copied ? t("details.copied") : t("details.copy_path")}
+            >
+              {copied ? <Check size={11} className="text-green-500" /> : <Copy size={11} />}
+              <span>{copied ? t("details.copied") : t("details.copy_path")}</span>
+            </button>
+          </div>
+          <div className="details-path-value font-mono" title={fullPath}>
+            {fullPath}
           </div>
         </div>
 

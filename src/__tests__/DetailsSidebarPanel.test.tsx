@@ -75,8 +75,10 @@ describe("DetailsSidebarPanel & OperationPolicy Integration", () => {
       />
     );
 
-    // Initial render shows item name
+    // Initial render shows item name and decoded full path
     expect(screen.getByText("test.txt")).toBeDefined();
+    expect(screen.getByText("/home/susie/test.txt")).toBeDefined();
+    expect(screen.getByRole("button", { name: /パスをコピー/ })).toBeDefined();
 
     // After policy evaluation resolves
     await waitFor(() => {

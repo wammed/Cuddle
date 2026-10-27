@@ -252,7 +252,7 @@ pub fn run_periodic_index_headless(quiet: bool) -> Result<(), String> {
         target_raw_base64: Some(home_b64),
         mode: IndexOperationMode::IncrementalUpdate,
         max_depth: None,
-        include_hidden: false,
+        include_hidden: true,
     };
 
     let result = extractor::run_index_operation(opts).map_err(|e| e.to_string())?;

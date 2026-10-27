@@ -171,7 +171,7 @@ export function SearchPanel({ onSelectItem, onLog, currentPath }: SearchPanelPro
         mode,
         target_raw_base64: targetB64,
         max_depth: null,
-        include_hidden: false,
+        include_hidden: true,
       };
 
       const result = await invoke<IndexOperationResultDto>("run_index_operation", { options });
@@ -217,7 +217,7 @@ export function SearchPanel({ onSelectItem, onLog, currentPath }: SearchPanelPro
             title={t("search.filename_tab")}
           >
             <FileSearch size={12} />
-            <span>{t("search.filename_tab").split(" ")[0]}</span>
+            <span>{t("search.filename_tab_label", { defaultValue: "ファイル名" })}</span>
           </button>
           <button
             type="button"
@@ -226,7 +226,7 @@ export function SearchPanel({ onSelectItem, onLog, currentPath }: SearchPanelPro
             title={t("search.fulltext_tab")}
           >
             <Sparkles size={12} />
-            <span>{t("search.fulltext_tab").split(" ")[0]}</span>
+            <span>{t("search.fulltext_tab_label", { defaultValue: "全文検索" })}</span>
           </button>
         </div>
       </div>

@@ -161,12 +161,12 @@ describe("SearchPanel with Explicit Indexing Dropdown", () => {
       );
     });
 
-    const fulltextTab = screen.getByTitle(/日本語全文検索/);
+    const fulltextTab = screen.getByTitle(/全文検索/);
     await act(async () => {
       fireEvent.click(fulltextTab);
     });
 
-    const input = screen.getByPlaceholderText(/本文のキーワードを入力/);
+    const input = screen.getByPlaceholderText(/本文/);
     await act(async () => {
       fireEvent.change(input, { target: { value: "Landlock" } });
     });

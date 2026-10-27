@@ -444,6 +444,28 @@ mod tests {
     }
 
     #[test]
+    fn test_english_code_search() {
+        let engine = CuddleFulltextEngine::new_in_ram().unwrap();
+        let doc = make_test_item("doc-code", "server.rs");
+        let body = "pub async fn handle_request(req: Request) -> Result<Response, Error> { let token = \"auth_secret\"; }";
+        engine.index_document(&doc, body).unwrap();
+        engine.commit().unwrap();
+
+        let opts = FulltextSearchOptions::default();
+        let hits_token = engine.search("auth_secret", &opts).unwrap();
+        assert_eq!(hits_token.len(), 1);
+
+        let hits_req = engine.search("handle_request", &opts).unwrap();
+        assert_eq!(hits_req.len(), 1);
+
+        let hits_case = engine.search("Request", &opts).unwrap();
+        assert_eq!(hits_case.len(), 1);
+
+        let hits_lower = engine.search("request", &opts).unwrap();
+        assert_eq!(hits_lower.len(), 1);
+    }
+
+    #[test]
     fn test_empty_query_error() {
         let engine = CuddleFulltextEngine::new_in_ram().unwrap();
         let opts = FulltextSearchOptions::default();

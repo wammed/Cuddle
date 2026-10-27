@@ -29,37 +29,37 @@ export const UI_FONT_PRESETS: FontPreset[] = [
   {
     id: "default",
     labelKey: "typography.font_preset_default",
-    fallbackName: "標準 (Inter / Noto Sans)",
+    fallbackName: "Default (Inter / Noto Sans)",
     stack: DEFAULT_UI_FONT_STACK,
   },
   {
     id: "modern",
     labelKey: "typography.font_preset_modern",
-    fallbackName: "モダン (Inter / Noto Sans JP)",
+    fallbackName: "Modern (Inter / Noto Sans JP)",
     stack: '"Inter", "Noto Sans JP", "Noto Sans CJK JP", "Helvetica Neue", sans-serif',
   },
   {
     id: "system",
     labelKey: "typography.font_preset_system",
-    fallbackName: "システム標準 (System Native)",
+    fallbackName: "System Native",
     stack: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, Cantarell, "Noto Sans CJK JP", sans-serif',
   },
   {
     id: "gothic",
     labelKey: "typography.font_preset_gothic",
-    fallbackName: "和文ゴシック (BIZ UDP / 游ゴシック)",
+    fallbackName: "Japanese Gothic (BIZ UDP / Yu Gothic)",
     stack: '"BIZ UDPGothic", "Hiragino Sans", "Yu Gothic", "Meiryo", "Noto Sans JP", sans-serif',
   },
   {
     id: "rounded",
     labelKey: "typography.font_preset_rounded",
-    fallbackName: "丸ゴシック (Rounded)",
+    fallbackName: "Rounded Gothic",
     stack: '"M PLUS Rounded 1c", "BIZ UDPGothic", "Hiragino Maru Gothic ProN", sans-serif',
   },
   {
     id: "custom",
     labelKey: "typography.font_preset_custom",
-    fallbackName: "カスタム指定 (Custom)",
+    fallbackName: "Custom",
     stack: "",
   },
 ];
@@ -68,7 +68,7 @@ export const MONO_FONT_PRESETS: FontPreset[] = [
   {
     id: "default",
     labelKey: "typography.mono_preset_default",
-    fallbackName: "標準 (JetBrains / Fira / Cascadia)",
+    fallbackName: "Default (JetBrains / Fira / Cascadia)",
     stack: DEFAULT_MONO_FONT_STACK,
   },
   {
@@ -92,7 +92,7 @@ export const MONO_FONT_PRESETS: FontPreset[] = [
   {
     id: "japanesemono",
     labelKey: "typography.mono_preset_japanesemono",
-    fallbackName: "和文等幅 (BIZ UDGothic)",
+    fallbackName: "Japanese Monospace (BIZ UDGothic)",
     stack: '"BIZ UDGothic", "Noto Sans Mono CJK JP", monospace',
   },
   {
@@ -104,7 +104,7 @@ export const MONO_FONT_PRESETS: FontPreset[] = [
   {
     id: "custom",
     labelKey: "typography.mono_preset_custom",
-    fallbackName: "カスタム指定 (Custom)",
+    fallbackName: "Custom",
     stack: "",
   },
 ];

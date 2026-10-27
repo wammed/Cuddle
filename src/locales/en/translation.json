@@ -2,7 +2,11 @@
   "app": {
     "title": "Cuddle",
     "subtitle": "File Workbench",
-    "welcome": "Welcome to Cuddle"
+    "welcome": "Welcome to Cuddle",
+    "statusbar_phase": "Phase 6.3 Workspace Backup & Recovery Active",
+    "statusbar_staged": "Staged: {{count}} files",
+    "statusbar_history": "History: {{count}} records",
+    "statusbar_nerd_font": "Nerd Font: Pre-required"
   },
   "common": {
     "switch_language": "Language",
@@ -15,7 +19,11 @@
     "cancel": "Cancel",
     "confirm": "Confirm",
     "save": "Save",
-    "close": "Close"
+    "close": "Close",
+    "loading": "Loading...",
+    "error": "Error",
+    "copy": "Copy",
+    "copied": "Copied"
   },
   "nav": {
     "search": "Search",
@@ -80,7 +88,8 @@
     "line_no": "Line",
     "original_badge": "Original (Read-Only Protected)",
     "staged_badge": "Staged Copy (workspace-temp)",
-    "no_staged_items": "No files in workspace staging area. Stage a file from the browser to inspect diffs."
+    "no_staged_items": "No files in workspace staging area. Stage a file from the browser to inspect diffs.",
+    "loading_diff": "Loading diff..."
   },
   "reflection": {
     "reflect_btn": "Reflect to Original",
@@ -168,7 +177,8 @@
     "encoding_label": "Detected Encoding",
     "chars_count": "{{count}} character(s) extracted",
     "truncated_warning": "Text truncated at maximum limit",
-    "pdftotext_missing": "pdftotext (poppler-utils) not found; PDF extraction safely skipped"
+    "pdftotext_missing": "pdftotext (poppler-utils) not found; PDF extraction safely skipped",
+    "tier_label": "Extraction Tier"
   },
   "panels": {
     "search_title": "Search Results",
@@ -202,7 +212,9 @@
     "navigate_up": "Go Up (..)",
     "path_placeholder": "Enter path to navigate...",
     "items_count": "{{count}} item(s)",
-    "selected_count": "{{count}} selected"
+    "selected_count": "{{count}} selected",
+    "refresh": "Refresh",
+    "click_edit_path": "Click to edit path"
   },
   "tree": {
     "home": "Home (~)",
@@ -224,7 +236,10 @@
     "permissions": "Permissions",
     "device_id": "Device ID",
     "safe_status": "Protection Status",
-    "actions": "Available Actions"
+    "actions": "Available Actions",
+    "readonly_label": "Read-Only (0444)",
+    "readwrite_label": "Read-Write (0644)",
+    "landlock_active": "Landlock LSM Kernel Sandbox Active"
   },
   "bulk_rename": {
     "title": "Bulk Rename & Normalize (Dry-run Verification)",
@@ -468,7 +483,22 @@
       "dev_checksum_bundle_desc": "Calculate SHA-256 hashes of staged files → bundle into checksums.txt archive",
       "dev_encrypted_backup_name": "Encrypted Confidential Backup",
       "dev_encrypted_backup_desc": "Archive staged files → apply AES-256 encryption → export .enc package"
-    }
+    },
+    "landlock_sandbox_title": "Linux Landlock LSM Physical Isolation & Original Protection",
+    "dry_run_detail": "Verifying binary, expanding arguments, and checking for name collisions...",
+    "btn_reconfigure": "Reconfigure / Back",
+    "dry_run_valid_summary": "Safe to execute on {{valid}} of {{total}} target file(s).",
+    "conflict_detected_alert": "Output filename collision detected. Please adjust suffix in settings.",
+    "disk_guardrail_label": "Disk Space Guardrail: ",
+    "table_original_file": "Source Original File",
+    "table_expanded_cmd": "Expanded Command",
+    "table_output_filename": "Proposed Output Filename",
+    "table_status": "Status",
+    "badge_conflict": "Conflict",
+    "safety_reaffirm_title": "Reaffirmation of Safety Guarantees",
+    "safety_reaffirm_desc": "Only the commands and paths shown in the table above will be executed under Landlock LSM isolation. Original files will not be altered or damaged.",
+    "output_staged_hint": "Outputs have been staged in the workspace.",
+    "btn_restart": "Restart from Beginning"
   },
   "settings": {
     "dialog_title": "Preferences & Appearance",
@@ -494,7 +524,18 @@
     "landlock_label": "Linux Landlock LSM Kernel Isolation",
     "landlock_active_desc": "Kernel physically restricts child processes from writing outside the workspace directory or into $HOME",
     "config_file_label": "Configuration File (TOML) Path",
-    "config_file_hint": "Editable directly. Self-heals with automatic .bak fallback if corrupted"
+    "config_file_hint": "Editable directly. Self-heals with automatic .bak fallback if corrupted",
+    "shortcut_col_shortcut": "Shortcut",
+    "shortcut_col_action": "Action",
+    "shortcut_search": "Focus search field and select all",
+    "shortcut_bulk_rename": "Open Bulk Rename modal",
+    "shortcut_pipeline": "Open Pipeline Runner",
+    "shortcut_undo": "Undo last bulk rename",
+    "shortcut_escape": "Close active modal",
+    "preset_template_webp_name": "WebP Lossless Custom Converter",
+    "preset_template_webp_desc": "High-quality conversion of PNG/JPEG to WebP using cwebp (Quality 85)",
+    "preset_template_exif_name": "ExifTool Strip Metadata",
+    "preset_template_exif_desc": "Strip all Exif/GPS metadata using exiftool"
   },
   "custom_pipelines": {
     "title": "User-Defined Pipeline Configuration",
@@ -518,7 +559,15 @@
     "delete_btn": "Delete",
     "edit_btn": "Edit",
     "load_template_webp": "Load WebP Converter Template",
-    "load_template_exif": "Load Exif Stripper Template"
+    "load_template_exif": "Load Exif Stripper Template",
+    "validation_required": "ID, Display Name, and Executable are required.",
+    "placeholder_name": "Display name",
+    "placeholder_desc": "Description of the operation",
+    "placeholder_out_ext": "webp (leave empty for same extension)",
+    "template_custom_webp_lossless_name": "WebP Lossless Custom Converter",
+    "template_custom_webp_lossless_desc": "High-quality conversion of PNG/JPEG to WebP using cwebp (Quality 85)",
+    "template_custom_strip_metadata_name": "ExifTool Strip Metadata",
+    "template_custom_strip_metadata_desc": "Strip all Exif/GPS metadata using exiftool"
   },
   "start": {
     "hero_title": "Safety-First Original Protection File Workbench",
@@ -531,7 +580,24 @@
     "switch_workbench": "Go to Workbench",
     "recent_locations": "Quick Access",
     "features_title": "Key Features & Workflows",
-    "status_title": "Security & System Health"
+    "status_title": "Security & System Health",
+    "feature_browser_desc": "Fast file scanning, tree exploration, and safe non-UTF-8 display",
+    "feature_browser_link": "Open Browser",
+    "feature_pipeline_desc": "WebP conversion, GIF from video, PDF merge, and secret masking",
+    "feature_pipeline_link": "View Presets",
+    "feature_rename_desc": "Regex replacement, zero-padded numbering, and Unicode normalization",
+    "feature_rename_link": "Launch Rename",
+    "loc_home": "Home",
+    "loc_project": "Project",
+    "status_landlock": "Landlock LSM",
+    "status_landlock_active": "ABI {{abi}} Active",
+    "status_landlock_inactive": "Not Detected",
+    "status_disk_guard": "Disk Space Guard",
+    "status_disk_guard_val": "1.5x Guardrail",
+    "status_staging": "Workspace Staging",
+    "status_staging_count": "{{count}} staged",
+    "status_original_policy": "Original File Policy",
+    "status_original_policy_val": "Read-Only Original"
   },
   "git": {
     "title": "Git Repository Status",
@@ -563,7 +629,10 @@
     "encoding": "Encoding",
     "chars_count": "{{count}} chars",
     "loading": "Loading file preview...",
-    "error": "Failed to load file preview"
+    "error": "Failed to load file preview",
+    "copy_text": "Copy Text",
+    "copy": "Copy",
+    "copied": "Copied"
   },
   "context_menu": {
     "open_preview": "Open Preview",
@@ -637,7 +706,10 @@
     "executing": "Applying attribute changes...",
     "execute_success": "Attribute change completed: Permissions updated for {{count}} items",
     "execute_failed": "Attribute change failed: Safely rolled back",
-    "action_open_modal": "Change Attributes (chmod)"
+    "action_open_modal": "Change Attributes (chmod)",
+    "matrix_title": "Permission Matrix (r / w / x)",
+    "matrix_target_col": "Target",
+    "preview_summary": "Dry-run Preview ({{changed}} of {{total}} items will change)"
   },
   "timestamp": {
     "dialog_title": "Batch Change File Timestamps",
@@ -670,7 +742,8 @@
     "executing": "Applying timestamp changes...",
     "execute_success": "Timestamp change completed: {{count}} items updated",
     "execute_failed": "Timestamp change failed: Safely rolled back",
-    "action_open_modal": "Change Timestamps (touch)"
+    "action_open_modal": "Change Timestamps (touch)",
+    "preview_summary": "Dry-run Preview ({{changed}} of {{total}} items will change)"
   },
   "tar_export": {
     "dialog_title": "Archive Workspace (tar Export)",
@@ -689,6 +762,19 @@
     "exporting": "Exporting archive...",
     "export_success": "Export completed: {{count}} files exported to {{path}}",
     "export_failed": "Export failed",
-    "action_open_modal": "Export tar"
+    "action_open_modal": "Export tar",
+    "scope_modified_desc": "Export only modified copies differing from originals. Ideal for efficient distribution.",
+    "scope_all_desc": "Export all files currently staged in workspace-temp.",
+    "scope_selected_desc": "Export only files currently selected or checked in the workspace list.",
+    "format_rec_badge": "Recommended",
+    "format_targz_desc": "Minimizes archive size with standard gzip compression. Widely extractable on Linux, macOS, and Windows.",
+    "format_tar_desc": "Packs into a single archive quickly without compression overhead.",
+    "dest_hint": "* Parent directories will be created automatically if they do not exist.",
+    "regenerate_btn": "Regenerate",
+    "reset_path_title": "Reset Path",
+    "size_summary": "{{archiveSize}} (Original size: {{origSize}})"
+  },
+  "logs": {
+    "empty_logs": "Logs are empty."
   }
 }

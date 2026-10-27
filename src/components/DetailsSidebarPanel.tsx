@@ -227,7 +227,7 @@ export function DetailsSidebarPanel({
           <div className="details-meta-row">
             <span className="details-meta-label">{t("details.permissions")}</span>
             <span className="details-meta-value">
-              {item.readonly ? "Read-Only (0444)" : "Read-Write (0644)"}
+              {item.readonly ? t("details.readonly_label") : t("details.readwrite_label")}
             </span>
           </div>
         </div>
@@ -239,7 +239,7 @@ export function DetailsSidebarPanel({
             <Shield size={14} className="safe-icon" />
             <div>
               <p className="safe-title">{t("workspace.original_protected")}</p>
-              <p className="safe-desc">Landlock LSM Kernel Sandbox Active</p>
+              <p className="safe-desc">{t("details.landlock_active")}</p>
             </div>
           </div>
 
@@ -354,7 +354,7 @@ export function DetailsSidebarPanel({
               <span className="pill-tag secure">{extractedInfo.encoding_used}</span>
             </div>
             <div className="extractor-meta-line">
-              <span>Tier:</span>
+              <span>{t("extractor.tier_label")}:</span>
               <span className="pill-tag">{extractedInfo.tier_used}</span>
             </div>
             <div className="extractor-meta-line">

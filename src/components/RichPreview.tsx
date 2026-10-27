@@ -97,10 +97,10 @@ export const RichPreview: React.FC<RichPreviewProps> = ({
             type="button"
             className="panel-header-btn-subtle preview-copy-btn"
             onClick={handleCopy}
-            title="Copy Text"
+            title={t("rich_preview.copy_text")}
           >
             {copied ? <Check size={12} /> : <Copy size={12} />}
-            <span>{copied ? "Copied" : "Copy"}</span>
+            <span>{copied ? t("rich_preview.copied") : t("rich_preview.copy")}</span>
           </button>
         </div>
       </div>

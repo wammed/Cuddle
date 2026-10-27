@@ -373,7 +373,10 @@ export const TimestampModal: React.FC<TimestampModalProps> = ({
           <div className="timestamp-preview-section">
             <div className="timestamp-preview-header">
               <h5 className="text-sm font-semibold text-slate-300">
-                Dry-run 事前プレビュー ({plan?.total_count ?? items.length} 件中 {plan?.changed_count ?? 0} 件変更予定)
+                {t("timestamp.preview_summary", {
+                  total: plan?.total_count ?? items.length,
+                  changed: plan?.changed_count ?? 0,
+                })}
               </h5>
             </div>
             <div className="table-scroll-container">

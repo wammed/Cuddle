@@ -98,7 +98,7 @@ export function FileBrowserPanel({
             type="button"
             className={`panel-header-btn ${isScanning ? "spinning" : ""}`}
             onClick={onRefresh}
-            title="Refresh"
+            title={t("browser.refresh")}
           >
             <RefreshCw size={13} />
           </button>
@@ -134,7 +134,7 @@ export function FileBrowserPanel({
           <span
             className="current-path-badge clickable font-mono"
             onClick={() => setIsEditingPath(true)}
-            title="Click to edit path"
+            title={t("browser.click_edit_path")}
           >
             {currentPath}
           </span>

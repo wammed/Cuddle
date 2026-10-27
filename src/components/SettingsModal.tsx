@@ -40,7 +40,9 @@ import {
 } from "../utils/typography";
 import { SupportedLanguage } from "../i18n";
 
-const TOML_TEMPLATE_CODE = `# ==============================================================================
+const getTomlTemplateCode = (lang: SupportedLanguage) => {
+  if (lang === "ja") {
+    return `# ==============================================================================
 # [[custom_pipelines]] - ユーザー作成パイプライン設定 (設計書 8.3 必須安全フロー)
 # ==============================================================================
 # {input}  : 作業コピーの絶対パス
@@ -65,6 +67,33 @@ args = ["-all=", "-overwrite_original", "{input}"]
 supported_extensions = ["jpg", "jpeg", "png", "tiff", "webp"]
 default_suffix = "_clean"
 `;
+  }
+  return `# ==============================================================================
+# [[custom_pipelines]] - User Custom Pipeline Configuration
+# ==============================================================================
+# {input}  : Absolute path to the working copy in staging
+# {output} : Output destination path (auto-generated from default_suffix / output_extension)
+
+[[custom_pipelines]]
+id = "custom-webp-lossless"
+name = "WebP Lossless Custom Converter"
+description = "High-quality conversion of PNG/JPEG to WebP using cwebp (Quality 85)"
+executable = "cwebp"
+args = ["-q", "85", "{input}", "-o", "{output}"]
+supported_extensions = ["png", "jpg", "jpeg"]
+output_extension = "webp"
+default_suffix = "_web"
+
+[[custom_pipelines]]
+id = "custom-strip-metadata"
+name = "ExifTool Strip Metadata"
+description = "Strip all Exif/GPS metadata using exiftool"
+executable = "exiftool"
+args = ["-all=", "-overwrite_original", "{input}"]
+supported_extensions = ["jpg", "jpeg", "png", "tiff", "webp"]
+default_suffix = "_clean"
+`;
+};
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -128,7 +157,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleCopyTemplate = async () => {
     try {
-      await navigator.clipboard.writeText(TOML_TEMPLATE_CODE);
+      await navigator.clipboard.writeText(getTomlTemplateCode(currentLang));
       setCopiedTemplate(true);
       setTimeout(() => setCopiedTemplate(false), 2500);
     } catch (e) {
@@ -165,8 +194,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleLoadPresetTemplate = (type: "webp" | "exif") => {
     if (type === "webp") {
       setFormId("custom-webp-lossless");
-      setFormName("WebP 可逆圧縮カスタムコンバータ");
-      setFormDesc("cwebp を使用して PNG/JPEG を WebP に高品質変換 (品質 85)");
+      setFormName(t("settings.preset_template_webp_name"));
+      setFormDesc(t("settings.preset_template_webp_desc"));
       setFormExecutable("cwebp");
       setFormArgs("-q 85 {input} -o {output}");
       setFormExts("png, jpg, jpeg");
@@ -174,8 +203,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setFormSuffix("_web");
     } else {
       setFormId("custom-strip-metadata");
-      setFormName("ExifTool メタデータ完全消去");
-      setFormDesc("exiftool を用いて全 Exif/GPS メタデータを消去");
+      setFormName(t("settings.preset_template_exif_name"));
+      setFormDesc(t("settings.preset_template_exif_desc"));
       setFormExecutable("exiftool");
       setFormArgs("-all= -overwrite_original {input}");
       setFormExts("jpg, jpeg, png, tiff, webp");
@@ -187,7 +216,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleSavePipeline = async () => {
     if (!formId.trim() || !formName.trim() || !formExecutable.trim()) {
-      alert("ID, 表示名, 実行バイナリは必須です / ID, Name, and Executable are required.");
+      alert(t("custom_pipelines.validation_required"));
       return;
     }
 
@@ -733,7 +762,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
                 <p className="settings-card-desc">{t("custom_pipelines.template_desc")}</p>
                 <div className="toml-snippet-block">
-                  <pre className="font-mono text-xs">{TOML_TEMPLATE_CODE}</pre>
+                  <pre className="font-mono text-xs">{getTomlTemplateCode(currentLang)}</pre>
                 </div>
               </div>
 
@@ -798,7 +827,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <input
                         type="text"
                         className="form-text-input"
-                        placeholder="ツール表示名"
+                        placeholder={t("custom_pipelines.placeholder_name")}
                         value={formName}
                         onChange={(e) => setFormName(e.target.value)}
                       />
@@ -810,7 +839,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <input
                       type="text"
                       className="form-text-input"
-                      placeholder="処理内容の説明"
+                      placeholder={t("custom_pipelines.placeholder_desc")}
                       value={formDesc}
                       onChange={(e) => setFormDesc(e.target.value)}
                     />
@@ -855,7 +884,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <input
                         type="text"
                         className="form-text-input font-mono"
-                        placeholder="webp (空欄なら同一拡張子)"
+                        placeholder={t("custom_pipelines.placeholder_out_ext")}
                         value={formOutExt}
                         onChange={(e) => setFormOutExt(e.target.value)}
                       />
@@ -972,30 +1001,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <table className="shortcuts-table">
                   <thead>
                     <tr>
-                      <th>ショートカット / Shortcut</th>
-                      <th>操作 / Action</th>
+                      <th>{t("settings.shortcut_col_shortcut")}</th>
+                      <th>{t("settings.shortcut_col_action")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
                       <td><kbd className="font-mono">Ctrl + F</kbd> / <kbd className="font-mono">Cmd + F</kbd></td>
-                      <td>検索入力にフォーカス & テキスト全選択 (Focus Search Field)</td>
+                      <td>{t("settings.shortcut_search")}</td>
                     </tr>
                     <tr>
                       <td><kbd className="font-mono">Ctrl + R</kbd> / <kbd className="font-mono">Cmd + R</kbd></td>
-                      <td>一括リネームモーダルを開く (Open Bulk Rename Modal)</td>
+                      <td>{t("settings.shortcut_bulk_rename")}</td>
                     </tr>
                     <tr>
                       <td><kbd className="font-mono">Ctrl + P</kbd> / <kbd className="font-mono">Cmd + P</kbd></td>
-                      <td>外部ツールパイプラインを開く (Open Pipeline Runner)</td>
+                      <td>{t("settings.shortcut_pipeline")}</td>
                     </tr>
                     <tr>
                       <td><kbd className="font-mono">Ctrl + Z</kbd> / <kbd className="font-mono">Cmd + Z</kbd></td>
-                      <td>直前のリネーム操作を取り消す (Undo Last Bulk Rename)</td>
+                      <td>{t("settings.shortcut_undo")}</td>
                     </tr>
                     <tr>
                       <td><kbd className="font-mono">Escape</kbd></td>
-                      <td>開いているモーダルを閉じる (Close Active Modal)</td>
+                      <td>{t("settings.shortcut_escape")}</td>
                     </tr>
                   </tbody>
                 </table>

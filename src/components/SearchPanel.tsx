@@ -217,7 +217,7 @@ export function SearchPanel({ onSelectItem, onLog, currentPath }: SearchPanelPro
             title={t("search.filename_tab")}
           >
             <FileSearch size={12} />
-            <span>{t("search.filename_tab_label", { defaultValue: "ファイル名" })}</span>
+            <span>{t("search.filename_tab_label", { defaultValue: "Filename" })}</span>
           </button>
           <button
             type="button"
@@ -226,7 +226,7 @@ export function SearchPanel({ onSelectItem, onLog, currentPath }: SearchPanelPro
             title={t("search.fulltext_tab")}
           >
             <Sparkles size={12} />
-            <span>{t("search.fulltext_tab_label", { defaultValue: "全文検索" })}</span>
+            <span>{t("search.fulltext_tab_label", { defaultValue: "Full-text" })}</span>
           </button>
         </div>
       </div>

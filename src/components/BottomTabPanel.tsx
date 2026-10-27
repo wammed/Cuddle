@@ -662,7 +662,7 @@ export function BottomTabPanel({
                 </div>
 
                 {isDiffLoading ? (
-                  <p className="diff-status-text">Loading diff...</p>
+                  <p className="diff-status-text">{t("diff.loading_diff")}</p>
                 ) : diffResult?.is_binary ? (
                   <div className="diff-empty-banner binary">
                     <AlertCircle size={15} />
@@ -1084,7 +1084,7 @@ export function BottomTabPanel({
                 ))}
               </div>
             ) : (
-              <p className="tab-empty-text">Logs are empty.</p>
+              <p className="tab-empty-text">{t("logs.empty_logs")}</p>
             )}
           </div>
         )}

@@ -345,13 +345,13 @@ export const ChmodModal: React.FC<ChmodModalProps> = ({
                 {/* Visual Permission Matrix */}
                 <div className="chmod-matrix-card">
                   <div className="matrix-title text-xs font-semibold text-muted mb-2">
-                    パーミッション・マトリクス (r / w / x)
+                    {t("chmod.matrix_title")}
                   </div>
                   <div className="matrix-table-wrapper">
                     <table className="chmod-matrix-table">
                       <thead>
                         <tr>
-                          <th>対象</th>
+                          <th>{t("chmod.matrix_target_col")}</th>
                           <th>{t("chmod.perm_read")}</th>
                           <th>{t("chmod.perm_write")}</th>
                           <th>{t("chmod.perm_exec")}</th>
@@ -526,7 +526,10 @@ export const ChmodModal: React.FC<ChmodModalProps> = ({
           <div className="chmod-preview-section">
             <div className="chmod-preview-header">
               <h5 className="text-sm font-semibold text-slate-300">
-                Dry-run 事前プレビュー ({plan?.total_count ?? items.length} 件中 {plan?.changed_count ?? 0} 件変更予定)
+                {t("chmod.preview_summary", {
+                  total: plan?.total_count ?? items.length,
+                  changed: plan?.changed_count ?? 0,
+                })}
               </h5>
             </div>
             <div className="table-scroll-container">

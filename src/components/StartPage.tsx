@@ -98,10 +98,10 @@ export const StartPage: React.FC<StartPageProps> = ({
             </div>
             <div className="feature-card-body">
               <h5>{t("start.btn_open_folder")}</h5>
-              <p>高速ファイル走査・ツリー探索・非UTF-8安全表示</p>
+              <p>{t("start.feature_browser_desc")}</p>
             </div>
             <div className="feature-card-footer">
-              <span className="feature-link-text">ブラウザーを開く</span>
+              <span className="feature-link-text">{t("start.feature_browser_link")}</span>
               <ArrowRight size={13} />
             </div>
           </div>
@@ -113,10 +113,10 @@ export const StartPage: React.FC<StartPageProps> = ({
             </div>
             <div className="feature-card-body">
               <h5>{t("start.btn_pipeline")}</h5>
-              <p>WebP変換、動画GIF、PDF結合、秘密情報マスキング</p>
+              <p>{t("start.feature_pipeline_desc")}</p>
             </div>
             <div className="feature-card-footer">
-              <span className="feature-link-text">プリセット一覧</span>
+              <span className="feature-link-text">{t("start.feature_pipeline_link")}</span>
               <ArrowRight size={13} />
             </div>
           </div>
@@ -128,10 +128,10 @@ export const StartPage: React.FC<StartPageProps> = ({
             </div>
             <div className="feature-card-body">
               <h5>{t("start.btn_bulk_rename")}</h5>
-              <p>正規表現置換、連番ゼロ埋め、Unicode/全半角正規化</p>
+              <p>{t("start.feature_rename_desc")}</p>
             </div>
             <div className="feature-card-footer">
-              <span className="feature-link-text">リネーム起動</span>
+              <span className="feature-link-text">{t("start.feature_rename_link")}</span>
               <ArrowRight size={13} />
             </div>
           </div>
@@ -157,7 +157,7 @@ export const StartPage: React.FC<StartPageProps> = ({
                 >
                   <Home size={14} className="text-teal-400" />
                   <span className="font-mono">{systemPaths.home_dir}</span>
-                  <span className="loc-tag">Home</span>
+                  <span className="loc-tag">{t("start.loc_home")}</span>
                 </button>
               )}
               {systemPaths?.current_dir && (
@@ -171,7 +171,7 @@ export const StartPage: React.FC<StartPageProps> = ({
                 >
                   <FolderOpen size={14} className="text-teal-400" />
                   <span className="font-mono">{systemPaths.current_dir}</span>
-                  <span className="loc-tag">Project</span>
+                  <span className="loc-tag">{t("start.loc_project")}</span>
                 </button>
               )}
             </div>
@@ -187,37 +187,39 @@ export const StartPage: React.FC<StartPageProps> = ({
               <div className="status-indicator-box">
                 <div className="indicator-title-row">
                   <ShieldCheck size={13} className="text-teal-400" />
-                  <span>Landlock LSM</span>
+                  <span>{t("start.status_landlock")}</span>
                 </div>
                 <span className="indicator-val-pill active">
-                  {landlockSupported ? `ABI ${landlockAbi || "V5"} 稼働中` : "未検出"}
+                  {landlockSupported
+                    ? t("start.status_landlock_active", { abi: landlockAbi || "V5" })
+                    : t("start.status_landlock_inactive")}
                 </span>
               </div>
 
               <div className="status-indicator-box">
                 <div className="indicator-title-row">
                   <HardDrive size={13} className="text-emerald-400" />
-                  <span>空き容量保護</span>
+                  <span>{t("start.status_disk_guard")}</span>
                 </div>
-                <span className="indicator-val-pill active">1.5x ガードレール</span>
+                <span className="indicator-val-pill active">{t("start.status_disk_guard_val")}</span>
               </div>
 
               <div className="status-indicator-box">
                 <div className="indicator-title-row">
                   <Database size={13} className="text-teal-400" />
-                  <span>作業コピー</span>
+                  <span>{t("start.status_staging")}</span>
                 </div>
                 <span className="indicator-val-pill">
-                  {stagedCount} 件ステージング中
+                  {t("start.status_staging_count", { count: stagedCount })}
                 </span>
               </div>
 
               <div className="status-indicator-box">
                 <div className="indicator-title-row">
                   <Lock size={13} className="text-teal-400" />
-                  <span>原本保護方針</span>
+                  <span>{t("start.status_original_policy")}</span>
                 </div>
-                <span className="indicator-val-pill active">Read-Only 原本</span>
+                <span className="indicator-val-pill active">{t("start.status_original_policy_val")}</span>
               </div>
             </div>
           </div>

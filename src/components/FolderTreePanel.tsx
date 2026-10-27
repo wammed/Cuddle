@@ -37,7 +37,7 @@ export function FolderTreePanel({
           type="button"
           className={`panel-header-btn ${isScanning ? "spinning" : ""}`}
           onClick={onRefresh}
-          title="Refresh"
+          title={t("browser.refresh")}
         >
           <RefreshCw size={13} />
         </button>

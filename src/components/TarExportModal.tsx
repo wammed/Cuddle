@@ -159,7 +159,10 @@ export const TarExportModal: React.FC<TarExportModalProps> = ({
                   })}
                 </div>
                 <div style={{ fontSize: "12px", opacity: 0.85 }}>
-                  {formatBytes(result.archive_bytes)} (元サイズ: {formatBytes(result.total_uncompressed_bytes)})
+                  {t("tar_export.size_summary", {
+                    archiveSize: formatBytes(result.archive_bytes),
+                    origSize: formatBytes(result.total_uncompressed_bytes),
+                  })}
                 </div>
               </div>
             </div>
@@ -191,7 +194,7 @@ export const TarExportModal: React.FC<TarExportModalProps> = ({
                   <span className="tar-option-title">{t("tar_export.scope_modified")}</span>
                 </div>
                 <p className="tar-option-desc">
-                  原本と異なる作業コピーのみを出力。効率的な配布・共有に最適です。
+                  {t("tar_export.scope_modified_desc")}
                 </p>
               </div>
 
@@ -210,7 +213,7 @@ export const TarExportModal: React.FC<TarExportModalProps> = ({
                   <span className="tar-count-badge">{totalStagedCount}</span>
                 </div>
                 <p className="tar-option-desc">
-                  作業領域（workspace-temp）にステージングされた全ファイルを出力します。
+                  {t("tar_export.scope_all_desc")}
                 </p>
               </div>
 
@@ -234,7 +237,7 @@ export const TarExportModal: React.FC<TarExportModalProps> = ({
                   </span>
                 </div>
                 <p className="tar-option-desc">
-                  ワークスペース一覧でチェック・選択中のファイルのみを出力します。
+                  {t("tar_export.scope_selected_desc")}
                 </p>
               </div>
             </div>
@@ -254,10 +257,10 @@ export const TarExportModal: React.FC<TarExportModalProps> = ({
                   <span className={`radio-dot ${format === "TarGz" ? "selected" : ""}`} />
                   <Archive size={16} />
                   <span style={{ fontWeight: 600 }}>{t("tar_export.format_targz")}</span>
-                  <span className="tar-rec-badge">推奨</span>
+                  <span className="tar-rec-badge">{t("tar_export.format_rec_badge")}</span>
                 </div>
                 <div style={{ fontSize: "11px", opacity: 0.7, marginTop: "4px" }}>
-                  標準的なgzip圧縮により容量を最小化します。Linux / macOS / Windows で幅広く展開可能。
+                  {t("tar_export.format_targz_desc")}
                 </div>
               </div>
 
@@ -273,7 +276,7 @@ export const TarExportModal: React.FC<TarExportModalProps> = ({
                   <span style={{ fontWeight: 600 }}>{t("tar_export.format_tar")}</span>
                 </div>
                 <div style={{ fontSize: "11px", opacity: 0.7, marginTop: "4px" }}>
-                  圧縮処理を行わず高速に単一アーカイブへまとめます。
+                  {t("tar_export.format_tar_desc")}
                 </div>
               </div>
             </div>
@@ -294,14 +297,14 @@ export const TarExportModal: React.FC<TarExportModalProps> = ({
                 type="button"
                 className="btn btn-secondary"
                 onClick={() => setDestPath(generateDefaultPath(format))}
-                title="パスをリセット"
+                title={t("tar_export.reset_path_title")}
                 style={{ fontSize: "12px", whiteSpace: "nowrap" }}
               >
-                再生成
+                {t("tar_export.regenerate_btn")}
               </button>
             </div>
             <p style={{ fontSize: "11px", opacity: 0.6, marginTop: "4px" }}>
-              ※ 親ディレクトリが存在しない場合は自動作成されます。
+              {t("tar_export.dest_hint")}
             </p>
           </div>
         </div>

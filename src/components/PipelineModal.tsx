@@ -449,7 +449,9 @@ export function PipelineModal({
                   >
                     <div className="preset-card-top">
                       <span className="preset-card-title">
-                        {preset.category === "Custom" ? preset.name_key : t(preset.name_key)}
+                        {preset.category === "Custom"
+                          ? t(`custom_pipelines.template_${preset.id.replace(/-/g, "_")}_name`, { defaultValue: preset.name_key })
+                          : t(preset.name_key)}
                       </span>
                       {preset.category === "Custom" ? (
                         <span className="preset-engine-badge custom">
@@ -469,7 +471,9 @@ export function PipelineModal({
                       )}
                     </div>
                     <p className="preset-card-desc">
-                      {preset.category === "Custom" ? preset.desc_key : t(preset.desc_key)}
+                      {preset.category === "Custom"
+                        ? t(`custom_pipelines.template_${preset.id.replace(/-/g, "_")}_desc`, { defaultValue: preset.desc_key })
+                        : t(preset.desc_key)}
                     </p>
                   </button>
                 );
@@ -491,10 +495,14 @@ export function PipelineModal({
                     <ShieldAlert size={20} className="text-amber-400 flex-shrink-0" />
                     <div>
                       <div className="flex items-center gap-2">
-                        <h3 className="custom-pipeline-title">{currentCustomDef.name}</h3>
+                        <h3 className="custom-pipeline-title">
+                          {t(`custom_pipelines.template_${currentCustomDef.id.replace(/-/g, "_")}_name`, { defaultValue: currentCustomDef.name })}
+                        </h3>
                         <span className="safety-flow-badge font-mono">{t("pipeline.safety_flow_badge")}</span>
                       </div>
-                      <p className="dialog-subtitle">{currentCustomDef.description}</p>
+                      <p className="dialog-subtitle">
+                        {t(`custom_pipelines.template_${currentCustomDef.id.replace(/-/g, "_")}_desc`, { defaultValue: currentCustomDef.description })}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -562,7 +570,7 @@ export function PipelineModal({
                     <div className="sandbox-security-notice">
                       <ShieldCheck size={18} className="text-emerald-400 flex-shrink-0" />
                       <div>
-                        <p className="font-semibold text-emerald-300">Linux Landlock LSM 物理隔離 & 原本保護</p>
+                        <p className="font-semibold text-emerald-300">{t("pipeline.landlock_sandbox_title")}</p>
                         <p className="text-xs text-muted leading-relaxed">{t("pipeline.risk_warning_sandbox")}</p>
                       </div>
                     </div>
@@ -593,7 +601,7 @@ export function PipelineModal({
                   <div className="safety-step-content-card text-center py-8">
                     <Loader2 size={36} className="animate-spin text-cyan-400 mx-auto mb-3" />
                     <p className="text-sm font-semibold">{t("pipeline.dry_run_running")}</p>
-                    <p className="text-xs text-muted mt-1">バイナリ検証・引数展開・名前衝突チェックを実行しています...</p>
+                    <p className="text-xs text-muted mt-1">{t("pipeline.dry_run_detail")}</p>
                   </div>
                 )}
 
@@ -611,7 +619,7 @@ export function PipelineModal({
                         onClick={handleResetSafetyFlow}
                       >
                         <RotateCcw size={12} />
-                        <span>再設定・最初へ</span>
+                        <span>{t("pipeline.btn_reconfigure")}</span>
                       </button>
                     </div>
 
@@ -622,7 +630,10 @@ export function PipelineModal({
                         <div>
                           <p className="font-semibold text-emerald-300">{t("pipeline.dry_run_success")}</p>
                           <p className="text-xs text-muted">
-                            {dryRunResult.valid_items} / {dryRunResult.total_items} 件の対象ファイルについて安全に実行可能です。
+                            {t("pipeline.dry_run_valid_summary", {
+                              valid: dryRunResult.valid_items,
+                              total: dryRunResult.total_items,
+                            })}
                           </p>
                         </div>
                       </div>
@@ -638,7 +649,7 @@ export function PipelineModal({
                           )}
                           {dryRunResult.has_conflicts && (
                             <p className="text-xs text-amber-200 mt-1">
-                              出力先ファイル名の衝突が検出されました。設定でサフィックスを変更してください。
+                              {t("pipeline.conflict_detected_alert")}
                             </p>
                           )}
                         </div>
@@ -654,7 +665,7 @@ export function PipelineModal({
                         </span>
                       </div>
                       <div className="meta-item">
-                        <span className="text-muted">空き容量ガードレール: </span>
+                        <span className="text-muted">{t("pipeline.disk_guardrail_label")}</span>
                         <span className={dryRunResult.has_disk_space ? "text-emerald-400" : "text-amber-400 font-bold"}>
                           {dryRunResult.disk_space_message || "OK (>= 1.5x)"}
                         </span>
@@ -666,10 +677,10 @@ export function PipelineModal({
                       <table className="dry-run-table font-mono text-xs">
                         <thead>
                           <tr>
-                            <th>原本対象ファイル</th>
-                            <th>展開後実行コマンド</th>
-                            <th>予測出力ファイル名</th>
-                            <th>状態</th>
+                            <th>{t("pipeline.table_original_file")}</th>
+                            <th>{t("pipeline.table_expanded_cmd")}</th>
+                            <th>{t("pipeline.table_output_filename")}</th>
+                            <th>{t("pipeline.table_status")}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -686,7 +697,7 @@ export function PipelineModal({
                               </td>
                               <td className="status-cell">
                                 {item.conflict_detected ? (
-                                  <span className="badge-danger">衝突</span>
+                                  <span className="badge-danger">{t("pipeline.badge_conflict")}</span>
                                 ) : item.valid ? (
                                   <span className="badge-success">OK</span>
                                 ) : (
@@ -703,9 +714,9 @@ export function PipelineModal({
                     <div className="sandbox-security-notice mt-3">
                       <ShieldCheck size={18} className="text-emerald-400 flex-shrink-0" />
                       <div>
-                        <p className="font-semibold text-emerald-300">安全制約の再提示（設計書 8.3）</p>
+                        <p className="font-semibold text-emerald-300">{t("pipeline.safety_reaffirm_title")}</p>
                         <p className="text-xs text-muted leading-relaxed">
-                          上記テーブルに表示されたコマンドおよびパスのみが、Landlock LSM による原本保護隔離環境下で実行されます。原本ファイルに対する変更・破壊は発生しません。
+                          {t("pipeline.safety_reaffirm_desc")}
                         </p>
                       </div>
                     </div>
@@ -782,7 +793,7 @@ export function PipelineModal({
                               failed: executionResult.failure_count,
                             })}
                           </p>
-                          <p className="text-xs text-muted">成果物は作業領域にステージングされました。</p>
+                          <p className="text-xs text-muted">{t("pipeline.output_staged_hint")}</p>
                         </div>
                       </div>
                     )}
@@ -827,7 +838,7 @@ export function PipelineModal({
                           onClick={handleResetSafetyFlow}
                         >
                           <RotateCcw size={13} />
-                          <span>最初から再実行</span>
+                          <span>{t("pipeline.btn_restart")}</span>
                         </button>
                         <button
                           type="button"

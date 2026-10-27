@@ -2,7 +2,11 @@
   "app": {
     "title": "Cuddle",
     "subtitle": "File Workbench",
-    "welcome": "Cuddle へようこそ"
+    "welcome": "Cuddle へようこそ",
+    "statusbar_phase": "Phase 6.3 ワークスペースバックアップ＆リカバリ稼働中",
+    "statusbar_staged": "ステージング: {{count}} ファイル",
+    "statusbar_history": "履歴: {{count}} 件",
+    "statusbar_nerd_font": "Nerd Font: 導入推奨"
   },
   "common": {
     "switch_language": "言語切替",
@@ -15,7 +19,11 @@
     "cancel": "キャンセル",
     "confirm": "確定",
     "save": "保存",
-    "close": "閉じる"
+    "close": "閉じる",
+    "loading": "読み込み中...",
+    "error": "エラー",
+    "copy": "コピー",
+    "copied": "コピー完了"
   },
   "nav": {
     "search": "検索",
@@ -80,7 +88,8 @@
     "line_no": "行",
     "original_badge": "原本 (読み取り専用保護)",
     "staged_badge": "作業コピー (workspace-temp)",
-    "no_staged_items": "作業領域にステージングされたファイルが存在しません。ファイルブラウザーから作業領域へ追加してください。"
+    "no_staged_items": "作業領域にステージングされたファイルが存在しません。ファイルブラウザーから作業領域へ追加してください。",
+    "loading_diff": "差分を読み込み中..."
   },
   "reflection": {
     "reflect_btn": "原本へ変更を反映",
@@ -168,7 +177,8 @@
     "encoding_label": "検出文字コード",
     "chars_count": "{{count}} 文字抽出",
     "truncated_warning": "最大サイズ上限に達したため、先頭部分のみ抽出しました",
-    "pdftotext_missing": "pdftotext (poppler-utils) が見つからないため、PDF抽出を安全にスキップしました"
+    "pdftotext_missing": "pdftotext (poppler-utils) が見つからないため、PDF抽出を安全にスキップしました",
+    "tier_label": "抽出層 (Tier)"
   },
   "panels": {
     "search_title": "検索結果",
@@ -202,7 +212,9 @@
     "navigate_up": "親ディレクトリへ (..)",
     "path_placeholder": "パスを入力して移動...",
     "items_count": "{{count}} 項目",
-    "selected_count": "{{count}} 項目選択中"
+    "selected_count": "{{count}} 項目選択中",
+    "refresh": "更新",
+    "click_edit_path": "クリックしてパスを編集"
   },
   "tree": {
     "home": "ホーム (~)",
@@ -224,7 +236,10 @@
     "permissions": "権限",
     "device_id": "デバイス ID",
     "safe_status": "原本保護状態",
-    "actions": "利用可能な操作"
+    "actions": "利用可能な操作",
+    "readonly_label": "読み取り専用 (0444)",
+    "readwrite_label": "読み書き可能 (0644)",
+    "landlock_active": "Landlock LSM カーネル隔離稼働中"
   },
   "bulk_rename": {
     "title": "一括リネーム & 正規化 (Dry-run 検証)",
@@ -468,7 +483,22 @@
       "dev_checksum_bundle_desc": "作業ファイル群のSHA-256ハッシュ算出 → checksums.txt 生成同梱",
       "dev_encrypted_backup_name": "機密ファイルの暗号化バックアップ",
       "dev_encrypted_backup_desc": "作業コピーをアーカイブ化 → AES-256暗号化適用 → .enc出力"
-    }
+    },
+    "landlock_sandbox_title": "Linux Landlock LSM 物理隔離 & 原本保護",
+    "dry_run_detail": "バイナリ検証・引数展開・名前衝突チェックを実行しています...",
+    "btn_reconfigure": "再設定・最初へ",
+    "dry_run_valid_summary": "{{valid}} / {{total}} 件の対象ファイルについて安全に実行可能です。",
+    "conflict_detected_alert": "出力先ファイル名の衝突が検出されました。設定でサフィックスを変更してください。",
+    "disk_guardrail_label": "空き容量ガードレール: ",
+    "table_original_file": "原本対象ファイル",
+    "table_expanded_cmd": "展開後実行コマンド",
+    "table_output_filename": "予測出力ファイル名",
+    "table_status": "状態",
+    "badge_conflict": "衝突",
+    "safety_reaffirm_title": "安全制約の再提示（設計書 8.3）",
+    "safety_reaffirm_desc": "上記テーブルに表示されたコマンドおよびパスのみが、Landlock LSM による原本保護隔離環境下で実行されます。原本ファイルに対する変更・破壊は発生しません。",
+    "output_staged_hint": "成果物は作業領域にステージングされました。",
+    "btn_restart": "最初から再実行"
   },
   "settings": {
     "dialog_title": "環境設定 & 外観",
@@ -494,7 +524,18 @@
     "landlock_label": "Linux Landlock LSM プロセス隔離",
     "landlock_active_desc": "外部プロセス実行時、カーネルレベルで原本ディレクトリおよびホーム外への書き込みを物理的に遮断（常時有効）",
     "config_file_label": "設定ファイル（TOML）パス",
-    "config_file_hint": "直接編集可能。破損時は自動バックアップ作成＆安全自己修復が作動します"
+    "config_file_hint": "直接編集可能。破損時は自動バックアップ作成＆安全自己修復が作動します",
+    "shortcut_col_shortcut": "ショートカット",
+    "shortcut_col_action": "操作",
+    "shortcut_search": "検索入力にフォーカス & テキスト全選択",
+    "shortcut_bulk_rename": "一括リネームモーダルを開く",
+    "shortcut_pipeline": "外部ツールパイプラインを開く",
+    "shortcut_undo": "直前のリネーム操作を取り消す",
+    "shortcut_escape": "開いているモーダルを閉じる",
+    "preset_template_webp_name": "WebP 可逆圧縮カスタムコンバータ",
+    "preset_template_webp_desc": "cwebp を使用して PNG/JPEG を WebP に高品質変換 (品質 85)",
+    "preset_template_exif_name": "ExifTool メタデータ完全消去",
+    "preset_template_exif_desc": "exiftool を用いて全 Exif/GPS メタデータを消去"
   },
   "custom_pipelines": {
     "title": "ユーザー作成パイプライン設定",
@@ -518,7 +559,15 @@
     "delete_btn": "削除",
     "edit_btn": "編集",
     "load_template_webp": "WebP変換テンプレート",
-    "load_template_exif": "Exif消去テンプレート"
+    "load_template_exif": "Exif消去テンプレート",
+    "validation_required": "ID、表示名、実行バイナリは必須です。",
+    "placeholder_name": "ツール表示名",
+    "placeholder_desc": "処理内容の説明",
+    "placeholder_out_ext": "webp (空欄なら同一拡張子)",
+    "template_custom_webp_lossless_name": "WebP 可逆圧縮カスタムコンバータ",
+    "template_custom_webp_lossless_desc": "cwebp を使用して PNG/JPEG を WebP に高品質変換 (品質 85)",
+    "template_custom_strip_metadata_name": "ExifTool メタデータ完全消去",
+    "template_custom_strip_metadata_desc": "exiftool を用いて全 Exif/GPS メタデータを消去"
   },
   "start": {
     "hero_title": "安全第一の原本保護型ファイル作業環境",
@@ -531,7 +580,24 @@
     "switch_workbench": "ワークベンチへ移動",
     "recent_locations": "クイックアクセス",
     "features_title": "主要機能・ワークフロー",
-    "status_title": "セキュリティ＆システム稼働状態"
+    "status_title": "セキュリティ＆システム稼働状態",
+    "feature_browser_desc": "高速ファイル走査・ツリー探索・非UTF-8安全表示",
+    "feature_browser_link": "ブラウザーを開く",
+    "feature_pipeline_desc": "WebP変換、動画GIF、PDF結合、秘密情報マスキング",
+    "feature_pipeline_link": "プリセット一覧",
+    "feature_rename_desc": "正規表現置換、連番ゼロ埋め、Unicode/全半角正規化",
+    "feature_rename_link": "リネーム起動",
+    "loc_home": "ホーム",
+    "loc_project": "プロジェクト",
+    "status_landlock": "Landlock LSM",
+    "status_landlock_active": "ABI {{abi}} 稼働中",
+    "status_landlock_inactive": "未検出",
+    "status_disk_guard": "空き容量保護",
+    "status_disk_guard_val": "1.5x ガードレール",
+    "status_staging": "作業コピー",
+    "status_staging_count": "{{count}} 件ステージング中",
+    "status_original_policy": "原本保護方針",
+    "status_original_policy_val": "Read-Only 原本"
   },
   "git": {
     "title": "Git リポジトリ状態",
@@ -563,7 +629,10 @@
     "encoding": "エンコーディング",
     "chars_count": "{{count}} 文字",
     "loading": "プレビューを読み込み中...",
-    "error": "プレビューの読み込みに失敗しました"
+    "error": "プレビューの読み込みに失敗しました",
+    "copy_text": "テキストをコピー",
+    "copy": "コピー",
+    "copied": "コピー完了"
   },
   "context_menu": {
     "open_preview": "プレビューを表示",
@@ -637,7 +706,10 @@
     "executing": "属性変更を実行中...",
     "execute_success": "属性変更完了: {{count}} 件のファイル・フォルダの権限を変更しました",
     "execute_failed": "属性変更失敗: 安全にロールバックされました",
-    "action_open_modal": "属性変更 (chmod)"
+    "action_open_modal": "属性変更 (chmod)",
+    "matrix_title": "パーミッション・マトリクス (r / w / x)",
+    "matrix_target_col": "対象",
+    "preview_summary": "Dry-run 事前プレビュー ({{total}} 件中 {{changed}} 件変更予定)"
   },
   "timestamp": {
     "dialog_title": "ファイルタイムスタンプ（更新日時）の一括変更",
@@ -670,7 +742,8 @@
     "executing": "タイムスタンプを変更中...",
     "execute_success": "タイムスタンプ変更完了: {{count}} 件のファイルの日時を更新しました",
     "execute_failed": "タイムスタンプ変更失敗: 安全にロールバックされました",
-    "action_open_modal": "日時変更 (touch)"
+    "action_open_modal": "日時変更 (touch)",
+    "preview_summary": "Dry-run 事前プレビュー ({{total}} 件中 {{changed}} 件変更予定)"
   },
   "tar_export": {
     "dialog_title": "ワークスペースのアーカイブ (tar エクスポート)",
@@ -689,6 +762,19 @@
     "exporting": "アーカイブを出力中...",
     "export_success": "エクスポート完了: {{count}} 件のファイルを {{path}} に出力しました",
     "export_failed": "エクスポート失敗",
-    "action_open_modal": "tar エクスポート"
+    "action_open_modal": "tar エクスポート",
+    "scope_modified_desc": "原本と異なる作業コピーのみを出力。効率的な配布・共有に最適です。",
+    "scope_all_desc": "作業領域（workspace-temp）にステージングされた全ファイルを出力します。",
+    "scope_selected_desc": "ワークスペース一覧でチェック・選択中のファイルのみを出力します。",
+    "format_rec_badge": "推奨",
+    "format_targz_desc": "標準的なgzip圧縮により容量を最小化します。Linux / macOS / Windows で幅広く展開可能。",
+    "format_tar_desc": "圧縮処理を行わず高速に単一アーカイブへまとめます。",
+    "dest_hint": "※ 親ディレクトリが存在しない場合は自動作成されます。",
+    "regenerate_btn": "再生成",
+    "reset_path_title": "パスをリセット",
+    "size_summary": "{{archiveSize}} (元サイズ: {{origSize}})"
+  },
+  "logs": {
+    "empty_logs": "ログはありません。"
   }
 }

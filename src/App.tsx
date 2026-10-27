@@ -1002,14 +1002,14 @@ export function App() {
         <div className="statusbar-left">
           <span className="status-label">Cuddle</span>
           <span className="status-sep">|</span>
-          <span>Phase 6.3 Workspace Backup &amp; Recovery Active</span>
+          <span>{t("app.statusbar_phase")}</span>
         </div>
         <div className="statusbar-right">
-          <span>Staged: {stagedFiles.length} files</span>
+          <span>{t("app.statusbar_staged", { count: stagedFiles.length })}</span>
           <span className="status-sep">|</span>
-          <span>History: {historyItems.length} records</span>
+          <span>{t("app.statusbar_history", { count: historyItems.length })}</span>
           <span className="status-sep">|</span>
-          <span>Nerd Font: Pre-required</span>
+          <span>{t("app.statusbar_nerd_font")}</span>
         </div>
       </footer>
     </div>

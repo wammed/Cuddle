@@ -38,6 +38,7 @@
 | [`FileWorkbench-Design-ver0.9.ja.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Design-ver0.9.ja.md) | [`FileWorkbench-Design-ver0.9.en.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Design-ver0.9.en.md) | Integrated Basic Design Document (Definitive Edition) |
 | [`FileWorkbench-Handover.ja.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Handover.ja.md) | [`FileWorkbench-Handover.en.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Handover.en.md) | Development Handover Document (this document) |
 | [`roadmap.ja.md`](file:///home/susie/.gemini/antigravity-ide/brain/45a8eaa8-509d-4ed8-9e6c-255c45bac425/roadmap.ja.md) | [`roadmap.en.md`](file:///home/susie/.gemini/antigravity-ide/brain/45a8eaa8-509d-4ed8-9e6c-255c45bac425/roadmap.en.md) | Detailed Implementation Roadmap (9 Phases / 28 Subphases) |
+| [`NEXT_IMPLEMENTATION_TASKS.ja.md`](file:///home/susie/git/wammed/Cuddle/NEXT_IMPLEMENTATION_TASKS.ja.md) | [`NEXT_IMPLEMENTATION_TASKS.en.md`](file:///home/susie/git/wammed/Cuddle/NEXT_IMPLEMENTATION_TASKS.en.md) | Next Implementation Tasks & Roadmap (18 Items from Design Spec ver 0.9 / Phases 10–14) |
 | [`IP_COMPLIANCE.ja.md`](file:///home/susie/git/wammed/Cuddle/IP_COMPLIANCE.ja.md) | [`IP_COMPLIANCE.md`](file:///home/susie/git/wammed/Cuddle/IP_COMPLIANCE.md) | Icon Design & IP Compliance Due Diligence Record |
 
 ---
@@ -652,3 +653,36 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
 * **Safety Warnings Cannot Be Disabled:** Critical warnings regarding destructive actions, permissions, or conflicts must not be configurable or suppressible by the user.
 * **No Arbitrary Shell Strings:** Processes are spawned strictly via argument arrays under Landlock; `sh -c` and `bash -c` are forbidden.
 * **No Monolingual Hardcoding:** Never hardcode English or Japanese strings directly in UI components; always retrieve via `t('key')`.
+
+---
+
+## 11. Next Implementation Tasks & Backlog (Phases 10–14)
+
+Based on comprehensive cross-verification between the Master Design Specification ([`FileWorkbench-Design-ver0.9.en.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Design-ver0.9.en.md)) and the current codebase, the 18 identified items have been triaged and detailed in [`NEXT_IMPLEMENTATION_TASKS.en.md`](file:///home/susie/git/wammed/Cuddle/NEXT_IMPLEMENTATION_TASKS.en.md).
+
+### Phase Structure & Recommended Implementation Flow
+1. **Phase 10: Quick UX & Interaction Wins (Recommended Next Starting Point)**
+   * [2-2] Pane Width & Layout Persistence across Sessions (`react-resizable-panels` / `localStorage`)
+   * [2-1] Drag & Drop (D&D) between Browser & Workspace (D&D staging)
+   * [2-4] Pipeline Log Display Filter (`all` / `hidden` / `file_only`)
+2. **Phase 11: Safety, Conflict Resolution & Recovery Refinements**
+   * [3-2] Alternate Filename UI on Original Conflict (e.g., `.edit.pdf`) & non-destructive save
+   * [3-3] Backup Retention Management (default 5, max 10) & Prune UI
+   * [4-3] Warning / Consent Modal on Non-Landlock Kernels
+3. **Phase 12: Pipeline Flexibility & External Tool Integrations**
+   * [4-2] Custom `allowed_read_paths` in Pipeline Presets (Landlock integration)
+   * [4-1] Input Modes (`batch`, `stdin`) & Typed Placeholders (`{InputList}`, `{WorkspaceDirectory}`)
+   * [2-3] Desktop Environment Native Notification Abstraction (FreeDesktop D-Bus)
+4. **Phase 13: Search, Extraction & Indexing Evolution**
+   * [1-4] Structured Markdown (`pulldown-cmark`) / HTML Text Extraction
+   * [1-3] Tier 3: Office Document Extraction (`.docx`, `.xlsx`) via isolated workers
+   * [1-2] Combined Morphological (IPADIC) + n-gram Search
+   * [1-1] Index Update / Repair Queue for Discrepancies
+   * [1-5] Per-Rule Indexing Policy (Metadata-only / Filename-only)
+5. **Phase 14: Architectural Decisions & Scale Verification**
+   * [3-1] 4-Tier Confirmation Levels (Retain current Standard/Strict focus)
+   * [3-4] 4-Table Crash Recovery (Endorse current SQLite WAL + BatchJournal model)
+   * [5-1] Splitting into 10 Granular TOML Sections (Retain current 4-section architecture)
+   * [6-1] Large-scale IPC Streaming / Pagination (Benchmark first)
+
+For full architectural designs, affected files, and test plans, refer to [`NEXT_IMPLEMENTATION_TASKS.en.md`](file:///home/susie/git/wammed/Cuddle/NEXT_IMPLEMENTATION_TASKS.en.md).

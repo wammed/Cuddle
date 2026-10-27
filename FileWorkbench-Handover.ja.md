@@ -38,6 +38,7 @@
 | [`FileWorkbench-Design-ver0.9.ja.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Design-ver0.9.ja.md) | [`FileWorkbench-Design-ver0.9.en.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Design-ver0.9.en.md) | 統合基本設計書（残課題解決・バイリンガル仕様確定版） |
 | [`FileWorkbench-Handover.ja.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Handover.ja.md) | [`FileWorkbench-Handover.en.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Handover.en.md) | 開発引き継ぎ書（本ドキュメント） |
 | [`roadmap.ja.md`](file:///home/susie/.gemini/antigravity-ide/brain/45a8eaa8-509d-4ed8-9e6c-255c45bac425/roadmap.ja.md) | [`roadmap.en.md`](file:///home/susie/.gemini/antigravity-ide/brain/45a8eaa8-509d-4ed8-9e6c-255c45bac425/roadmap.en.md) | 詳細実装ロードマップ（全9フェーズ・28サブフェーズ） |
+| [`NEXT_IMPLEMENTATION_TASKS.ja.md`](file:///home/susie/git/wammed/Cuddle/NEXT_IMPLEMENTATION_TASKS.ja.md) | [`NEXT_IMPLEMENTATION_TASKS.en.md`](file:///home/susie/git/wammed/Cuddle/NEXT_IMPLEMENTATION_TASKS.en.md) | 次期実装タスク計画書・設計仕様書（設計書ver 0.9照合18項目・Phase 10〜14） |
 | [`IP_COMPLIANCE.ja.md`](file:///home/susie/git/wammed/Cuddle/IP_COMPLIANCE.ja.md) | [`IP_COMPLIANCE.md`](file:///home/susie/git/wammed/Cuddle/IP_COMPLIANCE.md) | アイコンデザイン・知的財産コンプライアンス記録 |
 
 ---
@@ -651,3 +652,36 @@
 * **安全警告の非表示化禁止：** 破壊的操作、権限不整合、原本競合に関する重大警告は、ユーザー設定でオフにできないようにハードコードする。
 * **任意シェル文字列実行の排除：** コマンド実行時は `sh -c` や `bash -c` を一切使用せず、引数配列による直接プロセス起動（Landlock 適用下）を行う。
 * **単一言語ハードコードの排除：** UI 上に直接日本語または英語文字列をハードコードせず、必ず `t('key')` 経由で取得する。
+
+---
+
+## 11. 次期実装タスク・バックログ（Phase 10〜14）
+
+統合基本設計書（[`FileWorkbench-Design-ver0.9.ja.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Design-ver0.9.ja.md)）と現行コードベースの網羅的照合に基づき、未実装または差異のある 18 項目をトリアージし、[`NEXT_IMPLEMENTATION_TASKS.ja.md`](file:///home/susie/git/wammed/Cuddle/NEXT_IMPLEMENTATION_TASKS.ja.md) として策定しました。
+
+### フェーズ構成と推奨着手フロー
+1. **Phase 10: UX ＆ 操作性クイックウィン（推奨初回着手）**
+   * 【2-2】ペイン幅・配置のセッション間復元（`react-resizable-panels` / `localStorage`）
+   * 【2-1】ブラウザー ⇔ ワークスペース間のドラッグ＆ドロップ（D&D ステージング）
+   * 【2-4】パイプラインログの表示モード切り替え（`all` / `hidden` / `file_only` フィルタ）
+2. **Phase 11: 安全設計 ＆ 原本反映・リカバリーの洗練**
+   * 【3-2】原本競合時の別名保存（例: `.edit.pdf`）の UI 提示と安全退避フロー
+   * 【3-3】バックアップ保持数（既定 5 件、上限 10 件）の管理と古い世代の削除 UI
+   * 【4-3】Landlock 非対応環境での起動ブロック / 同意ダイアログ
+3. **Phase 12: パイプライン実行・外部連携の柔軟性拡張**
+   * 【4-2】ユーザー定義カスタムパイプラインでの `allowed_read_paths` 指定（Landlock 連携）
+   * 【4-1】入力方式（`batch`, `stdin`）と型付きプレースホルダー（`{InputList}`, `{WorkspaceDirectory}`）
+   * 【2-3】OS / デスクトップ環境ネイティブ通知の抽象化（FreeDesktop D-Bus 通知）
+4. **Phase 13: 検索・インデックス・本文抽出の高度化**
+   * 【1-4】Markdown（`pulldown-cmark`）/ HTML の構文解析本文抽出
+   * 【1-3】第 3 段階: Office 文書（`.docx`, `.xlsx` 等）の本文抽出（メモリ制限付き分離ワーカー）
+   * 【1-2】形態素解析（IPADIC）＋ n-gram 併用ハイブリッド検索
+   * 【1-1】インデックス差分更新・修復キュー（Repair Queue）
+   * 【1-5】除外設定ごとのインデックス保持方針（メタデータのみ / ファイル名のみ）
+5. **Phase 14: アーキテクチャ再検討・超大規模対応**
+   * 【3-1】確認レベル 4 段階設定（標準/厳格への集約維持を検討）
+   * 【3-4】4 テーブルクラッシュリカバリー（現行 SQLite WAL + BatchJournal の堅牢性追認）
+   * 【5-1】TOML 10 セクション構成（現行 4 セクション集約モデル維持を検討）
+   * 【6-1】大量転送時の IPC チャンク分割ストリーミング（ベンチマーク計測後の判断）
+
+詳細な実装方針、影響ファイル、テスト計画は [`NEXT_IMPLEMENTATION_TASKS.ja.md`](file:///home/susie/git/wammed/Cuddle/NEXT_IMPLEMENTATION_TASKS.ja.md) を参照してください。

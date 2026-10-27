@@ -1,0 +1,295 @@
+# Cuddle (FileWorkbench) 次期実装タスク計画書・設計仕様書
+
+<p align="center">
+  <a href="NEXT_IMPLEMENTATION_TASKS.en.md">English</a> | <strong>日本語</strong>
+</p>
+
+**文書作成日：** 2026-10-27  
+**ステータス：** 策定完了（基本設計書 ver 0.9 との差分18項目のトリアージ・実装仕様確定）  
+**対象：** 開発担当者、設計担当者、次回以降の開発セッション
+
+---
+
+## 1. 概要と目的
+
+本書は、統合基本設計書（[`FileWorkbench-Design-ver0.9.ja.md`](FileWorkbench-Design-ver0.9.ja.md)）と現行コードベース（Phase 9.8 完了時点）の網羅的照合によって特定された **未実装または設計書から簡略化・差異がある18項目** について、次回以降の作業セッションでスムーズに実装に着手できるよう、**優先度、アーキテクチャ設計、影響ファイル、テスト方針** を体系的にまとめた実装タスク仕様書です。
+
+### 遵守すべきプロジェクト基本原則
+1. **原本保護の絶対性：** 原本ファイルへの直接編集は禁止。作業コピー（`workspace-temp/`）でのみ操作し、明示的確定時のみ原本反映を行う。
+2. **Landlock LSM カーネル隔離：** 外部コマンドや文書パーサーの実行時は、Linux Landlock ルールセット（読み取り専用パス限定・`TMPDIR` 隔離）を強制する。
+3. **完全バイリンガル同期（日英）：** すべての UI 表示およびドキュメント類は、英語・日本語の2通を必ず作成・維持する。
+4. **二重キー管理の維持：** 非 UTF-8 不正バイト列を含むファイル名も `FileItem`（`item_id` + `raw_base64` + `display_name`）で安全に保持する。
+5. **決定論的安全性とロールバック：** 不整合やエラー検知時は即座に安全側に倒し、作業前状態への復元を保証する。
+
+---
+
+## 2. タスク一覧と優先度マトリクス
+
+18項目を依存関係・難易度・ユーザー体験への寄与度に基づき、**5つの実装フェーズ（Phase 10〜14）** に分類しました。
+
+| ID | カテゴリ | 項目名 | 推奨フェーズ | 実装優先度 | 難易度 |
+| :--- | :--- | :--- | :--- | :---: | :---: |
+| **2-2** | UI・画面 | ペイン幅・配置のセッション間復元 | **Phase 10** | **高 (High)** | 低 |
+| **2-1** | UI・画面 | ブラウザー ⇔ ワークスペース間のドラッグ＆ドロップ (D&D) | **Phase 10** | **高 (High)** | 中 |
+| **2-4** | UI・画面 | パイプラインログの表示モード切り替え (`all`/`hidden`/`file_only`) | **Phase 10** | **高 (High)** | 低 |
+| **3-2** | 安全・反映 | 原本競合時の別名保存（例: `.edit.pdf`）の UI 提示 | **Phase 11** | **高 (High)** | 中 |
+| **3-3** | 安全・反映 | バックアップ保持数（既定5、上限10）の管理と容量不足時選択 | **Phase 11** | **高 (High)** | 中 |
+| **4-3** | 安全・パイプライン | Landlock 非対応環境での起動ブロック / 同意ダイアログ | **Phase 11** | **中 (Med)** | 低 |
+| **4-2** | パイプライン | ユーザー定義パイプラインでの `allowed_read_paths` 指定 | **Phase 12** | **高 (High)** | 中 |
+| **4-1** | パイプライン | 入力方式 (`batch`, `stdin`) と型付きプレースホルダー | **Phase 12** | **中 (Med)** | 中 |
+| **2-3** | UI・通知 | OS / デスクトップ環境ネイティブ通知の抽象化 | **Phase 12** | **中 (Med)** | 中 |
+| **1-4** | 検索・抽出 | Markdown / HTML の構文解析本文抽出 | **Phase 13** | **中 (Med)** | 中 |
+| **1-3** | 検索・抽出 | 第 3 段階: Office 文書（`.docx`, `.xlsx` 等）の本文抽出 | **Phase 13** | **中 (Med)** | 高 |
+| **1-2** | 検索・抽出 | 形態素解析 (IPADIC) ＋ n-gram 併用検索 | **Phase 13** | **中 (Med)** | 高 |
+| **1-1** | 検索・抽出 | インデックス差分更新・修復キュー (Repair Queue) | **Phase 13** | **低 (Low)** | 高 |
+| **1-5** | 検索・抽出 | 除外設定ごとのインデックス保持方針（メタデータ/ファイル名のみ） | **Phase 13** | **低 (Low)** | 中 |
+| **3-1** | 安全設計 | 確認レベルの 4 段階設定（簡潔 / 標準 / 詳細 / 厳格） | **Phase 14** | **要検討** | 中 |
+| **3-4** | 安全設計 | 4 テーブルによるクラッシュリカバリー詳細状態遷移 | **Phase 14** | **現状維持推奨** | 高 |
+| **5-1** | 設定管理 | TOML 10 セクション構成への細分化 | **Phase 14** | **現状維持推奨** | 中 |
+| **6-1** | IPC・通信 | 大量転送時の IPC チャンク分割ストリーミング / ページネーション | **Phase 14** | **要計測** | 高 |
+
+---
+
+## 3. フェーズ別詳細実装計画
+
+### Phase 10: UX ＆ 操作性クイックウィン (UI Refinements)
+ユーザーが直感的に操作でき、日常的な使い勝手を向上させる項目を先行実装します。
+
+#### 【タスク 2-2】ペイン幅・配置のセッション間復元
+* **設計書参照：** 第 3.2 項（画面構成とレイアウト）
+* **現状：** `react-resizable-panels` がマウント時に既定サイズ（52%, 20%, 68%, 50% 等）で初期化され、リサイズした幅が保存されない。
+* **実装方針：**
+  * `react-resizable-panels` の `PanelGroup` に `autoSaveId="cuddle-main-layout"` を付与、または `onLayout={(sizes) => ...}` を用いて `localStorage` に保存。
+  * ウィンドウサイズ変更時や次回起動時に保存された配列比率を適用。
+* **影響ファイル：**
+  * `src/App.tsx`
+  * `src/types/` (必要に応じて)
+* **テスト方針：** Vitest での `localStorage` 読み書きモックテスト。手動でペインリサイズ後のリロード検証。
+
+#### 【タスク 2-1】ブラウザー ⇔ ワークスペース間のドラッグ＆ドロップ (D&D)
+* **設計書参照：** 第 3.2 項（操作フロー）
+* **現状：** ボタン操作（「作業コピー作成」「全件ステージング」）および右クリックメニューのみ対応。D&D によるステージングは未実装。
+* **実装方針：**
+  * `FileBrowserPanel.tsx` の行要素に `draggable={true}`、`onDragStart` で `item_id` / `raw_base64` を JSON 形式で `dataTransfer` にセット。
+  * `WorkspacePanel.tsx` 全体またはドロップ領域に `onDragOver` (`preventDefault()`)、`onDrop` ハンドラを実装。
+  * ドロップ時に既存の `handleStageFile(item)` を呼び出し、安全に作業コピー（`workspace-temp/`）を作成。原本への変更は一切行わない。
+* **影響ファイル：**
+  * `src/components/FileBrowserPanel.tsx`
+  * `src/components/WorkspacePanel.tsx`
+  * `src/App.tsx`
+* **テスト方針：** Vitest での DragEvent 発火テスト（`fireEvent.dragStart`, `fireEvent.drop`）。
+
+#### 【タスク 2-4】パイプラインログの表示モード切り替え
+* **設計書参照：** 第 8.4 項（パイプラインログ出力と監査証跡）
+* **現状：** `BottomTabPanel.tsx` のログ表示で、時系列のログ文字列をフラットに全件表示しているのみ。
+* **実装方針：**
+  * ログデータ構造を拡張（または接頭辞パース）し、`LogEntry { id, timestamp, level, target_file, message }` を定義。
+  * ログタブ上部にフィルター切り替えボタングループ（`All`（全件）、`File Only`（ファイル入出力・変換ログのみ）、`Hidden`（非表示/エラーのみ））を配置。
+* **影響ファイル：**
+  * `src/components/BottomTabPanel.tsx`
+  * `src/locales/ja/translation.json`, `src/locales/en/translation.json`
+* **テスト方針：** フィルター切り替え時にリストが適切に絞り込まれることを Vitest で検証。
+
+---
+
+### Phase 11: 安全設計 ＆ 原本反映・リカバリーの洗練
+原本保護と障害時安全性の更なる強化を行います。
+
+#### 【タスク 3-2】原本競合時の別名保存（例: `.edit.pdf`）の UI 提示
+* **設計書参照：** 第 5.3 項（外部変更・競合検知時の遮断フロー）
+* **現状：** 原本反映時に外部変更を検知すると `StageStatus::Conflict`（`ConflictDetected` エラー）となり上書きが遮断されるが、UI 上で別名保存へ切り替えるフローがない。
+* **実装方針：**
+  * バックエンド `workspace.rs` に競合回避用コマンド `reflect_staged_item_as_copy(item_id, custom_suffix)`（既定: `.edit`）を実装。
+  * 原本パス `filename.ext` から `filename.edit.ext`（同名存在時は `filename.edit.1.ext`）を生成し、原本には触れずに保存。
+  * フロントエンドで競合検知時、「外部で変更されています。原本上書きを停止しました。『.edit』を付加した別名として保存しますか？」の選択モーダルを表示。
+* **影響ファイル：**
+  * `src-tauri/src/workspace.rs`, `src-tauri/src/lib.rs`
+  * `src/components/BottomTabPanel.tsx`（または反映モーダル）
+  * `src/locales/ja/translation.json`, `src/locales/en/translation.json`
+* **テスト方針：** Cargo test で競合検知後の別名保存、連番付与、原本不変性を検証。
+
+#### 【タスク 3-3】バックアップ保持数（既定5、上限10）の管理と容量不足時選択
+* **設計書参照：** 第 6.1 項（バックアップ世代管理と容量チェック）
+* **現状：** バックアップ作成（`backup_YYYYMMDD_HHMMSS.tar.gz`）は動作しているが、世代数カウントや古い世代の自動・手動削除 UI がない。
+* **実装方針：**
+  * バックエンド `backup.rs` に `list_backups()`、`cleanup_old_backups(keep_count: usize)`、`delete_backup(filename)` を実装。
+  * 保存先ディレクトリ内の `backup_*.tar.gz` を走査し、件数が上限（設定値: 既定5、最大10）を超過した場合、古い世代を自動警告・削除候補として返却。
+  * UI の「バックアップ作成」モーダル内に、現在保持している世代一覧と削除トグルを表示。
+* **影響ファイル：**
+  * `src-tauri/src/backup.rs`, `src-tauri/src/config.rs`, `src-tauri/src/lib.rs`
+  * `src/components/BackupModal.tsx`（新規または拡張）
+* **テスト方針：** 6件以上バックアップを作成した際に古い世代が正しく特定・整理されるかを Cargo test で検証。
+
+#### 【タスク 4-3】Landlock 非対応環境での起動ブロック / 同意ダイアログ
+* **設計書参照：** 第 8.2 項（プロセス分離と実行時セキュリティ）
+* **現状：** UI 上に「Landlock: 不可（赤色バッジ）」と警告表示されるが、起動ブロックや重大警告ダイアログの明示的確認フローがない。
+* **実装方針：**
+  * アプリ起動時（`App.tsx` マウント時）、Landlock ABI が `NotSupported` の場合、即座に全画面ブロッキング警告ダイアログ（`CriticalSecurityModal`）を表示。
+  * 「現在のカーネルは Landlock LSM をサポートしていません。外部ツール実行時の原本保護境界が低下します。リスクを理解して継続しますか？」をユーザーに明示確認させ、同意した場合のみ操作をアンロック。
+* **影響ファイル：**
+  * `src/App.tsx`
+  * `src/components/CriticalSecurityModal.tsx`（新設）
+  * `src/locales/ja/translation.json`, `src/locales/en/translation.json`
+* **テスト方針：** Landlock 非対応フラグ時のダイアログ表示とブロック動作を Vitest で検証。
+
+---
+
+### Phase 12: パイプライン実行・外部連携の柔軟性拡張
+外部ツール連携をより柔軟かつ安全に拡張します。
+
+#### 【タスク 4-2】ユーザー定義パイプラインでの `allowed_read_paths` 指定
+* **設計書参照：** 第 8.2 項, 第 11 項（カスタムパイプライン定義と Landlock）
+* **現状：** `sandbox.rs` の `LandlockSandbox` は `allow_read(path)` をサポートしているが、`CustomPipelineDefDto` に設定項目がなく、TOML や UI から追加できない。
+* **実装方針：**
+  * `CustomPipelineDefDto` に `pub allowed_read_paths: Vec<String>` を追加（`#[serde(default)]`）。
+  * パイプライン実行時に、これらのパスを検証した上で `LandlockSandbox::allow_read` に追加登録。
+  * パイプライン設定モーダル（`PipelineModal.tsx`）に追加読み取り許可パスの入力欄を追加。
+* **影響ファイル：**
+  * `src-tauri/src/config.rs`, `src-tauri/src/pipeline.rs`
+  * `src/components/PipelineModal.tsx`
+  * `src/types/CustomPipelineDefDto.ts`
+* **テスト方針：** Cargo test で追加読み取りパスが Landlock ルールセットに正しく反映されることをテスト。
+
+#### 【タスク 4-1】入力方式 (`batch`, `stdin`) と型付きプレースホルダー
+* **設計書参照：** 第 8.1 項（パイプライン入力・引数展開）
+* **現状：** 各ファイル個別（`per_file`）での `{input}` / `{output}` 文字列置換のみ。
+* **実装方針：**
+  * `ExecutionInputMode` enum (`PerFile`, `BatchList`, `StandardInput`) を導入。
+  * プレースホルダーの拡張：
+    * `{input}`: 個別ファイルパス
+    * `{output}`: 個別出力ファイルパス
+    * `{InputList}`: 全選択ファイルの空白区切りリスト
+    * `{WorkspaceDirectory}`: 作業コピーのベースパス
+  * `batch` モード時は単一プロセスに全引数を渡して一括実行。`stdin` モード時はファイルパス一覧を子プロセスの標準入力に書き込み。
+* **影響ファイル：**
+  * `src-tauri/src/config.rs`, `src-tauri/src/pipeline.rs`
+  * `src/components/PipelineModal.tsx`
+* **テスト方針：** 引数展開・標準入力パイプラインの動作をモックコマンドで Cargo test 検証。
+
+#### 【タスク 2-3】OS / デスクトップ環境ネイティブ通知の抽象化
+* **設計書参照：** 第 2.1 項, 第 13 項（通知アーキテクチャ）
+* **現状：** アプリ内のトースト通知バナーのみ。
+* **実装方針：**
+  * Tauri 2 公式プラグイン `@tauri-apps/plugin-notification`（または Rust 側 `notify-rust`）を導入。
+  * COSMIC / GNOME / KDE の FreeDesktop D-Bus 通知を呼び出すラッパー `notify_user(title, body, level)` を実装。
+  * 長時間の一括変換、インデックス全再構築完了時、重大エラー発生時に、ウィンドウがバックグラウンドにあってもデスクトップ通知を発行。
+* **影響ファイル：**
+  * `src-tauri/Cargo.toml`, `src-tauri/src/lib.rs`
+  * `src/App.tsx`, `package.json`
+* **テスト方針：** 通知発行のユニットテストおよび DE での受信確認。
+
+---
+
+### Phase 13: 検索・インデックス・本文抽出の高度化
+検索・抽出エンジンのカバー範囲と精度を拡張します。
+
+#### 【タスク 1-4】Markdown / HTML の構文解析本文抽出
+* **設計書参照：** 第 7.2 項（本文抽出パイプライン Tier 1）
+* **現状：** Markdown / HTML ファイルはプレーンテキストとしてそのまま読み込まれている。
+* **実装方針：**
+  * Markdown: `pulldown-cmark` クレートを用いて見出し・段落テキストのみを抽出（記号除去）。
+  * HTML: 軽量パーサーまたは正規表現ストリッパーで `<tag>` や `<style>`, `<script>` を除去した本文テキストを抽出。
+  * `extractor.rs` の `extract_text_content` 内で拡張子分岐を追加。
+* **影響ファイル：**
+  * `src-tauri/Cargo.toml`, `src-tauri/src/extractor.rs`
+* **テスト方針：** タグやマークダウン修飾が除去された純粋な本文が抽出され、Tantivy インデックスに登録されることを検証。
+
+#### 【タスク 1-3】第 3 段階: Office 文書（`.docx`, `.xlsx` 等）の本文抽出
+* **設計書参照：** 第 7.2 項（本文抽出パイプライン Tier 3）
+* **現状：** Tier 1（テキスト/コード）と Tier 2（PDF `pdftotext`）のみ対応。
+* **実装方針：**
+  * Office OpenXML（`.docx`, `.xlsx`）は ZIP 形式の XML 構造であるため、`zip` クレートと簡易 XML パーサーで `word/document.xml` や `xl/sharedStrings.xml` からテキスト要素を抽出。
+  * PDF 同様、巨大ファイルや悪意ある ZIP ボム（42.zip 等）から本体を保護するため、メモリ上限（256 MiB）とサイズ上限（10 MiB）の安全ガードレールを適用。
+* **影響ファイル：**
+  * `src-tauri/Cargo.toml`, `src-tauri/src/extractor.rs`
+* **テスト方針：** サンプル .docx, .xlsx からの本文抽出ユニットテスト。破損ファイル時の安全スキップテスト。
+
+#### 【タスク 1-2】形態素解析 (IPADIC) ＋ n-gram 併用検索
+* **設計書参照：** 第 2.1 項, 第 7.2 項（検索エンジン構成）
+* **現状：** `lindera-tantivy`（IPADIC, Normal）単独でトークナイズ。
+* **実装方針：**
+  * Tantivy のスキーマにおいて、本文フィールドを「形態素解析トークナイズ用フィールド（`body_morpheme`）」と「2-gram トークナイズ用フィールド（`body_ngram`）」の2系統で登録、または複合トークナイザーを定義。
+  * 検索クエリ実行時、形態素クエリと n-gram クエリを重み付け結合（形態素一致を優先スコアリングしつつ、未知語・記号混在は n-gram でヒットさせる）。
+* **影響ファイル：**
+  * `src-tauri/src/search_fulltext.rs`
+* **テスト方針：** 未知語、カタカナ語、記号混在検索語での再現率・精度のテスト。
+
+#### 【タスク 1-1】インデックス差分更新・修復キュー (Repair Queue)
+* **設計書参照：** 第 1.1 項, 第 7.2 項, 第 14 項
+* **現状：** インデックス登録失敗時はエラーログを記録するのみ。
+* **実装方針：**
+  * SQLite WAL 内に `index_repair_queue` テーブル（`id`, `path_base64`, `action`, `retry_count`, `last_error`, `created_at`）を作成。
+  * 原本反映やファイル移動時に Tantivy 更新が失敗した場合、即座にキューへ退避。
+  * アプリ起動時および定期更新タイマー実行時にキュー内の未処理アイテムを再試行・修復。
+* **影響ファイル：**
+  * `src-tauri/src/search_fulltext.rs`, `src-tauri/src/db.rs`, `src-tauri/src/periodic_index.rs`
+* **テスト方針：** Tantivy ロック競合時のキュー退避と、その後の修復処理を Cargo test で検証。
+
+#### 【タスク 1-5】除外設定ごとのインデックス保持方針
+* **設計書参照：** 第 7.1 項（除外ディレクトリの扱い）
+* **現状：** 走査時に除外するか、あるいは全抽出するかの二者択一。
+* **実装方針：**
+  * 除外ディレクトリ（`.git`, `node_modules` 等）配下のファイルは、本文（`body`）を空にし、ファイル名・パス・mtime のメタデータのみインデックスに保持。
+* **影響ファイル：**
+  * `src-tauri/src/extractor.rs`, `src-tauri/src/search_fulltext.rs`
+* **テスト方針：** 除外対象ファイルがファイル名検索ではヒットし、本文検索ではヒットしないことを確認。
+
+---
+
+### Phase 14: アーキテクチャ再検討・超大規模対応 (Evaluation & Scale)
+現行実装の堅牢性を評価し、過剰設計を避けて実用的な最適解を確定します。
+
+#### 【タスク 3-1】確認レベルの 4 段階設定（簡潔 / 標準 / 詳細 / 厳格）
+* **設計書参照：** 第 4.3 項, 第 11 項
+* **検討方針：**
+  * 現行は「標準・厳格（安全重視）」に統一されており、誤操作による原本破壊を防止できている。
+  * 設定画面に「確認レベル（標準 / 厳格）」の選択肢を追加し、「簡潔」は意図的に排除（原本保護の思想に反するため）するのが安全設計上推奨。
+
+#### 【タスク 3-4】4 テーブルによるクラッシュリカバリー詳細状態遷移
+* **設計書参照：** 第 9.3 項, 第 10.1 項
+* **検討方針：**
+  * 現行は SQLite WAL の `session_items` と `operation_history`、および `BatchJournalManager` によるセッション復元＆選択的 UNDO で完全動作している。
+  * 4テーブル（`batches`, `batch_operations`, `recovery_checkpoints`, `batch_artifacts`）への過剰な細分化は行わず、現行の堅牢なスキーマを維持することを推奨（設計書側の改定を検討）。
+
+#### 【タスク 5-1】TOML 10 セクション構成への細分化
+* **設計書参照：** 第 11 項
+* **検討方針：**
+  * 現行の `[app]`, `[workspace]`, `[security]`, `[[custom_pipelines]]` の4セクションは理解しやすく設定ファイルの破損リスクも低い。
+  * 必要に応じて `[search]` や `[backup]` セクションを追加する段階的アプローチを推奨。
+
+#### 【タスク 6-1】大量転送時の IPC チャンク分割ストリーミング / ページネーション
+* **設計書参照：** 第 9.4 項, 第 12.1 項
+* **検討方針：**
+  * 現行の `@tanstack/react-virtual` 仮想スクロールにより 10,000 件規模でも 60fps 描画を達成。
+  * IPC 境界での転送時間（JSON デシリアライズ負荷）を実測し、ボトルネックが確認された場合のみページネーション API（`get_items_page(offset, limit)`）を新設。
+
+---
+
+## 4. 次回作業セッションへの推奨着手順
+
+次回セッションでの実装は、以下の順序で進めることを推奨します：
+
+```mermaid
+graph TD
+    A[Phase 10: UX クイックウィン] --> B[Phase 11: 安全・競合対応の洗練]
+    B --> C[Phase 12: パイプライン柔軟性拡張]
+    C --> D[Phase 13: 検索・本文抽出の高度化]
+    D --> E[Phase 14: アーキテクチャ確定]
+
+    subgraph "Phase 10 (推奨初回着手)"
+        A1[2-2: ペイン幅セッション保存]
+        A2[2-1: D&D ステージング]
+        A3[2-4: ログ表示フィルタ]
+    end
+
+    subgraph "Phase 11 (安全強化)"
+        B1[3-2: 原本競合時の別名保存]
+        B2[3-3: バックアップ保持数管理]
+        B3[4-3: Landlock 非対応警告モーダル]
+    end
+```
+
+1. **第 1 ステップ（Phase 10）：** タスク 2-2（ペイン幅保存）→ 2-1（D&D）→ 2-4（ログフィルタ）の順で実装。UI の体感利便性が即座に向上します。
+2. **第 2 ステップ（Phase 11）：** タスク 3-2（原本競合時の別名保存）→ 3-3（バックアップ保持数管理）。原本反映の安全性が極大化されます。
+3. **第 3 ステップ（Phase 12）：** タスク 4-2（`allowed_read_paths`）→ 4-1（引数展開・標準入力）。外部ツール連携が完成します。
+4. **第 4 ステップ（Phase 13）：** タスク 1-4（MD/HTML 抽出）→ 1-3（Office 抽出）。

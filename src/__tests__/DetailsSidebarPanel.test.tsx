@@ -118,4 +118,81 @@ describe("DetailsSidebarPanel & OperationPolicy Integration", () => {
       expect(screen.getByText("Eligible for reflecting back to original")).toBeDefined();
     });
   });
+
+  it("renders preview button in Japanese and calls onOpenPreview when clicked without staging", async () => {
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    const handlePreview = vi.fn();
+
+    render(
+      <DetailsSidebarPanel
+        item={sampleItem}
+        onClose={vi.fn()}
+        onExtractText={vi.fn()}
+        onOpenPreview={handlePreview}
+        extractLoading={false}
+        extractedInfo={null}
+      />
+    );
+
+    const previewBtn = screen.getByRole("button", { name: /プレビューを表示/ });
+    expect(previewBtn).toBeDefined();
+    expect(previewBtn.hasAttribute("disabled")).toBe(false);
+
+    await act(async () => {
+      fireEvent.click(previewBtn);
+    });
+
+    expect(handlePreview).toHaveBeenCalledTimes(1);
+    expect(handlePreview).toHaveBeenCalledWith(sampleItem);
+  });
+
+  it("renders preview button in English and handles extractLoading disabled state", async () => {
+    await act(async () => {
+      await changeLanguage("en");
+    });
+
+    const handlePreview = vi.fn();
+
+    render(
+      <DetailsSidebarPanel
+        item={sampleItem}
+        onClose={vi.fn()}
+        onExtractText={vi.fn()}
+        onOpenPreview={handlePreview}
+        extractLoading={true}
+        extractedInfo={null}
+      />
+    );
+
+    const previewBtn = screen.getByRole("button", { name: /Open Preview/ });
+    expect(previewBtn).toBeDefined();
+    expect(previewBtn.hasAttribute("disabled")).toBe(true);
+  });
+
+  it("does not render preview button for directories", async () => {
+    const dirItem: FileItem = {
+      ...sampleItem,
+      item_id: "dir-1",
+      display_name: "test_dir",
+      is_dir: true,
+    };
+
+    const handlePreview = vi.fn();
+
+    render(
+      <DetailsSidebarPanel
+        item={dirItem}
+        onClose={vi.fn()}
+        onExtractText={vi.fn()}
+        onOpenPreview={handlePreview}
+        extractLoading={false}
+        extractedInfo={null}
+      />
+    );
+
+    expect(screen.queryByRole("button", { name: /Open Preview|プレビューを表示/ })).toBeNull();
+  });
 });

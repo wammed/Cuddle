@@ -12,6 +12,7 @@ import {
   CornerDownRight,
   Copy,
   Check,
+  Eye,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
@@ -27,6 +28,7 @@ interface DetailsSidebarPanelProps {
   onClose: () => void;
   onExtractText: (item: FileItem) => void;
   onStageFile?: (item: FileItem) => void;
+  onOpenPreview?: (item: FileItem) => void;
   isStaged?: boolean;
   extractLoading: boolean;
   extractedInfo: ExtractedTextDto | null;
@@ -37,6 +39,7 @@ export function DetailsSidebarPanel({
   onClose,
   onExtractText,
   onStageFile,
+  onOpenPreview,
   isStaged = false,
   extractLoading,
   extractedInfo,
@@ -316,10 +319,27 @@ export function DetailsSidebarPanel({
         <div className="details-section">
           <span className="section-label">{t("details.actions")}</span>
           <div className="details-actions-list">
+            {!item.is_dir && onOpenPreview && (
+              <button
+                type="button"
+                className="details-action-btn primary"
+                onClick={() => onOpenPreview(item)}
+                disabled={extractLoading}
+                title={t("details.open_preview")}
+              >
+                {extractLoading ? (
+                  <RefreshCw size={14} className="animate-spin" />
+                ) : (
+                  <Eye size={14} />
+                )}
+                <span>{t("details.open_preview")}</span>
+              </button>
+            )}
+
             {!item.is_dir && onStageFile && (
               <button
                 type="button"
-                className={`details-action-btn ${isStaged ? "secondary" : "primary"}`}
+                className={`details-action-btn ${isStaged ? "secondary" : onOpenPreview ? "secondary" : "primary"}`}
                 onClick={() => onStageFile(item)}
                 title={isStaged ? t("workspace.status_staged") : t("browser.stage_to_workspace")}
               >

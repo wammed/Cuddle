@@ -237,6 +237,7 @@
     "device_id": "デバイス ID",
     "safe_status": "原本保護状態",
     "actions": "利用可能な操作",
+    "open_preview": "プレビューを表示",
     "readonly_label": "読み取り専用 (0444)",
     "readwrite_label": "読み書き可能 (0644)",
     "landlock_active": "Landlock LSM カーネル隔離稼働中"

@@ -668,6 +668,7 @@ export function App() {
   const handleExtractText = async (item: FileItem) => {
     try {
       setExtractLoading(true);
+      setExtractedInfo(null);
       addLog(`Starting text extraction for "${item.display_name}"...`);
       const res = await invoke<ExtractedTextDto>("extract_file_text", {
         pathBase64: item.raw_base64,
@@ -799,6 +800,7 @@ export function App() {
                       };
                       setSelectedItem(pseudo);
                     }
+                    setSidebarVisible(true);
                   }}
                   onLog={addLog}
                   currentPath={currentPath}
@@ -916,6 +918,7 @@ export function App() {
                   onClose={() => setSidebarVisible(false)}
                   onExtractText={handleExtractText}
                   onStageFile={handleStageFile}
+                  onOpenPreview={handleOpenPreview}
                   isStaged={stagedItems.some((s) => s.original_item_id === selectedItem?.item_id)}
                   extractLoading={extractLoading}
                   extractedInfo={extractedInfo}

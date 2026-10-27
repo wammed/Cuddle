@@ -593,7 +593,8 @@ body {
   flex-shrink: 0;
 }
 
-.spinning {
+.spinning,
+.animate-spin {
   animation: spin 1s linear infinite;
 }
 

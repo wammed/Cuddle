@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
-import { Panel, Group, Separator } from "react-resizable-panels";
+import { Panel, Group, Separator, useDefaultLayout } from "react-resizable-panels";
 import { CheckCircle } from "lucide-react";
 import { changeLanguage, SupportedLanguage } from "./i18n";
 import type { FileItem } from "./types/FileItem";
@@ -89,6 +89,27 @@ export function App() {
   const [historyItems, setHistoryItems] = useState<OperationHistoryDto[]>([]);
 
   const [layoutKey, setLayoutKey] = useState(0);
+
+  // Persistent panel layouts across sessions (Phase 10 / Task 2-2)
+  const mainHLayout = useDefaultLayout({
+    id: `cuddle-main-h-panels-${sidebarVisible ? "with-sb" : "no-sb"}`,
+    panelIds: sidebarVisible ? ["panel-left", "panel-center", "panel-right"] : ["panel-left", "panel-center"],
+  });
+
+  const leftVLayout = useDefaultLayout({
+    id: "cuddle-left-v-panels",
+    panelIds: ["panel-search", "panel-folders"],
+  });
+
+  const centerVLayout = useDefaultLayout({
+    id: `cuddle-center-v-panels-${bottomVisible ? "with-bt" : "no-bt"}`,
+    panelIds: bottomVisible ? ["panel-center-top", "panel-center-bottom"] : ["panel-center-top"],
+  });
+
+  const centerHLayout = useDefaultLayout({
+    id: "cuddle-center-h-panels",
+    panelIds: ["panel-browser", "panel-workspace"],
+  });
 
   const currentLang = (i18n.language.startsWith("ja") ? "ja" : "en") as SupportedLanguage;
 
@@ -751,6 +772,26 @@ export function App() {
 
   return (
     <div className="cuddle-root-app">
+      {/* Ambient Aurora Orbs & Hardware-Accelerated Micro-Grain Overlay (Phase 10 / Task 2-10) */}
+      <div className="ambient-aurora-mesh" aria-hidden="true">
+        <div className="aurora-orb orb-1 orb-teal" />
+        <div className="aurora-orb orb-2 orb-emerald" />
+        <div className="aurora-orb orb-3 orb-cyan" />
+        <div className="aurora-orb orb-4 orb-violet" />
+      </div>
+      <svg className="ambient-grain-overlay" aria-hidden="true">
+        <filter id="cuddle-ambient-grain">
+          <feTurbulence
+            type="fractalNoise"
+            baseFrequency="0.75"
+            numOctaves="3"
+            stitchTiles="stitch"
+          />
+          <feColorMatrix type="saturate" values="0" />
+        </filter>
+        <rect width="100%" height="100%" filter="url(#cuddle-ambient-grain)" />
+      </svg>
+
       {toastMessage && (
         <div className="cuddle-floating-toast" role="status" aria-live="polite">
           <CheckCircle size={16} />
@@ -804,11 +845,18 @@ export function App() {
           orientation="horizontal"
           id="cuddle-main-h-panels"
           className="main-panel-group"
+          defaultLayout={mainHLayout.defaultLayout}
+          onLayoutChanged={mainHLayout.onLayoutChanged}
         >
           {/* LEFT COLUMN: Top: Search Results, Bottom: Folder Tree */}
-          <Panel defaultSize={18} minSize={14} className="panel-left-col">
-            <Group orientation="vertical" id="cuddle-left-v-panels">
-              <Panel defaultSize={48} minSize={20} className="subpanel-wrap">
+          <Panel id="panel-left" defaultSize={18} minSize={14} className="panel-left-col">
+            <Group
+              orientation="vertical"
+              id="cuddle-left-v-panels"
+              defaultLayout={leftVLayout.defaultLayout}
+              onLayoutChanged={leftVLayout.onLayoutChanged}
+            >
+              <Panel id="panel-search" defaultSize={48} minSize={20} className="subpanel-wrap">
                 <SearchPanel
                   onSelectItem={(partialItem) => {
                     const found = browserItems.find((i) => i.item_id === partialItem.item_id);
@@ -839,7 +887,7 @@ export function App() {
 
               <Separator className="cuddle-resize-handle-v" />
 
-              <Panel defaultSize={52} minSize={20} className="subpanel-wrap">
+              <Panel id="panel-folders" defaultSize={52} minSize={20} className="subpanel-wrap">
                 <FolderTreePanel
                   currentPath={currentPath}
                   onNavigatePath={(p) => scanDirectory(p)}
@@ -857,13 +905,23 @@ export function App() {
           <Separator className="cuddle-resize-handle-h" />
 
           {/* CENTER & BOTTOM COLUMN */}
-          <Panel defaultSize={sidebarVisible ? 63 : 82} minSize={30} className="panel-center-col">
-            <Group orientation="vertical" id="cuddle-center-v-panels">
+          <Panel id="panel-center" defaultSize={sidebarVisible ? 63 : 82} minSize={30} className="panel-center-col">
+            <Group
+              orientation="vertical"
+              id="cuddle-center-v-panels"
+              defaultLayout={centerVLayout.defaultLayout}
+              onLayoutChanged={centerVLayout.onLayoutChanged}
+            >
               {/* TOP: Center-Left Browser & Center-Right Workspace */}
-              <Panel defaultSize={bottomVisible ? 68 : 100} minSize={30} className="subpanel-wrap">
-                <Group orientation="horizontal" id="cuddle-center-h-panels">
+              <Panel id="panel-center-top" defaultSize={bottomVisible ? 68 : 100} minSize={30} className="subpanel-wrap">
+                <Group
+                  orientation="horizontal"
+                  id="cuddle-center-h-panels"
+                  defaultLayout={centerHLayout.defaultLayout}
+                  onLayoutChanged={centerHLayout.onLayoutChanged}
+                >
                   {/* Central-Left: File Browser */}
-                  <Panel defaultSize={50} minSize={25} className="subpanel-wrap">
+                  <Panel id="panel-browser" defaultSize={50} minSize={25} className="subpanel-wrap">
                     <FileBrowserPanel
                       currentPath={currentPath}
                       items={browserItems}
@@ -887,7 +945,7 @@ export function App() {
                   <Separator className="cuddle-resize-handle-h" />
 
                   {/* Central-Right: Workspace-temp */}
-                  <Panel defaultSize={50} minSize={25} className="subpanel-wrap">
+                  <Panel id="panel-workspace" defaultSize={50} minSize={25} className="subpanel-wrap">
                     <WorkspacePanel
                       stagedFiles={stagedFiles}
                       stagedItems={stagedItems}
@@ -896,6 +954,7 @@ export function App() {
                       onSelect={(item) => setSelectedItem(item)}
                       onClearWorkspace={handleClearWorkspace}
                       onUnstageItem={handleUnstageItem}
+                      onDropItem={handleStageFile}
                       onOpenBulkRename={() => setBulkRenameOpen(true)}
                       onOpenChmod={(items) => handleOpenChmod(items)}
                       onOpenTimestamp={(items) => handleOpenTimestamp(items)}
@@ -913,7 +972,7 @@ export function App() {
               {bottomVisible && (
                 <>
                   <Separator className="cuddle-resize-handle-v" />
-                  <Panel defaultSize={32} minSize={15} className="subpanel-wrap">
+                  <Panel id="panel-center-bottom" defaultSize={32} minSize={15} className="subpanel-wrap">
                     <BottomTabPanel
                       selectedItem={selectedItem}
                       extractedInfo={extractedInfo}
@@ -943,7 +1002,7 @@ export function App() {
           {sidebarVisible && (
             <>
               <Separator className="cuddle-resize-handle-h" />
-              <Panel defaultSize={19} minSize={15} className="panel-right-col subpanel-wrap">
+              <Panel id="panel-right" defaultSize={19} minSize={15} className="panel-right-col subpanel-wrap">
                 <DetailsSidebarPanel
                   item={selectedItem}
                   onClose={() => setSidebarVisible(false)}

@@ -3,8 +3,6 @@ import {
   Info,
   X,
   Shield,
-  FileText,
-  Binary,
   Layers,
   CheckCircle2,
   AlertTriangle,
@@ -22,6 +20,7 @@ import type { PolicyCheckResultDto } from "../types/PolicyCheckResultDto";
 import type { OriginalSnapshotDto } from "../types/OriginalSnapshotDto";
 import { formatBytes, formatTimestamp } from "../utils/format";
 import { decodePathFromBase64 } from "../utils/path";
+import { FileIcon } from "../utils/fileIcons";
 
 interface DetailsSidebarPanelProps {
   item: FileItem | null;
@@ -152,8 +151,6 @@ export function DetailsSidebarPanel({
     );
   }
 
-  const isNonUtf8 = item.display_name.includes("\uFFFD");
-
   return (
     <div className="panel-container details-sidebar-container">
       <div className="panel-header">
@@ -169,11 +166,7 @@ export function DetailsSidebarPanel({
       <div className="details-content-scroll">
         <div className="details-header-card">
           <div className="details-icon-wrap">
-            {isNonUtf8 ? (
-              <Binary size={24} className="details-non-utf8-icon" />
-            ) : (
-              <FileText size={24} className="details-file-icon" />
-            )}
+            <FileIcon item={item} size={28} />
           </div>
           <div className="details-header-text">
             <h4 className="details-file-name">{item.display_name}</h4>
@@ -229,8 +222,15 @@ export function DetailsSidebarPanel({
 
           <div className="details-meta-row">
             <span className="details-meta-label">{t("details.permissions")}</span>
-            <span className="details-meta-value">
-              {item.readonly ? t("details.readonly_label") : t("details.readwrite_label")}
+            <span className="details-meta-value permissions-visual-cell">
+              <span className="perm-chips">
+                <span className="perm-chip perm-r" title="Read">R</span>
+                <span className={`perm-chip ${item.readonly ? "perm-disabled" : "perm-w"}`} title={item.readonly ? "Write disabled" : "Write"}>W</span>
+                <span className="perm-chip perm-x" title="Execute">X</span>
+              </span>
+              <span className="perm-text-label">
+                {item.readonly ? t("details.readonly_label") : t("details.readwrite_label")}
+              </span>
             </span>
           </div>
         </div>

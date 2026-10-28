@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { Briefcase, ShieldCheck, Trash2, Sparkles, RotateCcw, Archive, Workflow, FileCode, Clock, FolderArchive } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Briefcase, ShieldCheck, Trash2, Sparkles, RotateCcw, Archive, Workflow, FileCode, Clock, FolderArchive, ArrowDownToLine } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
 import type { StagedItemDto } from "../types/StagedItemDto";
@@ -14,6 +14,7 @@ interface WorkspacePanelProps {
   onSelect: (item: FileItem) => void;
   onClearWorkspace: () => void;
   onUnstageItem?: (stageId: string) => void;
+  onDropItem?: (item: FileItem) => void;
   onOpenBulkRename?: () => void;
   onOpenChmod?: (items?: FileItem[]) => void;
   onOpenTimestamp?: (items?: FileItem[]) => void;
@@ -33,6 +34,7 @@ export function WorkspacePanel({
   onSelect,
   onClearWorkspace,
   onUnstageItem,
+  onDropItem,
   onOpenBulkRename,
   onOpenChmod,
   onOpenTimestamp,
@@ -44,6 +46,7 @@ export function WorkspacePanel({
   density = "normal",
 }: WorkspacePanelProps) {
   const { t } = useTranslation();
+  const [isDragOver, setIsDragOver] = useState(false);
 
   // Map item identifiers to clone method (Reflink or StandardCopy)
   const cloneMethodMap = useMemo(() => {
@@ -86,8 +89,70 @@ export function WorkspacePanel({
     onUnstageItem(targetStageId);
   };
 
+  const handleDragOver = (e: React.DragEvent) => {
+    if (
+      e.dataTransfer.types.includes("application/cuddle-file-item") ||
+      e.dataTransfer.types.includes("application/json")
+    ) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+      if (!isDragOver) setIsDragOver(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    // Only clear drag over if leaving the container itself
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    try {
+      const raw =
+        e.dataTransfer.getData("application/cuddle-file-item") ||
+        e.dataTransfer.getData("application/json");
+      if (raw && onDropItem) {
+        const item = JSON.parse(raw, (k, v) => {
+          if (k === "size" || k === "mtime_ms" || k === "inode" || k === "dev") {
+            try {
+              return BigInt(v);
+            } catch {
+              return 0n;
+            }
+          }
+          return v;
+        }) as FileItem;
+        if (item && item.raw_base64) {
+          onDropItem(item);
+        }
+      }
+    } catch (err) {
+      console.error("Drop item parse error:", err);
+    }
+  };
+
   return (
-    <div className="panel-container workspace-panel-container">
+    <div
+      className={`panel-container workspace-panel-container ${isDragOver ? "is-drag-over" : ""}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Drag & Drop Visual Overlay (Phase 10 / Task 2-1) */}
+      {isDragOver && (
+        <div className="workspace-drag-overlay">
+          <div className="drag-overlay-card">
+            <ArrowDownToLine size={24} className="drag-overlay-icon" />
+            <p className="drag-overlay-title">{t("workspace.drop_to_stage")}</p>
+            <span className="drag-overlay-subtitle">
+              {t("workspace.drop_safe_note")}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Row 1: Workspace Title, Protection Badge, and Clear All */}
       <div className="panel-header workspace-header-top-row">
         <div className="panel-title-group">

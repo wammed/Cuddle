@@ -7500,3 +7500,696 @@ body {
 
 
 
+
+/* ==========================================================================
+   Phase 10: UX ＆ 操作性クイックウィン ＆ 視覚的超リッチ化 (UI Refinements & Ultra-Rich Polish)
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Task 2-10: Ambient Aurora Mesh Background & Subtle Noise Grain
+   Fully Integrated with 30 Color Themes (Theme-Reactive Canvas & High-Vibrancy Orbs)
+   -------------------------------------------------------------------------- */
+.ambient-aurora-mesh {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+  background-color: var(--bg-canvas);
+  background: radial-gradient(
+    ellipse 100% 80% at 50% 30%,
+    var(--bg-surface-base) 0%,
+    var(--bg-canvas) 100%
+  );
+  transition: background-color var(--transition-normal), background var(--transition-normal);
+}
+
+.aurora-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(48px);
+  mix-blend-mode: screen;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+
+/* Orb 1: Primary Brand Core (Top Left) */
+.aurora-orb.orb-1,
+.aurora-orb.orb-teal {
+  width: 740px;
+  height: 740px;
+  background: radial-gradient(
+    circle,
+    var(--accent-brand-bright) 0%,
+    var(--accent-brand) 32%,
+    rgba(0, 0, 0, 0) 70%
+  );
+  top: -160px;
+  left: 8%;
+  animation: float-aurora-primary 22s ease-in-out infinite alternate;
+}
+
+/* Orb 2: Safety & Shield Secondary (Bottom Right) */
+.aurora-orb.orb-2,
+.aurora-orb.orb-emerald {
+  width: 790px;
+  height: 790px;
+  background: radial-gradient(
+    circle,
+    var(--accent-safety) 0%,
+    var(--border-glow) 36%,
+    rgba(0, 0, 0, 0) 70%
+  );
+  bottom: -200px;
+  right: 6%;
+  animation: float-aurora-secondary 28s ease-in-out infinite alternate;
+}
+
+/* Orb 3: Border Glow & Atmosphere (Top / Center Right) */
+.aurora-orb.orb-3,
+.aurora-orb.orb-cyan {
+  width: 660px;
+  height: 660px;
+  background: radial-gradient(
+    circle,
+    var(--border-glow) 0%,
+    var(--accent-brand-bright) 35%,
+    rgba(0, 0, 0, 0) 70%
+  );
+  top: 25%;
+  right: 20%;
+  animation: float-aurora-glow 24s ease-in-out infinite alternate;
+}
+
+/* Orb 4: Subtle Complementary Highlight (Bottom / Center Left) */
+.aurora-orb.orb-4,
+.aurora-orb.orb-violet {
+  width: 680px;
+  height: 680px;
+  background: radial-gradient(
+    circle,
+    var(--text-secondary) 0%,
+    var(--accent-brand) 30%,
+    rgba(0, 0, 0, 0) 70%
+  );
+  bottom: 12%;
+  left: 18%;
+  animation: float-aurora-highlight 30s ease-in-out infinite alternate;
+}
+
+@keyframes float-aurora-primary {
+  0% {
+    transform: translate(0, 0) scale(0.88);
+    opacity: 0.58;
+  }
+  50% {
+    transform: translate(95px, 65px) scale(1.30);
+    opacity: 0.92;
+  }
+  100% {
+    transform: translate(-55px, 120px) scale(0.96);
+    opacity: 0.65;
+  }
+}
+
+@keyframes float-aurora-secondary {
+  0% {
+    transform: translate(0, 0) scale(1.25);
+    opacity: 0.85;
+  }
+  50% {
+    transform: translate(-90px, -95px) scale(0.85);
+    opacity: 0.52;
+  }
+  100% {
+    transform: translate(75px, -50px) scale(1.32);
+    opacity: 0.88;
+  }
+}
+
+@keyframes float-aurora-glow {
+  0% {
+    transform: translate(0, 0) scale(0.92);
+    opacity: 0.60;
+  }
+  50% {
+    transform: translate(-85px, 85px) scale(1.28);
+    opacity: 0.90;
+  }
+  100% {
+    transform: translate(85px, -65px) scale(0.86);
+    opacity: 0.55;
+  }
+}
+
+@keyframes float-aurora-highlight {
+  0% {
+    transform: translate(0, 0) scale(1.10);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translate(110px, -75px) scale(1.34);
+    opacity: 0.86;
+  }
+  100% {
+    transform: translate(-70px, 70px) scale(0.90);
+    opacity: 0.50;
+  }
+}
+
+.ambient-grain-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 9999;
+  mix-blend-mode: overlay;
+  opacity: 0.075;
+}
+
+/* Ensure app root and all interactive layouts sit above ambient background */
+.main-app-header-multiline {
+  position: relative;
+  z-index: 2;
+  background: color-mix(in srgb, var(--bg-surface-base) 75%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+.workbench-workspace-layout,
+.cuddle-global-statusbar,
+.start-page-container {
+  position: relative;
+  z-index: 2;
+  background-color: transparent;
+}
+
+/* --------------------------------------------------------------------------
+   Task 2-6: Light & Depth (Inner Rim Light & Multi-Layer Depth Shadows)
+   -------------------------------------------------------------------------- */
+.panel-container,
+.start-hero-card,
+.start-feature-card,
+.start-card-panel {
+  background: color-mix(in srgb, var(--bg-surface-card) 68%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 8px 32px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+.panel-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(255, 255, 255, 0.005) 100%
+  );
+}
+
+/* --------------------------------------------------------------------------
+   Task 2-7: Spotlight Hover & Physical Spring Feedback
+   -------------------------------------------------------------------------- */
+.spotlight-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.spotlight-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    280px circle at var(--mouse-x, -999px) var(--mouse-y, -999px),
+    rgba(56, 189, 248, 0.12),
+    transparent 75%
+  );
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  z-index: 1;
+}
+
+.spotlight-card:hover::before {
+  opacity: 1;
+}
+
+/* Spring scale feedback on button / interactive elements */
+button:active:not(:disabled),
+.start-feature-card:active,
+.breadcrumb-segment-btn:active,
+.log-filter-pill:active {
+  transform: scale(0.975);
+  transition: transform 0.06s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* --------------------------------------------------------------------------
+   Task 2-1: Drag & Drop (D&D) Staging Visual Overlays
+   -------------------------------------------------------------------------- */
+.virtual-row-item.is-draggable {
+  cursor: grab;
+}
+
+.virtual-row-item.is-draggable:active {
+  cursor: grabbing;
+}
+
+.workspace-panel-container {
+  position: relative;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.workspace-panel-container.is-drag-over {
+  border-color: #10b981 !important;
+  box-shadow:
+    inset 0 0 0 2px rgba(16, 185, 129, 0.6),
+    0 0 32px rgba(16, 185, 129, 0.25) !important;
+}
+
+.workspace-drag-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(6, 15, 25, 0.82);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  pointer-events: none;
+  animation: drag-overlay-fade-in 0.15s ease-out;
+}
+
+@keyframes drag-overlay-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.drag-overlay-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 32px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px dashed rgba(16, 185, 129, 0.6);
+  border-radius: var(--radius-md, 8px);
+  text-align: center;
+}
+
+.drag-overlay-icon {
+  color: #34d399;
+  animation: bounce-drop-icon 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes bounce-drop-icon {
+  from {
+    transform: translateY(-4px);
+  }
+  to {
+    transform: translateY(4px);
+  }
+}
+
+.drag-overlay-title {
+  font-size: var(--text-sm, 13px);
+  font-weight: 600;
+  color: #34d399;
+  margin: 0;
+}
+
+.drag-overlay-subtitle {
+  font-size: var(--text-xs, 11px);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* --------------------------------------------------------------------------
+   Task 2-4: Pipeline Logs Toolbar & Mode Filters
+   -------------------------------------------------------------------------- */
+.logs-toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: rgba(10, 15, 26, 0.75);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.logs-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.log-filter-pill {
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.log-filter-pill:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary, #f1f5f9);
+}
+
+.log-filter-pill.active {
+  background: rgba(6, 182, 212, 0.15);
+  border-color: rgba(6, 182, 212, 0.5);
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+.logs-search-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-xs, 4px);
+  padding: 3px 8px;
+  width: 200px;
+}
+
+.logs-search-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary, #f1f5f9);
+  font-size: 11px;
+  width: 100%;
+}
+
+.logs-search-input::placeholder {
+  color: var(--text-muted, #64748b);
+}
+
+.logs-search-clear {
+  background: transparent;
+  border: none;
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+}
+
+.logs-search-clear:hover {
+  color: var(--text-primary, #f1f5f9);
+}
+
+.logs-count-summary {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.log-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 0;
+  line-height: 1.4;
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 11px;
+}
+
+.log-line-error {
+  color: #f87171 !important;
+}
+
+.log-line-error .log-prefix {
+  color: #ef4444 !important;
+  font-weight: 700;
+}
+
+.log-line-file {
+  color: #2dd4bf !important;
+}
+
+.log-line-file .log-prefix {
+  color: #14b8a6 !important;
+}
+
+.log-line-normal {
+  color: #cbd5e1;
+}
+
+/* --------------------------------------------------------------------------
+   Task 2-5: Rich Extension Icons Styling
+   -------------------------------------------------------------------------- */
+.file-icon-rust {
+  color: #f97316;
+}
+
+.file-icon-typescript {
+  color: #38bdf8;
+}
+
+.file-icon-javascript {
+  color: #facc15;
+}
+
+.file-icon-python {
+  color: #eab308;
+}
+
+.file-icon-web {
+  color: #ec4899;
+}
+
+.file-icon-cpp {
+  color: #a855f7;
+}
+
+.file-icon-json {
+  color: #fbbf24;
+}
+
+.file-icon-config {
+  color: #f59e0b;
+}
+
+.file-icon-spreadsheet {
+  color: #10b981;
+}
+
+.file-icon-database {
+  color: #14b8a6;
+}
+
+.file-icon-markdown {
+  color: #06b6d4;
+}
+
+.file-icon-pdf {
+  color: #ef4444;
+}
+
+.file-icon-text {
+  color: #94a3b8;
+}
+
+.file-icon-image {
+  color: #34d399;
+}
+
+.file-icon-audio {
+  color: #a78bfa;
+}
+
+.file-icon-video {
+  color: #f472b6;
+}
+
+.file-icon-archive {
+  color: #fb923c;
+}
+
+.file-icon-shell {
+  color: #4ade80;
+}
+
+/* --------------------------------------------------------------------------
+   Task 2-8: Storage Gauge, Inline Heat-Bar & Permission Pills
+   -------------------------------------------------------------------------- */
+.size-with-heat-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.size-heat-bar {
+  width: 36px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 9999px;
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.size-heat-bar-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #06b6d4, #10b981);
+  border-radius: 9999px;
+}
+
+/* Visual Permission Chips */
+.permissions-visual-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.perm-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 2px 4px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.perm-chip {
+  font-size: 9px;
+  font-weight: 700;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  line-height: 1;
+}
+
+.perm-chip.perm-r {
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+}
+
+.perm-chip.perm-w {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+.perm-chip.perm-x {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+.perm-chip.perm-disabled {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.2);
+}
+
+.perm-text-label {
+  font-size: 11px;
+}
+
+.storage-safety-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #34d399;
+}
+
+.storage-safety-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+}
+
+/* --------------------------------------------------------------------------
+   Task 2-9: Tabular Figures & Interactive Breadcrumb Trail
+   -------------------------------------------------------------------------- */
+.file-meta-size,
+.file-meta-mtime,
+.file-meta-inode,
+.browser-footer-status,
+.font-mono {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.breadcrumb-trail {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.breadcrumb-segment-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.breadcrumb-separator {
+  color: var(--text-muted, #64748b);
+  opacity: 0.6;
+}
+
+.breadcrumb-segment-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted, #94a3b8);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.breadcrumb-segment-btn:hover {
+  background: rgba(6, 182, 212, 0.15);
+  color: #38bdf8;
+}
+
+.breadcrumb-edit-icon {
+  margin-left: 6px;
+  color: var(--text-muted, #64748b);
+  opacity: 0.4;
+  transition: opacity 0.15s ease;
+}
+
+.current-path-badge:hover .breadcrumb-edit-icon {
+  opacity: 0.9;
+  color: #38bdf8;
+}

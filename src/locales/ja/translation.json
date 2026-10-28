@@ -35,6 +35,8 @@
   },
   "workspace": {
     "empty_state": "作業領域（workspace-temp）にファイルがありません",
+    "drop_to_stage": "ここにドロップして作業コピーを作成",
+    "drop_safe_note": "原本ファイルは保護され、workspace-temp/ 内にのみ複製されます",
     "original_protected": "原本ファイルは厳格に保護されています（読み取り専用）",
     "reflink_enabled": "対応環境では Reflink (CoW) 高速コピーが有効です",
     "demo_items_title": "二重キーファイルIPC（UTF-8 & 非UTF-8）",
@@ -804,6 +806,12 @@
     "size_summary": "{{archiveSize}} (元サイズ: {{origSize}})"
   },
   "logs": {
-    "empty_logs": "ログはありません。"
+    "empty_logs": "ログはありません。",
+    "filter_all": "全ログ",
+    "filter_file_only": "ファイル操作のみ",
+    "filter_hidden": "警告・エラーのみ",
+    "filter_search_placeholder": "ログ内を検索...",
+    "count_label": "{{filtered}} / {{total}} 件",
+    "clear_logs_btn": "ログ消去"
   }
 }

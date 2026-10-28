@@ -661,11 +661,17 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
 Based on comprehensive cross-verification between the Master Design Specification ([`FileWorkbench-Design-ver0.9.en.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Design-ver0.9.en.md)) and the current codebase, the 18 identified items have been triaged and detailed in [`NEXT_IMPLEMENTATION_TASKS.en.md`](file:///home/susie/git/wammed/Cuddle/NEXT_IMPLEMENTATION_TASKS.en.md).
 
 ### Phase Structure & Recommended Implementation Flow
-1. **Phase 10: Quick UX & Interaction Wins (Recommended Next Starting Point)**
-   * [2-2] Pane Width & Layout Persistence across Sessions (`react-resizable-panels` / `localStorage`)
-   * [2-1] Drag & Drop (D&D) between Browser & Workspace (D&D staging)
-   * [2-4] Pipeline Log Display Filter (`all` / `hidden` / `file_only`)
-2. **Phase 11: Safety, Conflict Resolution & Recovery Refinements**
+1. **Phase 10: Quick UX & Interaction Wins & Ultra-Rich Visual Polish [Completed & Verified by User]**
+   * [2-2] Pane Width & Layout Persistence across Sessions (`react-resizable-panels` / `localStorage`): **Done & Verified**
+   * [2-1] Drag & Drop (D&D) between Browser & Workspace (D&D staging): **Done & Verified**
+   * [2-4] Pipeline Log Display Filter (`all` / `hidden` / `file_only`): **Done & Verified**
+   * [2-5] Rich Extension Icons (Rust, TS, Python, Media specific icons & colors): **Done & Verified**
+   * [2-6] Inner Rim Light & 3-Layer Depth Shadows: **Done & Verified**
+   * [2-7] Spotlight Cursor Tracking & Physical Spring Press: **Done & Verified**
+   * [2-8] Storage Safety Gauge, Inline Heat-Bar & Permission Chips: **Done & Verified**
+   * [2-9] Tabular Figures & Interactive Breadcrumb Trail: **Done & Verified**
+   * [2-10] Ambient Aurora Mesh Background & Subtle Noise Grain (Theme Reactive & High Vibrancy): **Done & Verified**
+2. **Phase 11: Safety, Conflict Resolution & Recovery Refinements [Scheduled Next Session]**
    * [3-2] Alternate Filename UI on Original Conflict (e.g., `.edit.pdf`) & non-destructive save
    * [3-3] Backup Retention Management (default 5, max 10) & Prune UI
    * [4-3] Warning / Consent Modal on Non-Landlock Kernels

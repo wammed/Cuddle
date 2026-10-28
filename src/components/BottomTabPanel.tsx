@@ -24,6 +24,8 @@ import {
   Wrench,
   Loader2,
   Image as ImageIcon,
+  Search,
+  Filter,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
@@ -108,6 +110,50 @@ export function BottomTabPanel({
   // Git Status State
   const [gitStatus, setGitStatus] = useState<GitStatusDto | null>(null);
   const [isGitLoading, setIsGitLoading] = useState(false);
+
+  // Log filter state (Phase 10 / Task 2-4: all / file_only / hidden)
+  type LogFilterMode = "all" | "file_only" | "hidden";
+  const [logFilter, setLogFilter] = useState<LogFilterMode>("all");
+  const [logSearchQuery, setLogSearchQuery] = useState("");
+
+  const filteredLogs = useMemo(() => {
+    return logs.filter((log) => {
+      const lower = log.toLowerCase();
+
+      // Mode filter
+      if (logFilter === "file_only") {
+        const isFileOp =
+          lower.includes("stage") ||
+          lower.includes("reflect") ||
+          lower.includes("rename") ||
+          lower.includes("chmod") ||
+          lower.includes("touch") ||
+          lower.includes("pipeline") ||
+          lower.includes("backup") ||
+          lower.includes("archive") ||
+          lower.includes("tar") ||
+          lower.includes("extract");
+        if (!isFileOp) return false;
+      } else if (logFilter === "hidden") {
+        const isCritical =
+          lower.includes("error") ||
+          lower.includes("warn") ||
+          lower.includes("fail") ||
+          lower.includes("conflict") ||
+          lower.includes("abort") ||
+          lower.includes("cannot");
+        if (!isCritical) return false;
+      }
+
+      // Query filter
+      if (logSearchQuery.trim()) {
+        const q = logSearchQuery.toLowerCase();
+        if (!lower.includes(q)) return false;
+      }
+
+      return true;
+    });
+  }, [logs, logFilter, logSearchQuery]);
 
 
   const loadTools = useCallback(async () => {
@@ -1088,14 +1134,86 @@ export function BottomTabPanel({
 
         {activeTab === "logs" && (
           <div className="tab-logs-content">
-            {logs.length > 0 ? (
+            {/* Logs Filtering Header (Phase 10 / Task 2-4) */}
+            <div className="logs-toolbar-row">
+              <div className="logs-filter-group">
+                <Filter size={13} className="text-muted" />
+                <button
+                  type="button"
+                  className={`log-filter-pill ${logFilter === "all" ? "active" : ""}`}
+                  onClick={() => setLogFilter("all")}
+                >
+                  {t("logs.filter_all")} ({logs.length})
+                </button>
+                <button
+                  type="button"
+                  className={`log-filter-pill ${logFilter === "file_only" ? "active" : ""}`}
+                  onClick={() => setLogFilter("file_only")}
+                >
+                  {t("logs.filter_file_only")}
+                </button>
+                <button
+                  type="button"
+                  className={`log-filter-pill ${logFilter === "hidden" ? "active" : ""}`}
+                  onClick={() => setLogFilter("hidden")}
+                >
+                  {t("logs.filter_hidden")}
+                </button>
+              </div>
+
+              <div className="logs-search-box">
+                <Search size={13} className="search-icon text-muted" />
+                <input
+                  type="text"
+                  className="logs-search-input"
+                  placeholder={t("logs.filter_search_placeholder")}
+                  value={logSearchQuery}
+                  onChange={(e) => setLogSearchQuery(e.target.value)}
+                />
+                {logSearchQuery && (
+                  <button
+                    type="button"
+                    className="logs-search-clear"
+                    onClick={() => setLogSearchQuery("")}
+                  >
+                    <X size={11} />
+                  </button>
+                )}
+              </div>
+
+              <div className="logs-count-summary font-mono text-muted">
+                {t("logs.count_label", { filtered: filteredLogs.length, total: logs.length })}
+              </div>
+            </div>
+
+            {filteredLogs.length > 0 ? (
               <div className="logs-terminal">
-                {logs.map((log, idx) => (
-                  <div key={idx} className="log-line">
-                    <span className="log-prefix">&gt;</span>
-                    <span className="log-text">{log}</span>
-                  </div>
-                ))}
+                {filteredLogs.map((log, idx) => {
+                  const lower = log.toLowerCase();
+                  const isError =
+                    lower.includes("error") ||
+                    lower.includes("fail") ||
+                    lower.includes("conflict") ||
+                    lower.includes("abort");
+                  const isFileOp =
+                    lower.includes("stage") ||
+                    lower.includes("reflect") ||
+                    lower.includes("rename") ||
+                    lower.includes("chmod") ||
+                    lower.includes("touch") ||
+                    lower.includes("pipeline") ||
+                    lower.includes("backup");
+
+                  return (
+                    <div
+                      key={idx}
+                      className={`log-line ${isError ? "log-line-error" : isFileOp ? "log-line-file" : "log-line-normal"}`}
+                    >
+                      <span className="log-prefix">&gt;</span>
+                      <span className="log-text">{log}</span>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <p className="tab-empty-text">{t("logs.empty_logs")}</p>

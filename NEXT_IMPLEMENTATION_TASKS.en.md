@@ -27,17 +27,17 @@ This document provides a systematic backlog and implementation guide for the **1
 
 The 24 items are organized across **5 implementation phases (Phase 10 to 14)** based on dependency, risk, complexity, and user experience value.
 
-| ID | Category | Task Name | Recommended Phase | Priority | Complexity |
-| :--- | :--- | :--- | :--- | :---: | :---: |
-| **2-2** | UI / Layout | Pane Width & Layout Persistence across Sessions | **Phase 10** | **High** | Low |
-| **2-1** | UI / Workflow | Drag & Drop (D&D) between Browser & Workspace | **Phase 10** | **High** | Med |
-| **2-4** | UI / Logs | Pipeline Log Display Filter (`all` / `hidden` / `file_only`) | **Phase 10** | **High** | Low |
-| **2-5** | UI / Visual | Extension-Specific Rich Icons | **Phase 10** | **High** | Low |
-| **2-6** | UI / Visual | Lighting & Depth Layering (Inner Rim Light & Multi-layer Shadows) | **Phase 10** | **High** | Low |
-| **2-7** | UI / Visual | Cursor Spotlight Glow & Tactile Spring Feedback | **Phase 10** | **High** | Med |
-| **2-8** | UI / Visual | Storage Capacity Gauges & Visual Permissions/Size Metrics | **Phase 10** | **High** | Med |
-| **2-9** | UI / Visual | Tabular Precision Typography & Interactive Breadcrumb Trail | **Phase 10** | **High** | Low |
-| **2-10** | UI / Visual | Ambient Aurora Mesh Canvas & Subtle Micro-Grain Texture | **Phase 10** | **Medium** | Low |
+| ID | Category | Task Name | Recommended Phase | Priority | Complexity | Status |
+| :--- | :--- | :--- | :--- | :---: | :---: | :---: |
+| **2-2** | UI / Layout | Pane Width & Layout Persistence across Sessions | **Phase 10** | **High** | Low | **Done & Verified** |
+| **2-1** | UI / Workflow | Drag & Drop (D&D) between Browser & Workspace | **Phase 10** | **High** | Med | **Done & Verified** |
+| **2-4** | UI / Logs | Pipeline Log Display Filter (`all` / `hidden` / `file_only`) | **Phase 10** | **High** | Low | **Done & Verified** |
+| **2-5** | UI / Visual | Extension-Specific Rich Icons | **Phase 10** | **High** | Low | **Done & Verified** |
+| **2-6** | UI / Visual | Lighting & Depth Layering (Inner Rim Light & Multi-layer Shadows) | **Phase 10** | **High** | Low | **Done & Verified** |
+| **2-7** | UI / Visual | Cursor Spotlight Glow & Tactile Spring Feedback | **Phase 10** | **High** | Med | **Done & Verified** |
+| **2-8** | UI / Visual | Storage Capacity Gauges & Visual Permissions/Size Metrics | **Phase 10** | **High** | Med | **Done & Verified** |
+| **2-9** | UI / Visual | Tabular Precision Typography & Interactive Breadcrumb Trail | **Phase 10** | **High** | Low | **Done & Verified** |
+| **2-10** | UI / Visual | Ambient Aurora Mesh Canvas & Subtle Micro-Grain Texture | **Phase 10** | **Medium** | Low | **Done & Verified** |
 | **3-2** | Safety / Reflect | Alternate Filename UI on Original Conflict (e.g., `.edit.pdf`) | **Phase 11** | **High** | Med |
 | **3-3** | Safety / Backup | Backup Retention (Default 5, Max 10) & Prune UI | **Phase 11** | **High** | Med |
 | **4-3** | Safety / Sandbox | Warning / Consent Modal on Non-Landlock Kernels | **Phase 11** | **Medium** | Low |
@@ -58,7 +58,7 @@ The 24 items are organized across **5 implementation phases (Phase 10 to 14)** b
 
 ## 3. Detailed Phase-by-Phase Implementation Plans
 
-### Phase 10: Quick UX & Interaction Wins & Ultra-Rich Visual Polish
+### Phase 10: Quick UX & Interaction Wins & Ultra-Rich Visual Polish [Completed & Verified by User]
 Delivers immediate day-to-day workflow improvements (Part A) alongside a comprehensive sensory and visual upgrade to world-class design standards (Part B).
 
 #### Part A: Interaction & Ergonomics
@@ -164,16 +164,17 @@ Delivers immediate day-to-day workflow improvements (Part A) alongside a compreh
   * `src/App.css`
 * **Verification:** Vitest tests for path segment parsing and ancestor navigation callbacks.
 
-##### [Task 2-10] Ambient Aurora Mesh Canvas & Subtle Micro-Grain Texture
+##### [Task 2-10] Ambient Aurora Mesh Canvas & Subtle Micro-Grain Texture (Theme Reactive & High Vibrancy)
 * **Design Spec Reference:** Section 1.1 (Cyber Dark Atmosphere)
-* **Current Status:** Static radial gradient overlay on a flat dark background.
-* **Architecture & Strategy:**
-  * Implement slowly drifting ambient blur orbs in the background canvas animated with 25-35s GPU-composited CSS keyframes (`will-change: transform`).
-  * Overlay a 2% opacity inline SVG Perlin noise grain texture to eliminate color banding across dark displays and impart physical tactile depth.
+* **Implementation Details:**
+  * **30 Color Themes Full Synchronization:** Eliminated hardcoded dark background (`#03070a`), rebinding `.ambient-aurora-mesh` to dynamic CSS radial gradients using `--bg-canvas` and `--bg-surface-base`. Switching among 30 color themes in Settings instantly and smoothly updates the background canvas.
+  * **Theme-Reactive Glowing Orbs (High Vibrancy & Scaled):** Bound orb fill gradients to theme variables (`--accent-brand-bright`, `--accent-brand`, `--accent-safety`, `--border-glow`, `--text-secondary`). Expanded orb dimensions (660px-790px) and sharpened blur to 48px to intensify the core luminescence and physical depth, breathing with dynamic scale (0.88-1.34) and pulsating opacity (0.50-0.92).
+  * **Harmonized Translucent Glassmorphism:** Applied `color-mix(in srgb, var(--bg-surface-card) 68%, transparent)` across workspace panels, launchpad cards, and headers so that background neon orb floating and breathing are clearly and dramatically visible through the frosted glass panels while preserving each theme's unique color identity.
+  * **Hardware-Accelerated Micro-Grain:** Enhanced frontmost (`z-index: 9999`) inline SVG filter (`feTurbulence` + `feColorMatrix`, `opacity: 0.075`) with `mix-blend-mode: overlay` eliminating all color banding and delivering a consistent tactile film grain texture across diverse monitors and GPUs.
 * **Target Files:**
   * `src/App.css`
   * `src/App.tsx`
-* **Verification:** 60fps frame rate profiling to ensure zero performance degradation.
+  * `src/__tests__/Phase10Refinements.test.tsx`
 
 ---
 

@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { FolderOpen, RefreshCw, CornerDownRight, ListPlus, ArrowUp } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { FolderOpen, RefreshCw, CornerDownRight, ListPlus, ArrowUp, ChevronRight, Edit3 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
 import type { Density } from "../types/Density";
@@ -49,6 +49,24 @@ export function FileBrowserPanel({
   useEffect(() => {
     setPathInput(currentPath);
     setIsEditingPath(false);
+  }, [currentPath]);
+
+  // Interactive Breadcrumb Trail (Phase 10 / Task 2-9)
+  const breadcrumbs = useMemo(() => {
+    if (!currentPath || currentPath === "/") {
+      return [{ name: "/", path: "/" }];
+    }
+    const parts = currentPath.split("/").filter(Boolean);
+    const segments = [{ name: "/", path: "/" }];
+    let accumulated = "";
+    for (const part of parts) {
+      accumulated += "/" + part;
+      segments.push({
+        name: part,
+        path: accumulated,
+      });
+    }
+    return segments;
   }, [currentPath]);
 
   const handlePathSubmit = (e: React.FormEvent) => {
@@ -131,13 +149,37 @@ export function FileBrowserPanel({
             />
           </form>
         ) : (
-          <span
+          <div
             className="current-path-badge clickable font-mono"
             onClick={() => setIsEditingPath(true)}
             title={t("browser.click_edit_path")}
           >
-            {currentPath}
-          </span>
+            {/* Hidden fallback text for test compatibility & assistive tech */}
+            <span className="sr-only">{currentPath}</span>
+
+            {/* Interactive Breadcrumb Trail (Phase 10 / Task 2-9) */}
+            <div className="breadcrumb-trail">
+              {breadcrumbs.map((seg, idx) => (
+                <span key={seg.path} className="breadcrumb-segment-wrapper">
+                  {idx > 0 && <ChevronRight size={11} className="breadcrumb-separator" />}
+                  <button
+                    type="button"
+                    className="breadcrumb-segment-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onNavigatePath) {
+                        onNavigatePath(seg.path);
+                      }
+                    }}
+                    title={seg.path}
+                  >
+                    {seg.name}
+                  </button>
+                </span>
+              ))}
+              <Edit3 size={11} className="breadcrumb-edit-icon" />
+            </div>
+          </div>
         )}
       </div>
 

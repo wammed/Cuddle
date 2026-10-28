@@ -44,11 +44,20 @@ export const StartPage: React.FC<StartPageProps> = ({
 }) => {
   const { t } = useTranslation();
 
+  // Mouse tracking spotlight feedback (Phase 10 / Task 2-7)
+  const handleCardMouseMove = (e: React.MouseEvent<HTMLElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    e.currentTarget.style.setProperty("--mouse-x", `${x}px`);
+    e.currentTarget.style.setProperty("--mouse-y", `${y}px`);
+  };
+
   return (
     <div className="start-page-container">
       <div className="start-page-inner">
         {/* Hero Section */}
-        <div className="start-hero-card">
+        <div className="start-hero-card spotlight-card" onMouseMove={handleCardMouseMove}>
           <div className="start-hero-top">
             <img src="/Cuddle-Icon.svg" alt="Cuddle Logo" className="start-hero-logo" />
             <div className="start-hero-headings">
@@ -92,7 +101,7 @@ export const StartPage: React.FC<StartPageProps> = ({
 
         <div className="start-action-grid">
           {/* Card 1: Open Folder & Browse */}
-          <div className="start-feature-card" onClick={onOpenFolder}>
+          <div className="start-feature-card spotlight-card" onMouseMove={handleCardMouseMove} onClick={onOpenFolder}>
             <div className="feature-card-icon-wrap folder">
               <FolderOpen size={24} />
             </div>
@@ -107,7 +116,7 @@ export const StartPage: React.FC<StartPageProps> = ({
           </div>
 
           {/* Card 2: 30-Pipeline Runner */}
-          <div className="start-feature-card" onClick={onOpenPipeline}>
+          <div className="start-feature-card spotlight-card" onMouseMove={handleCardMouseMove} onClick={onOpenPipeline}>
             <div className="feature-card-icon-wrap pipeline">
               <Workflow size={24} />
             </div>
@@ -122,7 +131,7 @@ export const StartPage: React.FC<StartPageProps> = ({
           </div>
 
           {/* Card 3: Bulk Rename & Normalization */}
-          <div className="start-feature-card" onClick={onOpenBulkRename}>
+          <div className="start-feature-card spotlight-card" onMouseMove={handleCardMouseMove} onClick={onOpenBulkRename}>
             <div className="feature-card-icon-wrap rename">
               <Sparkles size={24} />
             </div>

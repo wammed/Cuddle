@@ -1,13 +1,11 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useMemo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { FileItem } from "../types/FileItem";
 import type { Density } from "../types/Density";
 import { DENSITY_CONFIGS } from "../utils/density";
 import { formatBytes, formatTimestamp } from "../utils/format";
+import { FileIcon } from "../utils/fileIcons";
 import {
-  Folder,
-  FileText,
-  Binary,
   Shield,
   CornerDownRight,
   Trash2,
@@ -58,6 +56,17 @@ export function VirtualFileList({
 
   const densityConfig = DENSITY_CONFIGS[density] || DENSITY_CONFIGS.normal;
   const rowHeight = densityConfig.rowHeight;
+
+  // Maximum file size in current list for inline size heat-bar (Phase 10 / Task 2-8)
+  const maxFileSize = useMemo(() => {
+    let max = 0n;
+    for (const it of items) {
+      if (!it.is_dir && it.size > max) {
+        max = it.size;
+      }
+    }
+    return Number(max);
+  }, [items]);
 
   const virtualizer = useVirtualizer({
     count: items.length,
@@ -165,7 +174,7 @@ export function VirtualFileList({
           return (
             <div
               key={item.item_id}
-              className={`virtual-row-item density-${density} ${isSelected ? "selected" : ""} ${isNonUtf8 ? "has-warning" : ""}`}
+              className={`virtual-row-item density-${density} ${isSelected ? "selected" : ""} ${isNonUtf8 ? "has-warning" : ""} ${!isWorkspace && !item.is_dir ? "is-draggable" : ""}`}
               style={{
                 position: "absolute",
                 top: 0,
@@ -173,6 +182,17 @@ export function VirtualFileList({
                 width: "100%",
                 height: `${virtualRow.size}px`,
                 transform: `translateY(${virtualRow.start}px)`,
+              }}
+              draggable={!isWorkspace && !item.is_dir}
+              onDragStart={(e) => {
+                if (!isWorkspace && !item.is_dir) {
+                  const serialized = JSON.stringify(item, (_, v) =>
+                    typeof v === "bigint" ? v.toString() : v
+                  );
+                  e.dataTransfer.setData("application/cuddle-file-item", serialized);
+                  e.dataTransfer.setData("application/json", serialized);
+                  e.dataTransfer.effectAllowed = "copy";
+                }
               }}
               onClick={() => onSelect(item)}
               onDoubleClick={() => {
@@ -185,15 +205,7 @@ export function VirtualFileList({
               onContextMenu={(e) => handleContextMenu(e, item)}
             >
               <div className="row-col-icon">
-                {item.is_dir ? (
-                  <Folder size={densityConfig.iconSize} className="item-icon-folder" />
-                ) : isNonUtf8 ? (
-                  <span title="Non-UTF-8 path">
-                    <Binary size={densityConfig.iconSize} className="item-icon-non-utf8" />
-                  </span>
-                ) : (
-                  <FileText size={densityConfig.iconSize} className="item-icon-file" />
-                )}
+                <FileIcon item={item} size={densityConfig.iconSize} />
               </div>
 
               <div className="row-main-content">
@@ -228,7 +240,26 @@ export function VirtualFileList({
 
                 <div className="row-line-secondary">
                   <span className="file-meta-item file-meta-size">
-                    {item.is_dir ? t("browser.dir_type") : formatBytes(Number(item.size))}
+                    {item.is_dir ? (
+                      t("browser.dir_type")
+                    ) : (
+                      <span className="size-with-heat-bar">
+                        <span>{formatBytes(Number(item.size))}</span>
+                        {maxFileSize > 0 && Number(item.size) > 0 && (
+                          <span
+                            className="size-heat-bar"
+                            title={`Relative size: ${((Number(item.size) / maxFileSize) * 100).toFixed(1)}%`}
+                          >
+                            <span
+                              className="size-heat-bar-fill"
+                              style={{
+                                width: `${Math.max(4, Math.min(100, Math.round((Number(item.size) / maxFileSize) * 100)))}%`,
+                              }}
+                            />
+                          </span>
+                        )}
+                      </span>
+                    )}
                   </span>
                   <span className="file-meta-separator">•</span>
                   <span className="file-meta-item file-meta-mtime">

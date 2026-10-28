@@ -35,6 +35,8 @@
   },
   "workspace": {
     "empty_state": "No files staged in workspace-temp",
+    "drop_to_stage": "Drop here to create working copy",
+    "drop_safe_note": "Original files remain protected; copy is created inside workspace-temp/",
     "original_protected": "Original files are strictly protected (read-only)",
     "reflink_enabled": "Reflink (CoW) copy enabled when supported",
     "demo_items_title": "Dual-Key File IPC (UTF-8 & Non-UTF-8)",
@@ -804,6 +806,12 @@
     "size_summary": "{{archiveSize}} (Original size: {{origSize}})"
   },
   "logs": {
-    "empty_logs": "Logs are empty."
+    "empty_logs": "Logs are empty.",
+    "filter_all": "All Logs",
+    "filter_file_only": "File Ops Only",
+    "filter_hidden": "Errors & Warnings",
+    "filter_search_placeholder": "Search logs...",
+    "count_label": "{{filtered}} / {{total}} entries",
+    "clear_logs_btn": "Clear Logs"
   }
 }

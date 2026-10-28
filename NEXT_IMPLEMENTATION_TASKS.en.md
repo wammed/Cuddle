@@ -12,7 +12,7 @@
 
 ## 1. Overview and Objectives
 
-This document provides a systematic backlog and implementation guide for the **18 items identified during the cross-verification** between the Master Design Specification ([`FileWorkbench-Design-ver0.9.en.md`](FileWorkbench-Design-ver0.9.en.md)) and the current codebase (as of Phase 9.8 completion). It details the **prioritization, architectural design, affected files, and testing strategies** so that future engineering sessions can immediately start implementation without ambiguity.
+This document provides a systematic backlog and implementation guide for the **18 items identified during the cross-verification** between the Master Design Specification ([`FileWorkbench-Design-ver0.9.en.md`](FileWorkbench-Design-ver0.9.en.md)) and the current codebase (as of Phase 9.8 completion), plus **6 Core Visual Polish & Sensory Upgrade tasks** for a total of 24 items. It details the **prioritization, architectural design, affected files, and testing strategies** so that future engineering sessions can immediately start implementation without ambiguity.
 
 ### Non-Negotiable Core Principles
 1. **Absolute Original Protection:** Direct in-place editing of original files is strictly prohibited. Operations must only run within working copies (`workspace-temp/`), reflecting to originals only upon explicit user confirmation.
@@ -25,13 +25,19 @@ This document provides a systematic backlog and implementation guide for the **1
 
 ## 2. Task List and Priority Matrix
 
-The 18 items are organized across **5 implementation phases (Phase 10 to 14)** based on dependency, risk, complexity, and user experience value.
+The 24 items are organized across **5 implementation phases (Phase 10 to 14)** based on dependency, risk, complexity, and user experience value.
 
 | ID | Category | Task Name | Recommended Phase | Priority | Complexity |
 | :--- | :--- | :--- | :--- | :---: | :---: |
 | **2-2** | UI / Layout | Pane Width & Layout Persistence across Sessions | **Phase 10** | **High** | Low |
 | **2-1** | UI / Workflow | Drag & Drop (D&D) between Browser & Workspace | **Phase 10** | **High** | Med |
 | **2-4** | UI / Logs | Pipeline Log Display Filter (`all` / `hidden` / `file_only`) | **Phase 10** | **High** | Low |
+| **2-5** | UI / Visual | Extension-Specific Rich Icons & Inline Image Thumbnails | **Phase 10** | **High** | Low |
+| **2-6** | UI / Visual | Lighting & Depth Layering (Inner Rim Light & Multi-layer Shadows) | **Phase 10** | **High** | Low |
+| **2-7** | UI / Visual | Cursor Spotlight Glow & Tactile Spring Feedback | **Phase 10** | **High** | Med |
+| **2-8** | UI / Visual | Storage Capacity Gauges & Visual Permissions/Size Metrics | **Phase 10** | **High** | Med |
+| **2-9** | UI / Visual | Tabular Precision Typography & Interactive Breadcrumb Trail | **Phase 10** | **High** | Low |
+| **2-10** | UI / Visual | Ambient Aurora Mesh Canvas & Subtle Micro-Grain Texture | **Phase 10** | **Medium** | Low |
 | **3-2** | Safety / Reflect | Alternate Filename UI on Original Conflict (e.g., `.edit.pdf`) | **Phase 11** | **High** | Med |
 | **3-3** | Safety / Backup | Backup Retention (Default 5, Max 10) & Prune UI | **Phase 11** | **High** | Med |
 | **4-3** | Safety / Sandbox | Warning / Consent Modal on Non-Landlock Kernels | **Phase 11** | **Medium** | Low |
@@ -52,10 +58,12 @@ The 18 items are organized across **5 implementation phases (Phase 10 to 14)** b
 
 ## 3. Detailed Phase-by-Phase Implementation Plans
 
-### Phase 10: Quick UX & Interaction Wins
-Focuses on immediate ergonomics, everyday fluidity, and high-frequency UI interactions.
+### Phase 10: Quick UX & Interaction Wins & Ultra-Rich Visual Polish
+Delivers immediate day-to-day workflow improvements (Part A) alongside a comprehensive sensory and visual upgrade to world-class design standards (Part B).
 
-#### [Task 2-2] Pane Width & Layout Persistence across Sessions
+#### Part A: Interaction & Ergonomics
+
+##### [Task 2-2] Pane Width & Layout Persistence across Sessions
 * **Design Spec Reference:** Section 3.2 (Screen Structure & Layout)
 * **Current Status:** `react-resizable-panels` initializes with static default ratios (52%, 20%, 68%, 50%), resetting whenever the app restarts.
 * **Architecture & Strategy:**
@@ -65,7 +73,7 @@ Focuses on immediate ergonomics, everyday fluidity, and high-frequency UI intera
   * `src/App.tsx`
 * **Verification:** Vitest test with mocked `localStorage`; manual pane resize and reload test.
 
-#### [Task 2-1] Drag & Drop (D&D) between Browser & Workspace
+##### [Task 2-1] Drag & Drop (D&D) between Browser & Workspace
 * **Design Spec Reference:** Section 3.2 (Operation Flow)
 * **Current Status:** Files can only be staged via toolbar buttons ("Stage Working Copy", "Stage All") and context menu.
 * **Architecture & Strategy:**
@@ -78,7 +86,7 @@ Focuses on immediate ergonomics, everyday fluidity, and high-frequency UI intera
   * `src/App.tsx`
 * **Verification:** Vitest mock DragEvent tests (`fireEvent.dragStart`, `fireEvent.drop`).
 
-#### [Task 2-4] Pipeline Log Display Filter Modes
+##### [Task 2-4] Pipeline Log Display Filter Modes
 * **Design Spec Reference:** Section 8.4 (Pipeline Logs and Audit Trails)
 * **Current Status:** Flat linear string dump inside `BottomTabPanel.tsx`.
 * **Architecture & Strategy:**
@@ -91,7 +99,87 @@ Focuses on immediate ergonomics, everyday fluidity, and high-frequency UI intera
 
 ---
 
+#### Part B: Ultra-Rich Visual Polish (6 Core Approaches)
+
+##### [Task 2-5] Extension-Specific Rich Icons & Inline Image Thumbnails
+* **Design Spec Reference:** Section 1.1 (Branding & Visuals), Section 3.3 (Information Density & Icons)
+* **Current Status:** `VirtualFileList.tsx` renders all regular files with a generic, monochromatic `<FileText />` icon and directories with `<Folder />`.
+* **Architecture & Strategy:**
+  * Create `src/utils/fileIcons.tsx` mapping file extensions to dedicated colored Lucide icons.
+  * Code/Config: Rust (orange), TS/JS (blue), Python (gold), HTML/CSS (indigo), TOML/JSON (amber). Documents: Markdown (teal), PDF (crimson), Text (slate). Media: Images (emerald), Audio (purple), Video (pink). Archives: ZIP/TAR (violet).
+  * For image files (`.png`, `.jpg`, `.jpeg`, `.webp`, `.svg`), render high-density 24x24px inline thumbnails using Tauri asset protocol or cached micro-base64 (configurable toggle).
+* **Target Files:**
+  * `src/utils/fileIcons.tsx` (New)
+  * `src/components/VirtualFileList.tsx`
+  * `src/App.css`
+* **Verification:** Vitest assertions for extension-to-icon mapping and CSS class assignment.
+
+##### [Task 2-6] Lighting & Depth Layering (Inner Rim Light & Multi-layer Shadows)
+* **Design Spec Reference:** Section 1.1, Section 3.1 (Glassmorphism & Cyber Dark Visual Concept)
+* **Current Status:** Surfaces rely on flat single-layer borders (`1px solid rgba(...)`) and standard shadows.
+* **Architecture & Strategy:**
+  * Implement top inner specular rim lighting (`box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.04)`) across hero cards, feature cards, panel containers, and dialogs to simulate overhead illumination hitting glass and brushed aluminum edges.
+  * Upgrade drop shadows into 3-tier composite elevations: sharp contact shadow + broad ambient dissipation + subtle accent bleed.
+  * Refine floating surfaces (modals, header, context menus) with `backdrop-filter: blur(24px) saturate(180%)`.
+* **Target Files:**
+  * `src/App.css`
+* **Verification:** Visual sanity across all 30 color themes; theme contrast verification.
+
+##### [Task 2-7] Cursor Spotlight Glow & Tactile Spring Feedback
+* **Design Spec Reference:** Section 3.2 (Interaction & Motion)
+* **Current Status:** Static color tints or simple 1px vertical translation on hover.
+* **Architecture & Strategy:**
+  * Implement mouse tracking hook updating `--mouse-x` and `--mouse-y` CSS variables on cards and buttons, projecting a 120px radial gradient spotlight that follows the cursor.
+  * Add tactile active-press feedback (`transform: scale(0.97)`) with physical spring ease curves on buttons and interactive cards.
+  * Introduce smooth sliding highlight pill indicators behind active tabs in the header and bottom panel.
+* **Target Files:**
+  * `src/components/StartPage.tsx`
+  * `src/components/Header.tsx`
+  * `src/components/BottomTabPanel.tsx`
+  * `src/App.css`
+* **Verification:** Vitest tests for coordinate tracking and uninterrupted click dispatch.
+
+##### [Task 2-8] Storage Capacity Gauges & Visual Permissions/Size Metrics
+* **Design Spec Reference:** Section 3.3, Section 4.1, Section 5.1 (Pre-flight Capacity Checks)
+* **Current Status:** File sizes, permissions, and disk space are displayed exclusively as text strings.
+* **Architecture & Strategy:**
+  * **Original Protection & Disk Usage Stacked Bar:** Multi-segmented graphical bar in the header or sidebar displaying Original Volume vs. Workspace Temp vs. Free Storage.
+  * **Inline Size Heatmap Bar:** 32px micro-bar adjacent to file sizes indicating relative weight compared to the largest file in the active folder.
+  * **Permission Color Segment Pill:** Segmented badge decomposing `rwxr-xr-x` into color-coded permissions (Read: Blue, Write: Orange, Exec: Green).
+* **Target Files:**
+  * `src/components/Header.tsx`
+  * `src/components/VirtualFileList.tsx`
+  * `src/components/DetailsSidebarPanel.tsx`
+  * `src/App.css`
+* **Verification:** Unit tests verifying ratio calculations and edge-case rendering (0-byte, massive files).
+
+##### [Task 2-9] Tabular Precision Typography & Interactive Breadcrumb Trail
+* **Design Spec Reference:** Section 3.2, Section 3.3 (Information Density & Path Ergonomics)
+* **Current Status:** Path is plain text; numbers use proportional figures causing jagged column alignment.
+* **Architecture & Strategy:**
+  * Apply `font-variant-numeric: tabular-nums` / `font-feature-settings: "tnum"` to all size, date, inode, and permission columns for razor-sharp alignment.
+  * Transform static path inputs in `Header.tsx` and `FileBrowserPanel.tsx` into clickable breadcrumb pills with subtle hover glows for instant ancestor directory navigation.
+* **Target Files:**
+  * `src/components/Header.tsx`
+  * `src/components/FileBrowserPanel.tsx`
+  * `src/App.css`
+* **Verification:** Vitest tests for path segment parsing and ancestor navigation callbacks.
+
+##### [Task 2-10] Ambient Aurora Mesh Canvas & Subtle Micro-Grain Texture
+* **Design Spec Reference:** Section 1.1 (Cyber Dark Atmosphere)
+* **Current Status:** Static radial gradient overlay on a flat dark background.
+* **Architecture & Strategy:**
+  * Implement slowly drifting ambient blur orbs in the background canvas animated with 25-35s GPU-composited CSS keyframes (`will-change: transform`).
+  * Overlay a 2% opacity inline SVG Perlin noise grain texture to eliminate color banding across dark displays and impart physical tactile depth.
+* **Target Files:**
+  * `src/App.css`
+  * `src/App.tsx`
+* **Verification:** 60fps frame rate profiling to ensure zero performance degradation.
+
+---
+
 ### Phase 11: Safety, Conflict Resolution & Recovery Refinements
+
 Hardens original protection guarantees and conflict handling.
 
 #### [Task 3-2] Alternate Filename UI on Original Conflict (e.g., `.edit.pdf`)
@@ -243,15 +331,14 @@ Validates current pragmatic simplifications against excessive design complexity.
 
 ```mermaid
 graph TD
-    A[Phase 10: Quick UX Wins] --> B[Phase 11: Safety & Conflict Refinements]
+    A[Phase 10: UX Ergonomics & Ultra-Rich Visual Polish] --> B[Phase 11: Safety & Conflict Refinements]
     B --> C[Phase 12: Pipeline Flexibility]
     C --> D[Phase 13: Search & Extraction Evolution]
     D --> E[Phase 14: Architectural Closure]
 
-    subgraph "Phase 10 (First Recommended Sprint)"
-        A1[2-2: Pane Width Persistence]
-        A2[2-1: D&D Staging]
-        A3[2-4: Log Filter Mode]
+    subgraph "Phase 10 (First Recommended Sprint: UI/UX & Sensory Polish)"
+        A1[Part A: Interaction & Ergonomics<br/>2-2 Pane Persistence / 2-1 D&D / 2-4 Logs]
+        A2[Part B: 6 Core Visual Polish Approaches<br/>2-5 Icons / 2-6 Lighting / 2-7 Spotlight<br/>2-8 Gauges / 2-9 Typography / 2-10 Aurora Canvas]
     end
 
     subgraph "Phase 11 (Safety Hardening)"
@@ -261,7 +348,10 @@ graph TD
     end
 ```
 
-1. **Sprint 1 (Phase 10):** Tasks 2-2 (Pane Persistence) → 2-1 (D&D) → 2-4 (Log Filter). Provides immediate visual and ergonomic enhancements.
-2. **Sprint 2 (Phase 11):** Tasks 3-2 (Conflict Save-As) → 3-3 (Backup Retention). Solidifies core safety.
-3. **Sprint 3 (Phase 12):** Tasks 4-2 (`allowed_read_paths`) → 4-1 (Arguments & Stdin). Delivers full pipeline flexibility.
-4. **Sprint 4 (Phase 13):** Tasks 1-4 (MD/HTML Extraction) → 1-3 (Office Extraction).
+1. **Sprint 1 (Phase 10):**
+   * **Part A (Ergonomics):** Tasks 2-2 (Pane Persistence) → 2-1 (D&D) → 2-4 (Log Filter).
+   * **Part B (Ultra-Rich Visuals):** Tasks 2-5 (Rich Icons & Thumbnails) → 2-6 (Inner Rim Light & Multi-layer Shadows) → 2-7 (Cursor Spotlight & Spring Feedback) → 2-8 (Storage Gauges & Size Heatbars) → 2-9 (Tabular Numbers & Breadcrumbs) → 2-10 (Ambient Aurora Canvas). Immediately elevates Cuddle's visual distinction to premier desktop software standards.
+2. **Sprint 2 (Phase 11):** Tasks 3-2 (Conflict Save-As) → 3-3 (Backup Retention) → 4-3 (Non-Landlock Modal). Solidifies core safety and original protection.
+3. **Sprint 3 (Phase 12):** Tasks 4-2 (`allowed_read_paths`) → 4-1 (Arguments & Stdin) → 2-3 (Native OS Notifications). Delivers full pipeline flexibility.
+4. **Sprint 4 (Phase 13):** Tasks 1-4 (MD/HTML Extraction) → 1-3 (Office Extraction) → 1-2 (Morphological + n-gram) → 1-1 (Repair Queue).
+

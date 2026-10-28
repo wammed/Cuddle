@@ -16,7 +16,9 @@ import type { BackupResultDto } from "./types/BackupResultDto";
 import type { ReflectionMode } from "./types/ReflectionMode";
 import type { ReflectExecutionResultDto } from "./types/ReflectExecutionResultDto";
 import type { UndoHistoryResultDto } from "./types/UndoHistoryResultDto";
+import type { ImagePreviewDto } from "./types/ImagePreviewDto";
 import { formatBytes } from "./utils/format";
+import { isImageFilename } from "./utils/imageUtils";
 import { Header } from "./components/Header";
 import { SearchPanel } from "./components/SearchPanel";
 import { FolderTreePanel } from "./components/FolderTreePanel";
@@ -79,6 +81,7 @@ export function App() {
   const [bottomVisible, setBottomVisible] = useState(true);
 
   const [extractedInfo, setExtractedInfo] = useState<ExtractedTextDto | null>(null);
+  const [imagePreviewInfo, setImagePreviewInfo] = useState<ImagePreviewDto | null>(null);
   const [extractLoading, setExtractLoading] = useState(false);
 
   const [logs, setLogs] = useState<string[]>([]);
@@ -665,9 +668,32 @@ export function App() {
     }
   }, [addHistory, addLog, loadHistory, showToast, t]);
 
-  const handleExtractText = async (item: FileItem) => {
+  const handleLoadImagePreview = useCallback(async (item: FileItem) => {
     try {
       setExtractLoading(true);
+      setExtractedInfo(null);
+      setImagePreviewInfo(null);
+      addLog(`Loading image preview for "${item.display_name}"...`);
+      const res = await invoke<ImagePreviewDto>("load_image_preview", {
+        pathBase64: item.raw_base64,
+        maxBytes: null,
+      });
+      setImagePreviewInfo(res);
+      addHistory(`Previewed image "${item.display_name}" (${res.mime_type})`);
+      addLog(`Image preview loaded: ${res.mime_type}, size: ${res.file_size} bytes`);
+    } catch (err: unknown) {
+      const msg = typeof err === "string" ? err : String(err);
+      addLog(`Image preview error for "${item.display_name}": ${msg}`);
+      showToast(`${t("image_preview.load_error", "画像プレビューの読み込みに失敗しました")}: ${msg}`);
+    } finally {
+      setExtractLoading(false);
+    }
+  }, [addHistory, addLog, showToast, t]);
+
+  const handleExtractText = useCallback(async (item: FileItem) => {
+    try {
+      setExtractLoading(true);
+      setImagePreviewInfo(null);
       setExtractedInfo(null);
       addLog(`Starting text extraction for "${item.display_name}"...`);
       const res = await invoke<ExtractedTextDto>("extract_file_text", {
@@ -683,14 +709,18 @@ export function App() {
     } finally {
       setExtractLoading(false);
     }
-  };
+  }, [addHistory, addLog]);
 
   const handleOpenPreview = useCallback(async (item: FileItem) => {
     setSelectedItem(item);
     setBottomVisible(true);
     setBottomTab("preview");
-    await handleExtractText(item);
-  }, []);
+    if (isImageFilename(item.display_name)) {
+      await handleLoadImagePreview(item);
+    } else {
+      await handleExtractText(item);
+    }
+  }, [handleLoadImagePreview, handleExtractText]);
 
   const handleResetLayout = () => {
     setSidebarVisible(true);
@@ -887,6 +917,7 @@ export function App() {
                     <BottomTabPanel
                       selectedItem={selectedItem}
                       extractedInfo={extractedInfo}
+                      imagePreviewInfo={imagePreviewInfo}
                       appConfig={appConfig}
                       logs={logs}
                       history={history}

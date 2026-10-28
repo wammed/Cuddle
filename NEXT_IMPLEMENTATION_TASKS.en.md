@@ -32,7 +32,7 @@ The 24 items are organized across **5 implementation phases (Phase 10 to 14)** b
 | **2-2** | UI / Layout | Pane Width & Layout Persistence across Sessions | **Phase 10** | **High** | Low |
 | **2-1** | UI / Workflow | Drag & Drop (D&D) between Browser & Workspace | **Phase 10** | **High** | Med |
 | **2-4** | UI / Logs | Pipeline Log Display Filter (`all` / `hidden` / `file_only`) | **Phase 10** | **High** | Low |
-| **2-5** | UI / Visual | Extension-Specific Rich Icons & Inline Image Thumbnails | **Phase 10** | **High** | Low |
+| **2-5** | UI / Visual | Extension-Specific Rich Icons | **Phase 10** | **High** | Low |
 | **2-6** | UI / Visual | Lighting & Depth Layering (Inner Rim Light & Multi-layer Shadows) | **Phase 10** | **High** | Low |
 | **2-7** | UI / Visual | Cursor Spotlight Glow & Tactile Spring Feedback | **Phase 10** | **High** | Med |
 | **2-8** | UI / Visual | Storage Capacity Gauges & Visual Permissions/Size Metrics | **Phase 10** | **High** | Med |
@@ -101,13 +101,12 @@ Delivers immediate day-to-day workflow improvements (Part A) alongside a compreh
 
 #### Part B: Ultra-Rich Visual Polish (6 Core Approaches)
 
-##### [Task 2-5] Extension-Specific Rich Icons & Inline Image Thumbnails
+##### [Task 2-5] Extension-Specific Rich Icons
 * **Design Spec Reference:** Section 1.1 (Branding & Visuals), Section 3.3 (Information Density & Icons)
 * **Current Status:** `VirtualFileList.tsx` renders all regular files with a generic, monochromatic `<FileText />` icon and directories with `<Folder />`.
 * **Architecture & Strategy:**
   * Create `src/utils/fileIcons.tsx` mapping file extensions to dedicated colored Lucide icons.
   * Code/Config: Rust (orange), TS/JS (blue), Python (gold), HTML/CSS (indigo), TOML/JSON (amber). Documents: Markdown (teal), PDF (crimson), Text (slate). Media: Images (emerald), Audio (purple), Video (pink). Archives: ZIP/TAR (violet).
-  * For image files (`.png`, `.jpg`, `.jpeg`, `.webp`, `.svg`), render high-density 24x24px inline thumbnails using Tauri asset protocol or cached micro-base64 (configurable toggle).
 * **Target Files:**
   * `src/utils/fileIcons.tsx` (New)
   * `src/components/VirtualFileList.tsx`
@@ -350,7 +349,7 @@ graph TD
 
 1. **Sprint 1 (Phase 10):**
    * **Part A (Ergonomics):** Tasks 2-2 (Pane Persistence) → 2-1 (D&D) → 2-4 (Log Filter).
-   * **Part B (Ultra-Rich Visuals):** Tasks 2-5 (Rich Icons & Thumbnails) → 2-6 (Inner Rim Light & Multi-layer Shadows) → 2-7 (Cursor Spotlight & Spring Feedback) → 2-8 (Storage Gauges & Size Heatbars) → 2-9 (Tabular Numbers & Breadcrumbs) → 2-10 (Ambient Aurora Canvas). Immediately elevates Cuddle's visual distinction to premier desktop software standards.
+   * **Part B (Ultra-Rich Visuals):** Tasks 2-5 (Extension-Specific Rich Icons) → 2-6 (Inner Rim Light & Multi-layer Shadows) → 2-7 (Cursor Spotlight & Spring Feedback) → 2-8 (Storage Gauges & Size Heatbars) → 2-9 (Tabular Numbers & Breadcrumbs) → 2-10 (Ambient Aurora Canvas). Immediately elevates Cuddle's visual distinction to premier desktop software standards.
 2. **Sprint 2 (Phase 11):** Tasks 3-2 (Conflict Save-As) → 3-3 (Backup Retention) → 4-3 (Non-Landlock Modal). Solidifies core safety and original protection.
 3. **Sprint 3 (Phase 12):** Tasks 4-2 (`allowed_read_paths`) → 4-1 (Arguments & Stdin) → 2-3 (Native OS Notifications). Delivers full pipeline flexibility.
 4. **Sprint 4 (Phase 13):** Tasks 1-4 (MD/HTML Extraction) → 1-3 (Office Extraction) → 1-2 (Morphological + n-gram) → 1-1 (Repair Queue).

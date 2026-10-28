@@ -7,6 +7,7 @@ import type { StagedItemDto } from "../types/StagedItemDto";
 import type { FileDiffResultDto } from "../types/FileDiffResultDto";
 import type { OperationHistoryDto } from "../types/OperationHistoryDto";
 import type { ExtractedTextDto } from "../types/ExtractedTextDto";
+import type { ImagePreviewDto } from "../types/ImagePreviewDto";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockImplementation((cmd: string, args?: Record<string, unknown>) => {
@@ -677,6 +678,38 @@ describe("BottomTabPanel & Diff Operations (Phase 4.2)", () => {
 
     // Git tab is active
     expect(gitTabBtn.closest("button")?.className).toContain("active");
+  });
+
+  it("renders rich image preview when imagePreviewInfo is provided", async () => {
+    const sampleImagePreview: ImagePreviewDto = {
+      item_id: "img-1",
+      raw_base64: "L3BhdGgvaW1nLnBuZw==",
+      display_name: "test_diagram.png",
+      mime_type: "image/png",
+      original_format: "PNG",
+      data_url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      file_size: 1024n,
+      is_svg: false,
+      svg_content: null,
+      is_converted: false,
+      exif: null,
+    };
+
+    render(
+      <BottomTabPanel
+        selectedItem={null}
+        extractedInfo={null}
+        imagePreviewInfo={sampleImagePreview}
+        appConfig={null}
+        logs={[]}
+        history={[]}
+        onClose={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("test_diagram.png")).toBeDefined();
+    expect(screen.getByText("PNG")).toBeDefined();
+    expect(screen.getByAltText("test_diagram.png")).toBeDefined();
   });
 });
 

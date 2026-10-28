@@ -23,6 +23,7 @@ import {
   Trash2,
   Wrench,
   Loader2,
+  Image as ImageIcon,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
@@ -35,13 +36,17 @@ import type { OperationHistoryDto } from "../types/OperationHistoryDto";
 import type { ExternalToolStatusDto } from "../types/ExternalToolStatusDto";
 import type { GitStatusDto } from "../types/GitStatusDto";
 import type { ReflectionMode } from "../types/ReflectionMode";
+import type { ImagePreviewDto } from "../types/ImagePreviewDto";
 import { RichPreview } from "./RichPreview";
+import { ImagePreview } from "./ImagePreview";
+import { isImageFilename } from "../utils/imageUtils";
 
 export type BottomTabId = "preview" | "diff" | "history" | "git" | "security" | "logs";
 
 interface BottomTabPanelProps {
   selectedItem: FileItem | null;
   extractedInfo: ExtractedTextDto | null;
+  imagePreviewInfo?: ImagePreviewDto | null;
   appConfig: AppConfig | null;
   logs: string[];
   history: string[];
@@ -61,6 +66,7 @@ interface BottomTabPanelProps {
 export function BottomTabPanel({
   selectedItem,
   extractedInfo,
+  imagePreviewInfo = null,
   appConfig,
   logs,
   history,
@@ -566,7 +572,9 @@ export function BottomTabPanel({
       <div className="bottom-tab-content">
         {activeTab === "preview" && (
           <div className="tab-preview-content">
-            {extractedInfo ? (
+            {imagePreviewInfo ? (
+              <ImagePreview preview={imagePreviewInfo} />
+            ) : extractedInfo ? (
               <RichPreview
                 filename={extractedInfo.display_name}
                 text={extractedInfo.text}
@@ -576,10 +584,16 @@ export function BottomTabPanel({
             ) : selectedItem ? (
               <div className="preview-explicit-prompt">
                 <div className="preview-prompt-card">
-                  <FileText size={28} className="text-teal-400 mb-2" />
+                  {isImageFilename(selectedItem.display_name) ? (
+                    <ImageIcon size={28} className="text-cyan-400 mb-2" />
+                  ) : (
+                    <FileText size={28} className="text-teal-400 mb-2" />
+                  )}
                   <h4>{selectedItem.display_name}</h4>
                   <p className="preview-guidance-text">
-                    {t("rich_preview.no_selection_hint")}
+                    {isImageFilename(selectedItem.display_name)
+                      ? t("image_preview.explicit_prompt_hint", "クリックして画像プレビューを表示します")
+                      : t("rich_preview.no_selection_hint")}
                   </p>
                   {onTriggerPreview && (
                     <button

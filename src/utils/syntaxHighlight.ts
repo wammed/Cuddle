@@ -25,6 +25,8 @@ export function detectLanguage(filename: string): SupportedLanguage {
       return "markdown";
     case "html":
     case "htm":
+    case "svg":
+    case "xml":
       return "html";
     case "rs":
       return "rust";

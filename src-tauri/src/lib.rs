@@ -7,6 +7,7 @@ pub mod export_tar;
 pub mod extractor;
 pub mod git;
 pub mod history;
+pub mod image_preview;
 pub mod models;
 pub mod periodic_index;
 pub mod pipeline;
@@ -172,6 +173,15 @@ fn extract_file_text(
 ) -> Result<extractor::ExtractedTextDto, String> {
     let path = models::decode_path_from_base64(&path_base64).map_err(|e| e.to_string())?;
     extractor::extract_file_text(&path, options).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn load_image_preview(
+    path_base64: String,
+    max_bytes: Option<usize>,
+) -> Result<image_preview::ImagePreviewDto, String> {
+    image_preview::load_image_preview_from_base64(&path_base64, max_bytes)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -846,6 +856,7 @@ pub fn run() {
             search_files_by_name,
             search_fulltext,
             extract_file_text,
+            load_image_preview,
             index_file_with_text,
             get_index_stats,
             run_index_operation,

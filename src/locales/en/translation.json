@@ -573,7 +573,14 @@
     "backup_management_desc": "Configure the maximum number of workspace backup archives to retain (1 to 10 generations).",
     "backup_retention_label": "Retention limit: {{count}} generations",
     "save_retention_btn": "Save Retention",
-    "retention_saved": "Retention limit saved"
+    "retention_saved": "Retention limit saved",
+    "confirmation_level_title": "Safety Confirmation Level",
+    "confirmation_level_desc": "Controls the rigor of confirmation modals before original file reflection and batch execution ('Brief' is omitted to uphold Zero Data Loss).",
+    "confirmation_level_standard": "Standard",
+    "confirmation_level_standard_desc": "Displays summary badges, available space validation, and conflict alerts.",
+    "confirmation_level_strict": "Strict",
+    "confirmation_level_strict_desc": "Enforces SHA-256 cryptographic pre-verification and comprehensive diff inspection.",
+    "config_saved": "Configuration saved"
   },
   "custom_pipelines": {
     "title": "User-Defined Pipeline Configuration",

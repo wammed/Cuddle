@@ -15,7 +15,7 @@
 language = "auto"
 
 # Color Theme Preset:
-# Choose from 30 rich dark presets across 4 categories (No white backgrounds!).
+# Choose from 30 rich dark presets across 4 categories (No pure white backgrounds!).
 #
 # Available Theme Keys:
 # [Cyber Series]
@@ -57,6 +57,11 @@ language = "auto"
 #   - "classic-emerald-night": Emerald Night (Regal deep emerald forest night)
 theme = "cyber-midnight-teal"
 
+# UI Information Density:
+# Controls vertical item spacing, table cell padding, and metadata compactness.
+# Options: "compact" (high density), "normal" (balanced default), "spacious" (comfortable)
+density = "normal"
+
 [workspace]
 # Temporary staging directory:
 #   - null (or omit) : Automatically preferred on the same volume/filesystem
@@ -81,8 +86,18 @@ backup_retention_count = 5
 #     automatically sanitize it to true upon loading to guarantee original protection.
 enforce_landlock = true
 
+# Safety Confirmation Level (Task 3-1):
+# Controls the rigor of confirmation dialogs and integrity checks before reflection or batch changes.
+#
+# Options:
+#   - "standard" : Standard confirmation modal with summary badges and disk space checks (Default)
+#   - "strict"   : Strict confirmation requiring SHA-256 pre-verification of every file and diff review
+#
+# Note: "brief" (skip confirmation) is intentionally omitted to uphold the Zero Data Loss policy.
+confirmation_level = "standard"
+
 # ==============================================================================
-# [custom_pipelines] - User-Defined Processing Pipelines (Design Section 8.3)
+# [[custom_pipelines]] - User-Defined Processing Pipelines (Design Section 8.3)
 # ==============================================================================
 # Users can declare custom command pipelines executed under Landlock LSM isolation.
 #
@@ -95,9 +110,16 @@ enforce_landlock = true
 # 2. Execution takes copies in workspace-temp/ as input and outputs to staging.
 # 3. Dry-Run pre-validates argument expansions, binary presence, and free space before execution.
 #
-# Available Placeholders:
-#   {input}  : Absolute path to the staged working copy
-#   {output} : Target output path in staging area (constructed via default_suffix/output_extension)
+# Execution Input Modes:
+#   - "per_file"       : Executes command once per staged file (Default)
+#   - "batch_list"     : Executes command once, passing all file paths via {InputList}
+#   - "standard_input" : Streams all staged file paths separated by newlines to child process stdin
+#
+# Available Typed Placeholders:
+#   {input}              : Absolute path to the individual staged working copy
+#   {output}             : Target output path in staging (via default_suffix / output_extension)
+#   {InputList}          : Splats all staged input paths as distinct CLI arguments (batch_list mode)
+#   {WorkspaceDirectory} : Absolute path of the current workspace directory
 
 [[custom_pipelines]]
 id = "custom-webp-lossless"
@@ -108,6 +130,8 @@ args = ["-q", "85", "{input}", "-o", "{output}"]
 supported_extensions = ["png", "jpg", "jpeg"]
 output_extension = "webp"
 default_suffix = "_web"
+allowed_read_paths = []
+input_mode = "per_file"
 
 [[custom_pipelines]]
 id = "custom-strip-metadata"
@@ -117,4 +141,17 @@ executable = "exiftool"
 args = ["-all=", "-overwrite_original", "{input}"]
 supported_extensions = ["jpg", "jpeg", "png", "tiff", "webp"]
 default_suffix = "_clean"
+allowed_read_paths = []
+input_mode = "per_file"
 
+[[custom_pipelines]]
+id = "custom-batch-tar-gz"
+name = "Tar.gz 一括アーカイブパッケージャ"
+description = "選択された複数ファイルを 1 つの tar.gz アーカイブに一括パッケージング"
+executable = "tar"
+args = ["-czf", "{WorkspaceDirectory}/bundle.tar.gz", "{InputList}"]
+supported_extensions = ["*"]
+output_extension = "tar.gz"
+default_suffix = ""
+allowed_read_paths = []
+input_mode = "batch_list"

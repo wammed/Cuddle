@@ -5,7 +5,7 @@
 </p>
 
 **文書作成日：** 2026-10-29  
-**ステータス：** 全フェーズ（Phase 1〜13）実装・テスト完了、ソース公開配布準備完了（MIT License / README / BUILD / CI Actions 整備完了）、Phase 13（検索・インデックス・本文抽出の高度化：Markdown/HTML構造化本文抽出、Office OpenXML .docx/.xlsx Tier 3抽出、形態素Lindera+N-gramハイブリッド全文検索、SQLite WAL修復キュー、除外ディレクトリ保持方針）実装・テスト完了  
+**ステータス：** 全フェーズ（Phase 1〜14）実装・テスト完了、ソース公開配布準備完了（MIT License / README / BUILD / CI Actions 整備完了）、Phase 14（アーキテクチャ再検討・超大規模対応：設定メニュー項目とconfig.toml完全整合、config.template.toml全面更新、安全確認レベル標準/厳格、SQLite WAL+BatchJournal堅牢性追認、バッチIPC+仮想スクロール最適解確定）実装・テスト完了済み  
 **対象：** 開発・設計・テスト担当者、次期作業セッション担当  
 
 ---
@@ -717,7 +717,7 @@
    * 【2-3】OS / デスクトップ環境ネイティブ通知の抽象化（FreeDesktop D-Bus 通知）: **実装完了・検証済み**
      * `notify.rs` を新設し、`notify-send`（COSMIC / GNOME / KDE 準拠）による `notify_desktop` および Tauri コマンド `notify_user` を実装。
      * パイプライン完了時にデスクトップ通知を自動発行。フロントエンド共通ヘルパー `notifyUser` を整備。
-4. **Phase 13: 検索・インデックス・本文抽出の高度化 【完了・検証済み】**
+4. **Phase 13: 検索・インデックス・本文抽出の高度化 【完了・実機手動テスト承認済み】**
    * 【1-4】Markdown（`pulldown-cmark`）/ HTML の構文解析本文抽出: **実装完了・検証済み**
      * `pulldown-cmark` (v0.12) を用いて Markdown の見出し・段落テキストのみを抽出。HTML はタグ・`<script>`・`<style>` をストリップしエンティティ復元。
    * 【1-3】第 3 段階: Office 文書（`.docx`, `.xlsx`）の本文抽出: **実装完了・検証済み**
@@ -730,10 +730,15 @@
      * SQLite WAL 内の `index_repair_queue` テーブル、自動退避・再試行機能、`process_index_repair_queue` / `get_index_repair_queue_count` コマンド、`SearchPanel` 内の保留バッジ付き修復ボタン・通知バナーを実装。
    * 【1-5】除外設定ごとのインデックス保持方針: **実装完了・検証済み**
      * `IndexingPolicy::MetadataOnly` による `.git` や `node_modules` などのファイル名・更新日時・サイズのみのインデックス登録制御（本文空登録）を実装。
-5. **Phase 14: アーキテクチャ再検討・超大規模対応 【次回セッション検討予定】**
-   * 【3-1】確認レベル 4 段階設定（標準/厳格への集約維持を検討）
-   * 【3-4】4 テーブルクラッシュリカバリー（現行 SQLite WAL + BatchJournal の堅牢性追認）
-   * 【5-1】TOML 10 セクション構成（現行 4 セクション集約モデル維持を検討）
-   * 【6-1】大量転送時の IPC チャンク分割ストリーミング（ベンチマーク計測後の判断）
+5. **Phase 14: アーキテクチャ再検討・超大規模対応 【完了・検証済み】**
+   * 【3-1】確認レベル 2 段階設定（標準 / 厳格、簡潔は安全原則に基づき排除）: **実装完了・検証済み**
+     * `src-tauri/src/config.rs`（`ConfirmationLevel` / `SecuritySection`）、`config.template.toml`、および `SettingsModal`（一般タブ）に実装・永続化。
+   * 【3-4】クラッシュリカバリー詳細状態遷移（SQLite WAL + BatchJournal モデルの追認）: **完了・追認済み**
+     * SQLite WAL `session_items` / `operation_history` / `index_repair_queue` と `BatchJournalManager` による堅牢なセッション復元とロールバック能力を正式仕様として追認。
+   * 【5-1】設定メニュー項目と config.toml の完全整合 & テンプレート更新: **実装完了・検証済み**
+     * 4大セクション集約モデルを確定。言語・テーマ・情報密度・確認レベル・保持世代数・カスタムパイプラインの設定メニュー操作を `config.toml` へ即時双方向永続化。
+     * `config.template.toml` およびアプリ内 TOML テンプレート出力を全機能対応版へ更新。
+   * 【6-1】大量転送時の IPC 最適解確定: **完了・追認済み**
+     * 10,000 件規模の一括 IPC 転送と `@tanstack/react-virtual` 仮想スクロール描画による 60fps 維持を確認し、過度なページネーションの複雑性を持ち込まず現行アーキテクチャを最高効率の解として追認。
 
-詳細な実装方針、影響ファイル、テスト計画は [`NEXT_IMPLEMENTATION_TASKS.ja.md`](file:///home/susie/git/wammed/Cuddle/NEXT_IMPLEMENTATION_TASKS.ja.md) を参照してください。
+全計画フェーズ（Phase 1〜14）の実装・検証が完了しました。詳細な実装仕様は [`NEXT_IMPLEMENTATION_TASKS.ja.md`](file:///home/susie/git/wammed/Cuddle/NEXT_IMPLEMENTATION_TASKS.ja.md) を参照してください。

@@ -659,8 +659,8 @@ mod tests {
 
     #[test]
     fn test_schema_mismatch_auto_recovery() {
-        let temp_dir = std::env::temp_dir()
-            .join(format!("cuddle_test_schema_{}", uuid::Uuid::new_v4()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("cuddle_test_schema_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
 
         // 1. Manually create an index with an obsolete/incompatible schema
@@ -677,7 +677,9 @@ mod tests {
 
         // 3. Verify the engine works and can index documents with the new schema
         let doc = make_test_item("recovered-doc", "test.txt");
-        engine.index_document(&doc, "Auto recovery succeeded!").unwrap();
+        engine
+            .index_document(&doc, "Auto recovery succeeded!")
+            .unwrap();
         engine.commit().unwrap();
 
         let hits = engine

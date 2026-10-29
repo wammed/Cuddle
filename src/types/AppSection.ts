@@ -9,6 +9,10 @@ export type AppSection = {
  */
 language: string, 
 /**
- * Theme preference: "dark", "light", "system"
+ * Theme preference: "dark", "light", "system", or 30 theme keys
  */
-theme: string, };
+theme: string, 
+/**
+ * Information density preference: "compact", "normal", "spacious"
+ */
+density: string | null, };

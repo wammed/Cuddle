@@ -29,6 +29,7 @@ import { THEME_PRESETS, applyTheme, getSavedThemeId } from "../utils/themePreset
 import type { ThemeCategory, ThemePreset } from "../types/ThemePreset";
 import type { Density } from "../types/Density";
 import type { AppConfig } from "../types/AppConfig";
+import type { ConfirmationLevel } from "../types/ConfirmationLevel";
 import type { CustomPipelineDefDto } from "../types/CustomPipelineDefDto";
 import type { ExecutionInputMode } from "../types/ExecutionInputMode";
 import type { BackupArchiveInfoDto } from "../types/BackupArchiveInfoDto";
@@ -48,10 +49,29 @@ import { SupportedLanguage } from "../i18n";
 const getTomlTemplateCode = (lang: SupportedLanguage) => {
   if (lang === "ja") {
     return `# ==============================================================================
-# [[custom_pipelines]] - ユーザー作成パイプライン設定 (設計書 8.3 必須安全フロー)
+# Cuddle (File Workbench) 設定ファイル (config.toml)
+# 配置先: $XDG_CONFIG_HOME/Cuddle/config.toml (または ~/.config/Cuddle/config.toml)
 # ==============================================================================
-# {input}  : 作業コピーの絶対パス
-# {output} : 出力先ステージングパス (default_suffix / output_extension から自動生成)
+
+[app]
+language = "auto"               # "auto", "ja", "en"
+theme = "cyber-midnight-teal"   # 30種類のダークテーマキー
+density = "normal"              # "compact", "normal", "spacious"
+
+[workspace]
+temp_directory = null           # nullで同一ボリューム優先自動配置
+min_free_space_multiplier = 1.5 # 最低空き容量倍率 (1.5以上)
+backup_retention_count = 5      # 保持バックアップ世代数 (1〜10)
+
+[security]
+enforce_landlock = true         # Landlock LSM 強制 (常時有効)
+confirmation_level = "standard" # "standard" (標準) または "strict" (厳格: 全ハッシュ照合)
+
+# ==============================================================================
+# [[custom_pipelines]] - ユーザー作成パイプライン設定 (設計書 8.3 必須安全フロー)
+# プレースホルダー: {input}, {output}, {InputList}, {WorkspaceDirectory}
+# 入力方式: "per_file", "batch_list", "standard_input"
+# ==============================================================================
 
 [[custom_pipelines]]
 id = "custom-webp-lossless"
@@ -62,6 +82,8 @@ args = ["-q", "85", "{input}", "-o", "{output}"]
 supported_extensions = ["png", "jpg", "jpeg"]
 output_extension = "webp"
 default_suffix = "_web"
+allowed_read_paths = []
+input_mode = "per_file"
 
 [[custom_pipelines]]
 id = "custom-strip-metadata"
@@ -71,13 +93,46 @@ executable = "exiftool"
 args = ["-all=", "-overwrite_original", "{input}"]
 supported_extensions = ["jpg", "jpeg", "png", "tiff", "webp"]
 default_suffix = "_clean"
+allowed_read_paths = []
+input_mode = "per_file"
+
+[[custom_pipelines]]
+id = "custom-batch-tar-gz"
+name = "Tar.gz 一括アーカイブパッケージャ"
+description = "選択された複数ファイルを 1 つの tar.gz アーカイブに一括パッケージング"
+executable = "tar"
+args = ["-czf", "{WorkspaceDirectory}/bundle.tar.gz", "{InputList}"]
+supported_extensions = ["*"]
+output_extension = "tar.gz"
+default_suffix = ""
+allowed_read_paths = []
+input_mode = "batch_list"
 `;
   }
   return `# ==============================================================================
-# [[custom_pipelines]] - User Custom Pipeline Configuration
+# Cuddle (File Workbench) Configuration File (config.toml)
+# Path: $XDG_CONFIG_HOME/Cuddle/config.toml (or ~/.config/Cuddle/config.toml)
 # ==============================================================================
-# {input}  : Absolute path to the working copy in staging
-# {output} : Output destination path (auto-generated from default_suffix / output_extension)
+
+[app]
+language = "auto"               # "auto", "ja", "en"
+theme = "cyber-midnight-teal"   # 30 dark theme preset keys
+density = "normal"              # "compact", "normal", "spacious"
+
+[workspace]
+temp_directory = null           # null for automatic same-volume preferred placement
+min_free_space_multiplier = 1.5 # Minimum free space multiplier (>= 1.5)
+backup_retention_count = 5      # Retention archive count (1 to 10)
+
+[security]
+enforce_landlock = true         # Landlock LSM kernel isolation (enforced)
+confirmation_level = "standard" # "standard" or "strict" (full cryptographic pre-verification)
+
+# ==============================================================================
+# [[custom_pipelines]] - User-Defined Pipeline Configuration (Design Section 8.3)
+# Placeholders: {input}, {output}, {InputList}, {WorkspaceDirectory}
+# Input Modes: "per_file", "batch_list", "standard_input"
+# ==============================================================================
 
 [[custom_pipelines]]
 id = "custom-webp-lossless"
@@ -88,6 +143,8 @@ args = ["-q", "85", "{input}", "-o", "{output}"]
 supported_extensions = ["png", "jpg", "jpeg"]
 output_extension = "webp"
 default_suffix = "_web"
+allowed_read_paths = []
+input_mode = "per_file"
 
 [[custom_pipelines]]
 id = "custom-strip-metadata"
@@ -97,6 +154,20 @@ executable = "exiftool"
 args = ["-all=", "-overwrite_original", "{input}"]
 supported_extensions = ["jpg", "jpeg", "png", "tiff", "webp"]
 default_suffix = "_clean"
+allowed_read_paths = []
+input_mode = "per_file"
+
+[[custom_pipelines]]
+id = "custom-batch-tar-gz"
+name = "Tar.gz Batch Packager"
+description = "Package selected multiple files into a single tar.gz archive"
+executable = "tar"
+args = ["-czf", "{WorkspaceDirectory}/bundle.tar.gz", "{InputList}"]
+supported_extensions = ["*"]
+output_extension = "tar.gz"
+default_suffix = ""
+allowed_read_paths = []
+input_mode = "batch_list"
 `;
 };
 
@@ -144,6 +215,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [existingBackups, setExistingBackups] = useState<BackupArchiveInfoDto[]>([]);
   const [retentionSaved, setRetentionSaved] = useState<boolean>(false);
 
+  // Safety Confirmation Level State (Task 3-1 / Phase 14)
+  const [confirmationLevel, setConfirmationLevel] = useState<ConfirmationLevel>("standard");
+
   const loadBackups = async () => {
     try {
       const list = await invoke<BackupArchiveInfoDto[]>("list_workspace_backups");
@@ -179,9 +253,50 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         if (cfg.workspace?.backup_retention_count) {
           setRetentionCount(cfg.workspace.backup_retention_count);
         }
+        if (cfg.security?.confirmation_level) {
+          setConfirmationLevel(cfg.security.confirmation_level);
+        }
       })
       .catch((err) => console.error("Failed to load app config:", err));
   }, [isOpen]);
+
+  const handleSelectConfirmationLevel = async (level: ConfirmationLevel) => {
+    setConfirmationLevel(level);
+    if (!appConfig) return;
+    const updated: AppConfig = {
+      ...appConfig,
+      security: {
+        ...appConfig.security,
+        confirmation_level: level,
+      },
+    };
+    try {
+      await invoke("save_app_config", { config: updated });
+      setAppConfig(updated);
+    } catch (err) {
+      console.error("Failed to save confirmation level:", err);
+    }
+  };
+
+  const handleSelectLanguage = async (lang: SupportedLanguage) => {
+    if (currentLang !== lang) {
+      onToggleLang();
+    }
+    if (!appConfig) return;
+    const updated: AppConfig = {
+      ...appConfig,
+      app: {
+        ...appConfig.app,
+        language: lang,
+      },
+    };
+    try {
+      await invoke("save_app_config", { config: updated });
+      setAppConfig(updated);
+    } catch (err) {
+      console.error("Failed to save language in config:", err);
+    }
+  };
 
   const handleSaveRetention = async () => {
     if (!appConfig) return;
@@ -369,16 +484,44 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSelectTheme = (preset: ThemePreset) => {
+  const handleSelectTheme = async (preset: ThemePreset) => {
     setCurrentThemeId(preset.id);
     applyTheme(preset.id);
+    if (!appConfig) return;
+    const updated: AppConfig = {
+      ...appConfig,
+      app: {
+        ...appConfig.app,
+        theme: preset.id,
+      },
+    };
+    try {
+      await invoke("save_app_config", { config: updated });
+      setAppConfig(updated);
+    } catch (err) {
+      console.error("Failed to save theme in config:", err);
+    }
   };
 
-  const handleSelectDensity = (newDensity: Density) => {
+  const handleSelectDensity = async (newDensity: Density) => {
     setCurrentDensity(newDensity);
     applyDensity(newDensity);
     if (onDensityChange) {
       onDensityChange(newDensity);
+    }
+    if (!appConfig) return;
+    const updated: AppConfig = {
+      ...appConfig,
+      app: {
+        ...appConfig.app,
+        density: newDensity,
+      },
+    };
+    try {
+      await invoke("save_app_config", { config: updated });
+      setAppConfig(updated);
+    } catch (err) {
+      console.error("Failed to save density in config:", err);
     }
   };
 
@@ -710,9 +853,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <button
                     type="button"
                     className={`lang-option-card ${currentLang === "ja" ? "selected" : ""}`}
-                    onClick={() => {
-                      if (currentLang !== "ja") onToggleLang();
-                    }}
+                    onClick={() => handleSelectLanguage("ja")}
                   >
                     <span className="lang-name">{t("settings.lang_ja")}</span>
                     {currentLang === "ja" && <Check size={14} className="text-teal-400" />}
@@ -720,12 +861,43 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <button
                     type="button"
                     className={`lang-option-card ${currentLang === "en" ? "selected" : ""}`}
-                    onClick={() => {
-                      if (currentLang !== "en") onToggleLang();
-                    }}
+                    onClick={() => handleSelectLanguage("en")}
                   >
                     <span className="lang-name">{t("settings.lang_en")}</span>
                     {currentLang === "en" && <Check size={14} className="text-teal-400" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Safety Confirmation Level (Task 3-1 / Phase 14) */}
+              <div className="settings-card">
+                <div className="settings-card-header">
+                  <ShieldAlert size={16} className="text-teal-400" />
+                  <h5>{t("settings.confirmation_level_title")}</h5>
+                </div>
+                <p className="settings-card-desc">{t("settings.confirmation_level_desc")}</p>
+                <div className="settings-lang-options mt-2">
+                  <button
+                    type="button"
+                    className={`lang-option-card ${confirmationLevel === "standard" ? "selected" : ""}`}
+                    onClick={() => handleSelectConfirmationLevel("standard")}
+                  >
+                    <div className="flex flex-col text-left">
+                      <span className="lang-name font-bold">{t("settings.confirmation_level_standard")}</span>
+                      <span className="text-[11px] text-slate-400 mt-0.5">{t("settings.confirmation_level_standard_desc")}</span>
+                    </div>
+                    {confirmationLevel === "standard" && <Check size={14} className="text-teal-400 shrink-0" />}
+                  </button>
+                  <button
+                    type="button"
+                    className={`lang-option-card ${confirmationLevel === "strict" ? "selected" : ""}`}
+                    onClick={() => handleSelectConfirmationLevel("strict")}
+                  >
+                    <div className="flex flex-col text-left">
+                      <span className="lang-name font-bold">{t("settings.confirmation_level_strict")}</span>
+                      <span className="text-[11px] text-slate-400 mt-0.5">{t("settings.confirmation_level_strict_desc")}</span>
+                    </div>
+                    {confirmationLevel === "strict" && <Check size={14} className="text-teal-400 shrink-0" />}
                   </button>
                 </div>
               </div>
@@ -742,7 +914,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <h5>{t("settings.workspace_dir_label")}</h5>
                 </div>
                 <p className="settings-card-desc">{t("settings.workspace_auto_desc")}</p>
-                <code className="settings-path-badge font-mono">workspace-temp/ (.fileworkbench-temp)</code>
+                <code className="settings-path-badge font-mono">
+                  {appConfig?.workspace?.temp_directory || "workspace-temp/ (.fileworkbench-temp - Same volume auto-preferred)"}
+                </code>
               </div>
 
               {/* Free Space Guardrail */}
@@ -753,7 +927,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
                 <p className="settings-card-desc">{t("settings.disk_guardrail_desc")}</p>
                 <div className="settings-guardrail-value font-mono">
-                  <span>1.5x (Safety Floor)</span>
+                  <span>{appConfig?.workspace?.min_free_space_multiplier ? `${appConfig.workspace.min_free_space_multiplier}x` : "1.5x"} (Safety Floor &ge; 1.5x)</span>
                 </div>
               </div>
 

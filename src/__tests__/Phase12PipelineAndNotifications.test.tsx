@@ -48,9 +48,9 @@ describe("Phase 12: Pipeline Flexibility & Desktop Notifications", () => {
 
   describe("Task 4-1 & Task 4-2: Custom Pipeline Definition Form in SettingsModal", () => {
     const mockConfig: AppConfig = {
-      app: { language: "ja", theme: "dark" },
+      app: { language: "ja", theme: "dark", density: "normal" },
       workspace: { temp_directory: null, min_free_space_multiplier: 1.5, backup_retention_count: 5 },
-      security: { enforce_landlock: true },
+      security: { enforce_landlock: true, confirmation_level: "standard" },
       custom_pipelines: [
         {
           id: "custom-batch-tar",

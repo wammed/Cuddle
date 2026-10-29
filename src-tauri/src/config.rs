@@ -130,14 +130,35 @@ pub fn get_default_custom_pipeline_templates() -> Vec<CustomPipelineDefDto> {
     ]
 }
 
+/// Safety confirmation level for operations and original reflections (Task 3-1).
+/// Note: "brief" (skip confirmation) is intentionally omitted to uphold Zero Data Loss.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "../../src/types/")]
+#[serde(rename_all = "snake_case")]
+pub enum ConfirmationLevel {
+    /// Standard confirmation dialogs with summary validation
+    Standard,
+    /// Strict confirmation with full SHA-256 pre-verification and mandatory review
+    Strict,
+}
+
+impl Default for ConfirmationLevel {
+    fn default() -> Self {
+        Self::Standard
+    }
+}
+
 /// General application preferences.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[ts(export, export_to = "../../src/types/")]
 pub struct AppSection {
     /// Language code: "auto", "ja", "en"
     pub language: String,
-    /// Theme preference: "dark", "light", "system"
+    /// Theme preference: "dark", "light", "system", or 30 theme keys
     pub theme: String,
+    /// Information density preference: "compact", "normal", "spacious"
+    #[serde(default)]
+    pub density: Option<String>,
 }
 
 impl Default for AppSection {
@@ -145,6 +166,7 @@ impl Default for AppSection {
         Self {
             language: "auto".to_string(),
             theme: "dark".to_string(),
+            density: Some("normal".to_string()),
         }
     }
 }
@@ -179,12 +201,16 @@ pub struct SecuritySection {
     /// Enforce Landlock LSM kernel isolation.
     /// Safety Guardrail: Even if edited to false in TOML, Cuddle will sanitize to true.
     pub enforce_landlock: bool,
+    /// Confirmation level: standard | strict (Task 3-1)
+    #[serde(default)]
+    pub confirmation_level: ConfirmationLevel,
 }
 
 impl Default for SecuritySection {
     fn default() -> Self {
         Self {
             enforce_landlock: true,
+            confirmation_level: ConfirmationLevel::Standard,
         }
     }
 }
@@ -392,6 +418,11 @@ enforce_landlock = false
             loaded.workspace.backup_retention_count, MAX_BACKUP_RETENTION_COUNT,
             "Retention count must be clamped to max 10!"
         );
+        assert_eq!(
+            loaded.security.confirmation_level,
+            ConfirmationLevel::Standard,
+            "Default confirmation level must be standard!"
+        );
 
         // Clean up
         let _ = fs::remove_dir_all(parent);
@@ -441,6 +472,7 @@ input_mode = "batch_list"
         let _ = AppSection::export(&cfg);
         let _ = WorkspaceSection::export(&cfg);
         let _ = SecuritySection::export(&cfg);
+        let _ = ConfirmationLevel::export(&cfg);
         let _ = CustomPipelineDefDto::export(&cfg);
         let _ = ExecutionInputMode::export(&cfg);
     }

@@ -573,7 +573,14 @@
     "backup_management_desc": "ワークスペース終了時に作成されるバックアップアーカイブの最大保持世代数を設定します（1〜10世代）。",
     "backup_retention_label": "保持世代数上限: {{count}} 世代",
     "save_retention_btn": "保持数を保存",
-    "retention_saved": "保持世代数を保存しました"
+    "retention_saved": "保持世代数を保存しました",
+    "confirmation_level_title": "安全確認レベル (Confirmation Level)",
+    "confirmation_level_desc": "原本反映や一括処理時の確認ダイアログの厳格度を設定します（※原本保護のため「簡潔/確認省略」は意図的に排除されています）。",
+    "confirmation_level_standard": "標準 (Standard)",
+    "confirmation_level_standard_desc": "変更サマリー・空き容量検証・競合検知を行う標準ダイアログを表示",
+    "confirmation_level_strict": "厳格 (Strict)",
+    "confirmation_level_strict_desc": "全ファイルの事前 SHA-256 ハッシュ照合・詳細差分プレビューを強制実行",
+    "config_saved": "設定を保存しました"
   },
   "custom_pipelines": {
     "title": "ユーザー作成パイプライン設定",

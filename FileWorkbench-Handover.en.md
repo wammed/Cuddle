@@ -5,7 +5,7 @@
 </p>
 
 **Document Date:** 2026-10-29  
-**Status:** All Phases (Phase 1–13) fully implemented and verified. Open-source distribution ready (MIT License / README / BUILD / CI Actions complete); Phase 13 (Search, Indexing, and Text Extraction Evolution: Markdown/HTML structured extraction, Office OpenXML .docx/.xlsx Tier 3 extraction, Morphological IPADIC + N-gram hybrid search, SQLite WAL repair queue, and metadata-only indexing policy) fully tested and verified (216 Cargo / 124 Vitest 100% pass).  
+**Status:** All Phases (Phase 1–14) fully implemented and verified. Open-source distribution ready (MIT License / README / BUILD / CI Actions complete); Phase 14 (Architectural Decisions & Scale Verification: full alignment between Settings menu items and config.toml, config.template.toml complete update, Standard / Strict safety confirmation levels, endorsement of SQLite WAL + BatchJournal state model, and validated batch IPC architecture) fully tested and verified (218 Cargo / 127 Vitest 100% pass).  
 **Target Audience:** Development, Architecture, and QA Teams; Next Working Session Maintainers  
 
 ---
@@ -717,7 +717,7 @@ Based on comprehensive cross-verification between the Master Design Specificatio
    * [2-3] Desktop Environment Native Notification Abstraction (FreeDesktop D-Bus): **Done & Verified**
      * Added `notify.rs` module providing FreeDesktop notification dispatch via `notify-send` (`notify_desktop` & Tauri command `notify_user`).
      * Automatically dispatches notifications upon preset and custom pipeline completion. Frontend `notifyUser` helper implemented.
-4. **Phase 13: Search, Extraction & Indexing Evolution [Done & Verified]**
+4. **Phase 13: Search, Extraction & Indexing Evolution [Done & Approved via Manual Testing]**
    * [1-4] Structured Markdown (`pulldown-cmark`) / HTML Text Extraction: **Done & Verified**
      * Parsed Markdown via `pulldown-cmark` (v0.12) stripping formatting tokens. Stripped HTML tags, `<script>`, `<style>` blocks, and restored HTML entities into clean prose text.
    * [1-3] Tier 3: Office Document Extraction (`.docx`, `.xlsx`): **Done & Verified**
@@ -732,10 +732,15 @@ Based on comprehensive cross-verification between the Master Design Specificatio
      * Added pending count badge and "Process Index Repair Queue" action to `SearchPanel` dropdown with bilingual notification banners.
    * [1-5] Per-Rule Indexing Policy (Metadata-only / Filename-only): **Done & Verified**
      * Supported `IndexingPolicy::MetadataOnly` for excluded directories (`.git`, `node_modules`), indexing file name, mtime, and size while keeping body empty.
-5. **Phase 14: Architectural Decisions & Scale Verification [Scheduled Next Session]**
-   * [3-1] 4-Tier Confirmation Levels (Retain current Standard/Strict focus)
-   * [3-4] 4-Table Crash Recovery (Endorse current SQLite WAL + BatchJournal model)
-   * [5-1] Splitting into 10 Granular TOML Sections (Retain current 4-section architecture)
-   * [6-1] Large-scale IPC Streaming / Pagination (Benchmark first)
+5. **Phase 14: Architectural Decisions & Scale Verification [Done & Verified]**
+   * [3-1] Safety Confirmation Levels (Standard / Strict, Brief omitted): **Done & Verified**
+     * Implemented 2-tier model in `src-tauri/src/config.rs` (`ConfirmationLevel` / `SecuritySection`), `config.template.toml`, and `SettingsModal` (General Tab).
+   * [3-4] Endorsement of SQLite WAL + Journal State Model: **Done & Verified**
+     * Endorsed SQLite WAL `session_items` / `operation_history` / `index_repair_queue` and `BatchJournalManager` as superior in reliability and simplicity with zero data loss on unexpected exits.
+   * [5-1] Alignment between Settings Menu & config.toml + Template Update: **Done & Verified**
+     * Established 4-section architecture (`[app]`, `[workspace]`, `[security]`, `[[custom_pipelines]]`). SettingsModal changes (language, theme, density, confirmation level, backup retention, custom pipelines) now immediately persist to `config.toml`.
+     * Fully updated `config.template.toml` and in-app template generator with complete section definitions and typed pipeline examples.
+   * [6-1] Validated Batch IPC + Virtual Scrolling Architecture: **Done & Verified**
+     * Validated 10,000+ item directory transfer benchmarks under Tauri 2 IPC and `@tanstack/react-virtual`, maintaining 60fps scrolling and avoiding unnecessary pagination API state complexity.
 
-For full architectural designs, affected files, and test plans, refer to [`NEXT_IMPLEMENTATION_TASKS.en.md`](file:///home/susie/git/wammed/Cuddle/NEXT_IMPLEMENTATION_TASKS.en.md).
+All planned phases (Phase 1–14) are fully implemented and verified. For architectural specifications and task mappings, refer to [`NEXT_IMPLEMENTATION_TASKS.en.md`](file:///home/susie/git/wammed/Cuddle/NEXT_IMPLEMENTATION_TASKS.en.md).

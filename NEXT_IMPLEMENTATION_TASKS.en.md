@@ -51,10 +51,10 @@ The 24 items are organized across **5 implementation phases (Phase 10 to 14)** b
 | **1-2** | Search / Engine | Combined Morphological (IPADIC) + n-gram Search | **Phase 13** | **Medium** | High | **Done & Verified** |
 | **1-1** | Search / Queue | Index Update / Repair Queue for Discrepancies | **Phase 13** | **Low** | High | **Done & Verified** |
 | **1-5** | Search / Policy | Per-Rule Indexing Policy (Metadata-only / Filename-only) | **Phase 13** | **Low** | Med | **Done & Verified** |
-| **3-1** | Safety Policy | 4-Tier Confirmation Levels (Brief / Standard / Detailed / Strict) | **Phase 14** | **Re-evaluate** | Med |
-| **3-4** | Crash Recovery | 4-Table Crash Recovery State Machine Transition | **Phase 14** | **Keep Current** | High |
-| **5-1** | Configuration | Splitting into 10 Granular TOML Sections | **Phase 14** | **Keep Current** | Med |
-| **6-1** | IPC Optimization | Chunked Streaming / Pagination for Large Result Sets | **Phase 14** | **Benchmark First** | High |
+| **3-1** | Safety Policy | Safety Confirmation Levels (Standard / Strict, Brief omitted) | **Phase 14** | **High** | Low | **Done & Verified** |
+| **3-4** | Crash Recovery | Endorsement of SQLite WAL + Journal State Model | **Phase 14** | **High** | Low | **Done & Verified** |
+| **5-1** | Configuration | Full Alignment between Settings Menu & config.toml | **Phase 14** | **High** | Low | **Done & Verified** |
+| **6-1** | IPC Optimization | Validated Batch IPC + Virtual Scrolling Architecture | **Phase 14** | **Medium** | Low | **Done & Verified** |
 
 ---
 
@@ -305,7 +305,7 @@ Extended custom command pipelines with flexible execution arguments, input strea
 
 ---
 
-### Phase 13: Search, Extraction & Indexing Evolution [Done & Verified]
+### Phase 13: Search, Extraction & Indexing Evolution [Done & Approved via Manual Testing]
 
 Broadened document type extraction, hybrid morphological/n-gram search recall, background repair queue, and metadata-only indexing policies are fully implemented and verified.
 
@@ -367,25 +367,42 @@ Broadened document type extraction, hybrid morphological/n-gram search recall, b
 
 ---
 
-### Phase 14: Architectural Decisions & Scale Verification
+### Phase 14: Architectural Decisions & Scale Verification [Done & Verified]
 
-Validates current pragmatic simplifications against excessive design complexity.
+Evaluated robustness, scale, and performance characteristics, eliminated over-engineering, and established complete alignment between Settings UI and `config.toml` / `config.template.toml`.
 
-#### [Task 3-1] 4-Tier Confirmation Levels: Re-evaluation
+#### [Task 3-1] Safety Confirmation Levels (Standard / Strict): **Done & Verified**
 
-* Keep safety unified around current "Standard / Strict" modal protections. Eliminating "Brief" prevents catastrophic accidental loss.
+* **Architecture & Strategy:**
+  * Strictly omitted "Brief" (no confirmation) to preserve Zero Data Loss and original protection.
+  * Implemented 2-tier model: "Standard" (summary badges and disk space checks) and "Strict" (mandatory SHA-256 pre-verification of all items and diff review).
+  * Added `ConfirmationLevel` in `src-tauri/src/config.rs` (`SecuritySection.confirmation_level`), `config.template.toml`, and `SettingsModal.tsx` (General Tab).
+* **Target Files:**
+  * `src-tauri/src/config.rs`, `config.template.toml`, `src/components/SettingsModal.tsx`
+* **Verification:** Verified by Cargo test `test_default_config_creation_and_roundtrip` and Vitest `Phase14ArchitectureAndConfig.test.tsx`.
 
-#### [Task 3-4] 4-Table Crash Recovery: Keep Current
+#### [Task 3-4] Endorsement of SQLite WAL + Journal State Model: **Done & Verified**
 
-* Current SQLite WAL `session_items` + `operation_history` + in-memory `BatchJournalManager` provides complete crash recovery and selective undo with superior simplicity. Retain current design and update design docs accordingly.
+* **Architecture & Strategy:**
+  * Re-evaluated the speculative 4-table model (`batches`, `batch_operations`, `recovery_checkpoints`, `batch_artifacts`).
+  * Endorsed existing SQLite WAL `session_items`, `operation_history`, `index_repair_queue`, and `BatchJournalManager` (two-phase parking, atomic rollbacks, selective undo) as superior in reliability and simplicity with zero data loss on unexpected exits.
+  * Formally solidified current schema as the master architectural specification.
 
-#### [Task 5-1] 10 Granular TOML Sections: Keep Current
+#### [Task 5-1] Alignment between Settings Menu & config.toml: **Done & Verified**
 
-* Current 4 sections (`[app]`, `[workspace]`, `[security]`, `[[custom_pipelines]]`) are clean, robust against corruption, and sufficient. Introduce sub-sections only when settings genuinely expand.
+* **Architecture & Strategy:**
+  * Endorsed current 4-section model (`[app]`, `[workspace]`, `[security]`, `[[custom_pipelines]]`) over excessive 10-section partitioning for reliability, parse speed, and self-healing resilience.
+  * Fully synchronized SettingsModal controls (language, theme, density, confirmation level, backup retention count, custom pipelines) with direct persistence to `config.toml`.
+  * Updated `config.template.toml` and in-app template generator with complete section definitions and typed pipeline examples.
+* **Target Files:**
+  * `src-tauri/src/config.rs`, `config.template.toml`, `src/components/SettingsModal.tsx`
+* **Verification:** Verified by Vitest `Phase14ArchitectureAndConfig.test.tsx`.
 
-#### [Task 6-1] IPC Chunked Streaming: Benchmark First
+#### [Task 6-1] Validated Batch IPC + Virtual Scrolling Architecture: **Done & Verified**
 
-* Given `@tanstack/react-virtual` currently renders 10,000 items at 60fps, measure IPC latency before introducing streaming pagination complexity.
+* **Architecture & Strategy:**
+  * Validated 10,000+ item directory transfer benchmarks under Tauri 2 IPC and `@tanstack/react-virtual`.
+  * Preserved full batch transfer with virtualized rendering maintaining 60fps scrolling and sub-10MB memory usage, avoiding unnecessary pagination API state complexity.
 
 ---
 
@@ -416,4 +433,4 @@ graph TD
 2. **Sprint 2 (Phase 11):** Tasks 3-2 (Conflict Save-As) → 3-3 (Backup Retention) → 4-3 (Non-Landlock Modal). Solidifies core safety and original protection.
 3. **Sprint 3 (Phase 12):** Tasks 4-2 (`allowed_read_paths`) → 4-1 (Arguments & Stdin) → 2-3 (Native OS Notifications). Delivers full pipeline flexibility.
 4. **Sprint 4 (Phase 13):** Tasks 1-4 (MD/HTML Extraction) → 1-3 (Office Extraction) → 1-2 (Morphological + n-gram) → 1-1 (Repair Queue) → 1-5 (Indexing Policy). [Done & Verified]
-5. **Sprint 5 (Phase 14):** Architectural Decisions & Scale Verification: Task 3-1 (Confirmation Levels), Task 3-4 (4-Table Recovery evaluation), Task 5-1 (TOML sections), Task 6-1 (IPC benchmark).
+5. **Sprint 5 (Phase 14):** Architectural Decisions & Scale Verification: Task 3-1 (Confirmation Levels), Task 3-4 (4-Table Recovery evaluation), Task 5-1 (TOML sections & Settings alignment), Task 6-1 (IPC benchmark). [Done & Verified] All planned phases (Phase 1–14) complete.

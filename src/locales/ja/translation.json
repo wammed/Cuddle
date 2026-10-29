@@ -180,6 +180,10 @@
     "index_rebuild_desc": "既存インデックスを全消去し、フォルダ全体をゼロから再構築",
     "index_reset": "インデックス初期化",
     "index_reset_desc": "登録済みインデックスを全消去して空にする",
+    "index_repair_queue": "インデックス修復キューの処理",
+    "index_repair_queue_desc": "競合やエラーで保留されたインデックスを再試行・修復",
+    "repair_running": "インデックス修復キューを処理中...",
+    "repair_result_summary": "修復完了: {{succeeded}}件成功 / {{failed}}件失敗 (残り {{remaining}}件)",
     "index_running": "インデックス処理中...",
     "index_completed": "インデックス処理が完了しました",
     "index_result_summary": "完了: 追加 {{indexed}}件 / 更新 {{updated}}件 / 変更なし {{unchanged}}件 / スキップ {{skipped}}件 (合計 {{total}}件)"

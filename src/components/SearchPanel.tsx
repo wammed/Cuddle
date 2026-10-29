@@ -12,6 +12,7 @@ import {
   Trash2,
   ChevronDown,
   Loader2,
+  Wrench,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
@@ -22,6 +23,7 @@ import type { IndexStatsDto } from "../types/IndexStatsDto";
 import type { IndexOperationResultDto } from "../types/IndexOperationResultDto";
 import type { IndexOperationMode } from "../types/IndexOperationMode";
 import type { RunIndexOptions } from "../types/RunIndexOptions";
+import type { IndexRepairResultDto } from "../types/IndexRepairResultDto";
 import { encodePathToBase64 } from "../utils/path";
 
 interface SearchPanelProps {
@@ -43,6 +45,7 @@ export function SearchPanel({ onSelectItem, onLog, currentPath }: SearchPanelPro
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isIndexing, setIsIndexing] = useState(false);
   const [indexStats, setIndexStats] = useState<IndexStatsDto | null>(null);
+  const [repairQueueCount, setRepairQueueCount] = useState<number>(0);
   const [indexStatusMsg, setIndexStatusMsg] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -52,6 +55,8 @@ export function SearchPanel({ onSelectItem, onLog, currentPath }: SearchPanelPro
     try {
       const stats = await invoke<IndexStatsDto>("get_index_stats");
       setIndexStats(stats);
+      const queueCount = await invoke<number>("get_index_repair_queue_count");
+      setRepairQueueCount(queueCount);
     } catch {
       // Ignore background stat fetch failure
     }
@@ -172,6 +177,7 @@ export function SearchPanel({ onSelectItem, onLog, currentPath }: SearchPanelPro
         target_raw_base64: targetB64,
         max_depth: null,
         include_hidden: true,
+        include_metadata_only_excluded: false,
       };
 
       const result = await invoke<IndexOperationResultDto>("run_index_operation", { options });
@@ -196,6 +202,36 @@ export function SearchPanel({ onSelectItem, onLog, currentPath }: SearchPanelPro
       const msg = typeof err === "string" ? err : String(err);
       setIndexStatusMsg(`Error: ${msg}`);
       onLog(`[Index] Error: ${msg}`);
+    } finally {
+      setIsIndexing(false);
+    }
+  };
+
+  const handleProcessRepairQueue = async () => {
+    setIsMenuOpen(false);
+    setIsIndexing(true);
+    setIndexStatusMsg(t("search.repair_running"));
+    onLog("[Index] Processing pending repair queue...");
+
+    try {
+      const result = await invoke<IndexRepairResultDto>("process_index_repair_queue");
+      const summary = t("search.repair_result_summary", {
+        succeeded: result.succeeded_count,
+        failed: result.failed_count,
+        remaining: result.remaining_count,
+      });
+
+      setIndexStatusMsg(summary);
+      onLog(`[Index] Repair queue processed: ${result.succeeded_count} succeeded, ${result.failed_count} failed.`);
+      await fetchStats();
+
+      setTimeout(() => {
+        setIndexStatusMsg((prev) => (prev === summary ? null : prev));
+      }, 7000);
+    } catch (err: unknown) {
+      const msg = typeof err === "string" ? err : String(err);
+      setIndexStatusMsg(`Error: ${msg}`);
+      onLog(`[Index] Repair error: ${msg}`);
     } finally {
       setIsIndexing(false);
     }
@@ -350,6 +386,30 @@ export function SearchPanel({ onSelectItem, onLog, currentPath }: SearchPanelPro
                       <div className="item-text-col">
                         <span className="item-title">{t("search.index_rebuild")}</span>
                         <span className="item-desc">{t("search.index_rebuild_desc")}</span>
+                      </div>
+                    </button>
+
+                    <div className="index-dropdown-divider" />
+
+                    <button
+                      type="button"
+                      className="index-dropdown-item"
+                      onClick={handleProcessRepairQueue}
+                      title={t("search.index_repair_queue_desc")}
+                    >
+                      <div className="item-icon-col icon-repair" style={{ color: "#38bdf8" }}>
+                        <Wrench size={13} />
+                      </div>
+                      <div className="item-text-col">
+                        <span className="item-title">
+                          {t("search.index_repair_queue")}
+                          {repairQueueCount > 0 && (
+                            <span style={{ marginLeft: 6, fontSize: 10, padding: "1px 5px", borderRadius: 8, background: "#ef4444", color: "#fff" }}>
+                              {repairQueueCount}
+                            </span>
+                          )}
+                        </span>
+                        <span className="item-desc">{t("search.index_repair_queue_desc")}</span>
                       </div>
                     </button>
 

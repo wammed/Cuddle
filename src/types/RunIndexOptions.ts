@@ -20,4 +20,8 @@ max_depth: number | null,
 /**
  * Whether to include hidden files (default: false)
  */
-include_hidden: boolean, };
+include_hidden: boolean, 
+/**
+ * Whether excluded directory contents (like .git, node_modules) should be indexed as metadata-only (empty body) (Task 1-5)
+ */
+include_metadata_only_excluded: boolean | null, };

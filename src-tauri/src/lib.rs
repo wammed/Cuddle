@@ -221,6 +221,19 @@ async fn run_index_operation(
 }
 
 #[tauri::command]
+async fn process_index_repair_queue() -> Result<history::IndexRepairResultDto, String> {
+    tokio::task::spawn_blocking(|| search_fulltext::process_index_repair_queue())
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_index_repair_queue_count() -> Result<usize, String> {
+    history::get_history_manager().get_index_repair_queue_count()
+}
+
+#[tauri::command]
 fn get_systemd_timer_status() -> Result<periodic_index::SystemdTimerStatusDto, String> {
     periodic_index::get_systemd_timer_status()
 }
@@ -922,6 +935,8 @@ pub fn run() {
             index_file_with_text,
             get_index_stats,
             run_index_operation,
+            process_index_repair_queue,
+            get_index_repair_queue_count,
             get_systemd_timer_status,
             install_systemd_timer,
             uninstall_systemd_timer,

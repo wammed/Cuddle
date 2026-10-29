@@ -180,6 +180,10 @@
     "index_rebuild_desc": "Clear existing index and rebuild everything from scratch",
     "index_reset": "Reset & Clear Index",
     "index_reset_desc": "Remove all indexed documents and clear index",
+    "index_repair_queue": "Process Index Repair Queue",
+    "index_repair_queue_desc": "Retry and heal pending or failed index tasks",
+    "repair_running": "Processing index repair queue...",
+    "repair_result_summary": "Repair complete: {{succeeded}} succeeded / {{failed}} failed ({{remaining}} remaining)",
     "index_running": "Indexing in progress...",
     "index_completed": "Index operation completed",
     "index_result_summary": "Done: {{indexed}} added / {{updated}} updated / {{unchanged}} unchanged / {{skipped}} skipped (total: {{total}} docs)"

@@ -5,7 +5,7 @@
 </p>
 
 **Document Date:** 2026-10-29  
-**Status:** All Phases (Phase 1–12) fully implemented and approved via real-world manual testing. Open-source distribution ready (MIT License / README / BUILD / CI Actions complete); Phase 12 (Pipeline External Integration Flexibility: allowed_read_paths, input modes batch/stdin, typed placeholders, FreeDesktop native notifications, dynamic Nerd Font status detection) fully tested and verified (208 Cargo / 119 Vitest 100% pass).  
+**Status:** All Phases (Phase 1–13) fully implemented and verified. Open-source distribution ready (MIT License / README / BUILD / CI Actions complete); Phase 13 (Search, Indexing, and Text Extraction Evolution: Markdown/HTML structured extraction, Office OpenXML .docx/.xlsx Tier 3 extraction, Morphological IPADIC + N-gram hybrid search, SQLite WAL repair queue, and metadata-only indexing policy) fully tested and verified (216 Cargo / 124 Vitest 100% pass).  
 **Target Audience:** Development, Architecture, and QA Teams; Next Working Session Maintainers  
 
 ---
@@ -717,13 +717,22 @@ Based on comprehensive cross-verification between the Master Design Specificatio
    * [2-3] Desktop Environment Native Notification Abstraction (FreeDesktop D-Bus): **Done & Verified**
      * Added `notify.rs` module providing FreeDesktop notification dispatch via `notify-send` (`notify_desktop` & Tauri command `notify_user`).
      * Automatically dispatches notifications upon preset and custom pipeline completion. Frontend `notifyUser` helper implemented.
-4. **Phase 13: Search, Extraction & Indexing Evolution [Scheduled Next Session]**
-   * [1-4] Structured Markdown (`pulldown-cmark`) / HTML Text Extraction
-   * [1-3] Tier 3: Office Document Extraction (`.docx`, `.xlsx`) via isolated workers
-   * [1-2] Combined Morphological (IPADIC) + n-gram Search
-   * [1-1] Index Update / Repair Queue for Discrepancies
-   * [1-5] Per-Rule Indexing Policy (Metadata-only / Filename-only)
-5. **Phase 14: Architectural Decisions & Scale Verification**
+4. **Phase 13: Search, Extraction & Indexing Evolution [Done & Verified]**
+   * [1-4] Structured Markdown (`pulldown-cmark`) / HTML Text Extraction: **Done & Verified**
+     * Parsed Markdown via `pulldown-cmark` (v0.12) stripping formatting tokens. Stripped HTML tags, `<script>`, `<style>` blocks, and restored HTML entities into clean prose text.
+   * [1-3] Tier 3: Office Document Extraction (`.docx`, `.xlsx`): **Done & Verified**
+     * Built zero-dependency in-memory safe ZIP reader (`read_zip_file_entry`) parsing EOCD and Central Directory records with `flate2::DeflateDecoder`.
+     * Parsed `word/document.xml` and `xl/sharedStrings.xml` via `quick-xml` (v0.41).
+     * Enforced strict ZipBomb guardrails (100:1 ratio limit, 10MB entry size limit, 256MB memory cap).
+   * [1-2] Combined Morphological (IPADIC) + n-gram Search: **Done & Verified**
+     * Added `body_ngram` field using Tantivy's built-in `NgramTokenizer::all_ngrams(2, 3)`.
+     * Boosted multi-field scoring (`display_name: 3.0`, `body: 2.0`, `body_ngram: 0.8`), prioritizing exact morphological matches while guaranteeing full recall for OOV words and substrings.
+   * [1-1] Index Update / Repair Queue for Discrepancies: **Done & Verified**
+     * Created SQLite WAL `index_repair_queue` table with retry tracking and auto-drain. Exposed Tauri commands `process_index_repair_queue` and `get_index_repair_queue_count`.
+     * Added pending count badge and "Process Index Repair Queue" action to `SearchPanel` dropdown with bilingual notification banners.
+   * [1-5] Per-Rule Indexing Policy (Metadata-only / Filename-only): **Done & Verified**
+     * Supported `IndexingPolicy::MetadataOnly` for excluded directories (`.git`, `node_modules`), indexing file name, mtime, and size while keeping body empty.
+5. **Phase 14: Architectural Decisions & Scale Verification [Scheduled Next Session]**
    * [3-1] 4-Tier Confirmation Levels (Retain current Standard/Strict focus)
    * [3-4] 4-Table Crash Recovery (Endorse current SQLite WAL + BatchJournal model)
    * [5-1] Splitting into 10 Granular TOML Sections (Retain current 4-section architecture)

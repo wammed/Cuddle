@@ -46,11 +46,11 @@
 | **4-1** | パイプライン | 入力方式 (`batch`, `stdin`) と型付きプレースホルダー | **Phase 12** | **中 (Med)** | 中 | **完了・検証済 (Verified)** |
 | **2-3** | UI・通知 | OS / デスクトップ環境ネイティブ通知の抽象化 | **Phase 12** | **中 (Med)** | 中 | **完了・検証済 (Verified)** |
 | **UI-Font** | UI・ステータス | Nerd Font ステータスバー動的判定＆適用中表示 | **Phase 12** | **中 (Med)** | 低 | **完了・検証済 (Verified)** |
-| **1-4** | 検索・抽出 | Markdown / HTML の構文解析本文抽出 | **Phase 13** | **中 (Med)** | 中 |
-| **1-3** | 検索・抽出 | 第 3 段階: Office 文書（`.docx`, `.xlsx` 等）の本文抽出 | **Phase 13** | **中 (Med)** | 高 |
-| **1-2** | 検索・抽出 | 形態素解析 (IPADIC) ＋ n-gram 併用検索 | **Phase 13** | **中 (Med)** | 高 |
-| **1-1** | 検索・抽出 | インデックス差分更新・修復キュー (Repair Queue) | **Phase 13** | **低 (Low)** | 高 |
-| **1-5** | 検索・抽出 | 除外設定ごとのインデックス保持方針（メタデータ/ファイル名のみ） | **Phase 13** | **低 (Low)** | 中 |
+| **1-4** | 検索・抽出 | Markdown / HTML の構文解析本文抽出 | **Phase 13** | **中 (Med)** | 中 | **完了・検証済 (Verified)** |
+| **1-3** | 検索・抽出 | 第 3 段階: Office 文書（`.docx`, `.xlsx` 等）の本文抽出 | **Phase 13** | **中 (Med)** | 高 | **完了・検証済 (Verified)** |
+| **1-2** | 検索・抽出 | 形態素解析 (IPADIC) ＋ n-gram 併用検索 | **Phase 13** | **中 (Med)** | 高 | **完了・検証済 (Verified)** |
+| **1-1** | 検索・抽出 | インデックス差分更新・修復キュー (Repair Queue) | **Phase 13** | **低 (Low)** | 高 | **完了・検証済 (Verified)** |
+| **1-5** | 検索・抽出 | 除外設定ごとのインデックス保持方針（メタデータ/ファイル名のみ） | **Phase 13** | **低 (Low)** | 中 | **完了・検証済 (Verified)** |
 | **3-1** | 安全設計 | 確認レベルの 4 段階設定（簡潔 / 標準 / 詳細 / 厳格） | **Phase 14** | **要検討** | 中 |
 | **3-4** | 安全設計 | 4 テーブルによるクラッシュリカバリー詳細状態遷移 | **Phase 14** | **現状維持推奨** | 高 |
 | **5-1** | 設定管理 | TOML 10 セクション構成への細分化 | **Phase 14** | **現状維持推奨** | 中 |
@@ -303,65 +303,65 @@
 
 ---
 
-### Phase 13: 検索・インデックス・本文抽出の高度化
+### Phase 13: 検索・インデックス・本文抽出の高度化 【完了・検証済】
 
-検索・抽出エンジンのカバー範囲と精度を拡張します。
+検索・抽出エンジンのカバー範囲と精度を大幅に拡張し、修復キュー・除外保持方針を含め全タスクの実装および自動テスト検証を完了しました。
 
-#### 【タスク 1-4】Markdown / HTML の構文解析本文抽出
+#### 【タスク 1-4】Markdown / HTML の構文解析本文抽出: **完了・検証済**
 
 * **設計書参照：** 第 7.2 項（本文抽出パイプライン Tier 1）
-* **現状：** Markdown / HTML ファイルはプレーンテキストとしてそのまま読み込まれている。
-* **実装方針：**
-  * Markdown: `pulldown-cmark` クレートを用いて見出し・段落テキストのみを抽出（記号除去）。
-  * HTML: 軽量パーサーまたは正規表現ストリッパーで `<tag>` や `<style>`, `<script>` を除去した本文テキストを抽出。
-  * `extractor.rs` の `extract_text_content` 内で拡張子分岐を追加。
+* **現状・実装概要：**
+  * Markdown: `pulldown-cmark` (v0.12) を用いて見出し・段落テキストのみを抽出（構文記号を完全ストリップ）。
+  * HTML: 正規表現ベースの軽量ストリッパーで `<script>` や `<style>`、各種タグおよび HTML エンティティを除去した純粋な本文テキストを抽出。
+  * `extractor.rs` の `extract_text_content` 内で拡張子別分岐を実装。
 * **影響ファイル：**
   * `src-tauri/Cargo.toml`, `src-tauri/src/extractor.rs`
-* **テスト方針：** タグやマークダウン修飾が除去された純粋な本文が抽出され、Tantivy インデックスに登録されることを検証。
+* **検証結果：** Cargo test（`test_markdown_and_html_prose_extraction`）および Vitest（`Phase13SearchAndRepair.test.tsx`）にて構文記号・タグ除去後の純粋な本文抽出と Tantivy 登録・検索ヒットを確認済み。
 
-#### 【タスク 1-3】第 3 段階: Office 文書（`.docx`, `.xlsx` 等）の本文抽出
+#### 【タスク 1-3】第 3 段階: Office 文書（`.docx`, `.xlsx` 等）の本文抽出: **完了・検証済**
 
 * **設計書参照：** 第 7.2 項（本文抽出パイプライン Tier 3）
-* **現状：** Tier 1（テキスト/コード）と Tier 2（PDF `pdftotext`）のみ対応。
-* **実装方針：**
-  * Office OpenXML（`.docx`, `.xlsx`）は ZIP 形式の XML 構造であるため、`zip` クレートと簡易 XML パーサーで `word/document.xml` や `xl/sharedStrings.xml` からテキスト要素を抽出。
-  * PDF 同様、巨大ファイルや悪意ある ZIP ボム（42.zip 等）から本体を保護するため、メモリ上限（256 MiB）とサイズ上限（10 MiB）の安全ガードレールを適用。
+* **現状・実装概要：**
+  * 外部 crate（`zip`）依存を追加せず、`flate2::read::DeflateDecoder` と Central Directory パースによる安全なインメモリ ZIP リーダー（`read_zip_file_entry`）を内製。
+  * `quick-xml` (v0.41) を用いて `.docx`（`word/document.xml`）および `.xlsx`（`xl/sharedStrings.xml`）からテキストノードを高速・安全に抽出。
+  * ZipBomb 対策（展開比率上限 100:1、展開サイズ上限 10 MiB、メモリガードレール 256 MiB）を厳格に適用。
 * **影響ファイル：**
   * `src-tauri/Cargo.toml`, `src-tauri/src/extractor.rs`
-* **テスト方針：** サンプル .docx, .xlsx からの本文抽出ユニットテスト。破損ファイル時の安全スキップテスト。
+* **検証結果：** Cargo test（`test_tier3_office_docx_extraction`）および破損ファイル時の安全スキップ、Vitest での検索ヒットを確認済み。
 
-#### 【タスク 1-2】形態素解析 (IPADIC) ＋ n-gram 併用検索
+#### 【タスク 1-2】形態素解析 (IPADIC) ＋ n-gram 併用検索: **完了・検証済**
 
 * **設計書参照：** 第 2.1 項, 第 7.2 項（検索エンジン構成）
-* **現状：** `lindera-tantivy`（IPADIC, Normal）単独でトークナイズ。
-* **実装方針：**
-  * Tantivy のスキーマにおいて、本文フィールドを「形態素解析トークナイズ用フィールド（`body_morpheme`）」と「2-gram トークナイズ用フィールド（`body_ngram`）」の2系統で登録、または複合トークナイザーを定義。
-  * 検索クエリ実行時、形態素クエリと n-gram クエリを重み付け結合（形態素一致を優先スコアリングしつつ、未知語・記号混在は n-gram でヒットさせる）。
+* **現状・実装概要：**
+  * Tantivy スキーマに `NgramTokenizer::all_ngrams(2, 3)` でトークナイズされる `body_ngram` フィールドを追加。
+  * クエリパース時に `display_name`（boost 3.0）、`body`（Lindera IPADIC, boost 2.0）、`body_ngram`（boost 0.8）のマルチフィールドブースト結合を設定。
+  * 形態素の完全一致を最優先スコアリングしつつ、未知語・造語・記号混在フレーズの部分一致を n-gram で漏れなく検出。
 * **影響ファイル：**
   * `src-tauri/src/search_fulltext.rs`
-* **テスト方針：** 未知語、カタカナ語、記号混在検索語での再現率・精度のテスト。
+* **検証結果：** Cargo test（`test_ngram_and_morpheme_hybrid_search`）にて、形態素解析境界を跨ぐ部分一致や未知語でのスコアリング優先度・再現率を検証済み。
 
-#### 【タスク 1-1】インデックス差分更新・修復キュー (Repair Queue)
+#### 【タスク 1-1】インデックス差分更新・修復キュー (Repair Queue): **完了・検証済**
 
 * **設計書参照：** 第 1.1 項, 第 7.2 項, 第 14 項
-* **現状：** インデックス登録失敗時はエラーログを記録するのみ。
-* **実装方針：**
+* **現状・実装概要：**
   * SQLite WAL 内に `index_repair_queue` テーブル（`id`, `path_base64`, `action`, `retry_count`, `last_error`, `created_at`）を作成。
-  * 原本反映やファイル移動時に Tantivy 更新が失敗した場合、即座にキューへ退避。
-  * アプリ起動時および定期更新タイマー実行時にキュー内の未処理アイテムを再試行・修復。
+  * Tantivy ロック競合やインデックス失敗時に `enqueue_repair_on_failure` でキューへ自動退避。
+  * `process_index_repair_queue` コマンドで指数バックオフを考慮した再試行および最大試行回数（5回）超過時の安全破棄を実装。
+  * UI の `SearchPanel` インデックス操作ドロップダウン内に保留件数バッジ付き「修復キューを処理」ボタンを新設。
 * **影響ファイル：**
-  * `src-tauri/src/search_fulltext.rs`, `src-tauri/src/db.rs`, `src-tauri/src/periodic_index.rs`
-* **テスト方針：** Tantivy ロック競合時のキュー退避と、その後の修復処理を Cargo test で検証。
+  * `src-tauri/src/history.rs`, `src-tauri/src/search_fulltext.rs`, `src-tauri/src/lib.rs`
+  * `src/components/SearchPanel.tsx`, `src/types/IndexRepairResultDto.ts`
+* **検証結果：** Cargo test（`test_index_repair_queue_workflow`）および Vitest（`Phase13SearchAndRepair.test.tsx`）にてキュー投入・リトライ・完了サマリー通知の正常動作を検証済み。
 
-#### 【タスク 1-5】除外設定ごとのインデックス保持方針
+#### 【タスク 1-5】除外設定ごとのインデックス保持方針: **完了・検証済**
 
 * **設計書参照：** 第 7.1 項（除外ディレクトリの扱い）
-* **現状：** 走査時に除外するか、あるいは全抽出するかの二者択一。
-* **実装方針：**
-  * 除外ディレクトリ（`.git`, `node_modules` 等）配下のファイルは、本文（`body`）を空にし、ファイル名・パス・mtime のメタデータのみインデックスに保持。
+* **現状・実装概要：**
+  * `IndexingPolicy`（`Full`, `MetadataOnly`, `Exclude`）型を導入。
+  * 除外ディレクトリ（`.git`, `node_modules` 等）配下のファイルに対して、`include_metadata_only_excluded` オプション指定時に本文（`body`）を空にしつつファイル名・更新日時・サイズのみを Tantivy に登録する制御を実装。
 * **影響ファイル：**
-  * `src-tauri/src/extractor.rs`, `src-tauri/src/search_fulltext.rs`
-* **テスト方針：** 除外対象ファイルがファイル名検索ではヒットし、本文検索ではヒットしないことを確認。
+  * `src-tauri/src/extractor.rs`, `src-tauri/src/search_fulltext.rs`, `src/types/IndexingPolicy.ts`
+* **検証結果：** Cargo test（`test_run_index_operations_workflow`）にて、除外ディレクトリ下のアイテムがファイル名検索でヒットし本文検索ではヒットしないことを検証済み。
 
 ---
 
@@ -427,4 +427,5 @@ graph TD
    * **Part B (超リッチ化):** タスク 2-5（拡張子別リッチアイコン）→ 2-6（インナーリムライト＆多層シャドウ）→ 2-7（マウス追従スポットライト＆触感スプリング）→ 2-8（ストレージ容量ゲージ＆パーミッション視覚化）→ 2-9（等幅数字＆ブレッドクラム）→ 2-10（アンビエントオーロラ背景）。アプリの洗練度・視覚的説得力が最高水準へ引き上がります。
 2. **第 2 ステップ（Phase 11）：** タスク 3-2（原本競合時の別名保存）→ 3-3（バックアップ保持数管理）→ 4-3（Landlock 警告モーダル）。原本反映の安全性が極大化されます。
 3. **第 3 ステップ（Phase 12）：** タスク 4-2（`allowed_read_paths`）→ 4-1（引数展開・標準入力）→ 2-3（OS ネイティブ通知）。外部ツール連携が完成します。
-4. **第 4 ステップ（Phase 13）：** タスク 1-4（MD/HTML 抽出）→ 1-3（Office 抽出）→ 1-2（形態素+n-gram）→ 1-1（修復キュー）。
+4. **第 4 ステップ（Phase 13）：** タスク 1-4（MD/HTML 抽出）→ 1-3（Office 抽出）→ 1-2（形態素+n-gram）→ 1-1（修復キュー）→ 1-5（除外保持方針）。【完了・検証済】
+5. **第 5 ステップ（Phase 14）：** アーキテクチャ再検討・超大規模対応。タスク 3-1（確認レベル整理）、タスク 3-4（4 テーブルモデル追認）、タスク 5-1（TOML 設定最適化）、タスク 6-1（大量データ IPC ベンチマーク）。

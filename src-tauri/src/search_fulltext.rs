@@ -16,6 +16,7 @@ use ts_rs::TS;
 const APP_DIR_NAME: &str = "Cuddle";
 const INDEX_SUBDIR_NAME: &str = "index";
 const TOKENIZER_NAME_JA: &str = "lang_ja";
+const TOKENIZER_NAME_NGRAM: &str = "lang_ngram";
 const WRITER_MEMORY_BUDGET_BYTES: usize = 50 * 1024 * 1024; // 50 MiB bounded memory
 
 #[derive(Error, Debug)]
@@ -83,6 +84,7 @@ pub struct FulltextFields {
     pub raw_base64: Field,
     pub display_name: Field,
     pub body: Field,
+    pub body_ngram: Field,
     pub mtime_ms: Field,
     pub size: Field,
     pub inode: Field,
@@ -136,12 +138,20 @@ fn build_schema() -> (Schema, FulltextFields) {
         .set_indexing_options(text_indexing_ja)
         .set_stored();
 
+    // N-gram tokenizer for symbols, codes, and unknown terms (Task 1-2)
+    let text_indexing_ngram = TextFieldIndexing::default()
+        .set_tokenizer(TOKENIZER_NAME_NGRAM)
+        .set_index_option(IndexRecordOption::WithFreqsAndPositions);
+
+    let text_options_ngram = TextOptions::default().set_indexing_options(text_indexing_ngram);
+
     let string_options = STRING | STORED;
 
     let item_id = builder.add_text_field("item_id", string_options.clone());
     let raw_base64 = builder.add_text_field("raw_base64", string_options);
     let display_name = builder.add_text_field("display_name", text_options_ja.clone());
     let body = builder.add_text_field("body", text_options_ja);
+    let body_ngram = builder.add_text_field("body_ngram", text_options_ngram);
     let mtime_ms = builder.add_i64_field("mtime_ms", INDEXED | STORED | FAST);
     let size = builder.add_u64_field("size", INDEXED | STORED | FAST);
     let inode = builder.add_u64_field("inode", STORED | FAST);
@@ -153,6 +163,7 @@ fn build_schema() -> (Schema, FulltextFields) {
         raw_base64,
         display_name,
         body,
+        body_ngram,
         mtime_ms,
         size,
         inode,
@@ -162,27 +173,71 @@ fn build_schema() -> (Schema, FulltextFields) {
     (schema, fields)
 }
 
-fn register_lindera_tokenizer(index: &Index) -> Result<(), FulltextError> {
+fn register_tokenizers(index: &Index) -> Result<(), FulltextError> {
+    // 1. Japanese morphological analyzer (IPADIC)
     let mode = Mode::Normal;
     let dictionary =
         load_dictionary("embedded://ipadic").map_err(|e| FulltextError::Lindera(e.to_string()))?;
     let segmenter = Segmenter::new(mode, dictionary, None);
     let tokenizer = LinderaTokenizer::from_segmenter(segmenter);
-
     index.tokenizers().register(TOKENIZER_NAME_JA, tokenizer);
+
+    // 2. 2-to-3 gram tokenizer for unknown words, symbols, and code identifiers (Task 1-2)
+    let ngram_tokenizer = tantivy::tokenizer::NgramTokenizer::all_ngrams(2, 3)
+        .map_err(|e| FulltextError::Lindera(format!("NgramTokenizer error: {}", e)))?;
+    index
+        .tokenizers()
+        .register(TOKENIZER_NAME_NGRAM, ngram_tokenizer);
+
     Ok(())
 }
 
 impl CuddleFulltextEngine {
+    fn clean_index_dir(path: &Path) {
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_dir() {
+                    let _ = std::fs::remove_dir_all(&p);
+                } else {
+                    let _ = std::fs::remove_file(&p);
+                }
+            }
+        }
+    }
+
     /// Opens or creates a persistent on-disk full-text index in the given path.
+    /// If an existing index schema does not match (e.g. across version upgrades),
+    /// the stale index is automatically re-initialized with the current schema.
     pub fn new_in_dir(path: &Path) -> Result<Self, FulltextError> {
         if !path.exists() {
             std::fs::create_dir_all(path)?;
         }
 
         let (schema, fields) = build_schema();
-        let index = Index::open_or_create(tantivy::directory::MmapDirectory::open(path)?, schema)?;
-        register_lindera_tokenizer(&index)?;
+        let mmap_dir = tantivy::directory::MmapDirectory::open(path)?;
+        let index = match Index::open_or_create(mmap_dir, schema.clone()) {
+            Ok(idx) => idx,
+            Err(TantivyError::SchemaError(err_msg)) => {
+                eprintln!(
+                    "[Fulltext] Tantivy schema mismatch ({}), auto-recreating index at {:?}",
+                    err_msg, path
+                );
+                Self::clean_index_dir(path);
+                Index::create_in_dir(path, schema)?
+            }
+            Err(TantivyError::IncompatibleIndex(incompat)) => {
+                eprintln!(
+                    "[Fulltext] Tantivy incompatible index ({:?}), auto-recreating index at {:?}",
+                    incompat, path
+                );
+                Self::clean_index_dir(path);
+                Index::create_in_dir(path, schema)?
+            }
+            Err(e) => return Err(FulltextError::Tantivy(e)),
+        };
+
+        register_tokenizers(&index)?;
 
         let reader = index
             .reader_builder()
@@ -203,7 +258,7 @@ impl CuddleFulltextEngine {
     pub fn new_in_ram() -> Result<Self, FulltextError> {
         let (schema, fields) = build_schema();
         let index = Index::create_in_ram(schema);
-        register_lindera_tokenizer(&index)?;
+        register_tokenizers(&index)?;
 
         let reader = index
             .reader_builder()
@@ -236,6 +291,7 @@ impl CuddleFulltextEngine {
             self.fields.raw_base64 => item.raw_base64.clone(),
             self.fields.display_name => item.display_name.clone(),
             self.fields.body => body,
+            self.fields.body_ngram => body,
             self.fields.mtime_ms => item.mtime_ms,
             self.fields.size => item.size,
             self.fields.inode => item.inode,
@@ -250,6 +306,14 @@ impl CuddleFulltextEngine {
     pub fn delete_document(&self, item_id: &str) -> Result<(), FulltextError> {
         let writer = self.writer.lock().unwrap();
         let term = Term::from_field_text(self.fields.item_id, item_id);
+        writer.delete_term(term);
+        Ok(())
+    }
+
+    /// Deletes a document by its Base64-encoded path from the index (Repair Queue support).
+    pub fn delete_document_by_raw_base64(&self, raw_base64: &str) -> Result<(), FulltextError> {
+        let writer = self.writer.lock().unwrap();
+        let term = Term::from_field_text(self.fields.raw_base64, raw_base64);
         writer.delete_term(term);
         Ok(())
     }
@@ -304,10 +368,18 @@ impl CuddleFulltextEngine {
         }
 
         let searcher = self.reader.searcher();
-        let query_parser = QueryParser::for_index(
+        let mut query_parser = QueryParser::for_index(
             &self.index,
-            vec![self.fields.display_name, self.fields.body],
+            vec![
+                self.fields.display_name,
+                self.fields.body,
+                self.fields.body_ngram,
+            ],
         );
+        // Boost morphological matches and display_name, while allowing n-gram hits (Task 1-2)
+        query_parser.set_field_boost(self.fields.display_name, 3.0);
+        query_parser.set_field_boost(self.fields.body, 2.0);
+        query_parser.set_field_boost(self.fields.body_ngram, 0.8);
 
         let query = query_parser.parse_query(trimmed)?;
         let top_docs =
@@ -366,6 +438,61 @@ impl CuddleFulltextEngine {
     }
 }
 
+/// Safely registers an indexing failure to the persistent repair queue (Task 1-1).
+pub fn enqueue_repair_on_failure(path_base64: &str, action: &str, error: &str) {
+    let _ = crate::history::get_history_manager().enqueue_index_repair(path_base64, action, error);
+}
+
+/// Processes pending failed or queued index operations from the SQLite repair queue (Task 1-1).
+pub fn process_index_repair_queue() -> Result<crate::history::IndexRepairResultDto, FulltextError> {
+    let history_mgr = crate::history::get_history_manager();
+    let pending_items = history_mgr
+        .list_pending_repairs(50)
+        .map_err(|e| FulltextError::Lindera(format!("Failed to list pending repairs: {}", e)))?;
+
+    let engine = get_or_init_engine()?;
+    let mut succeeded_count = 0;
+    let mut failed_count = 0;
+
+    for item in &pending_items {
+        let result = match item.action.as_str() {
+            "index" => match crate::extractor::index_file_with_text(&item.path_base64, None) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(format!("Index extraction error: {}", e)),
+            },
+            "delete" => match engine.delete_document_by_raw_base64(&item.path_base64) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(format!("Delete error: {}", e)),
+            },
+            other => Err(format!("Unknown repair action: {}", other)),
+        };
+
+        match result {
+            Ok(()) => {
+                let _ = history_mgr.delete_repair_item(item.id);
+                succeeded_count += 1;
+            }
+            Err(err) => {
+                let _ = history_mgr.increment_repair_retry(item.id, &err);
+                failed_count += 1;
+            }
+        }
+    }
+
+    if succeeded_count > 0 {
+        engine.commit()?;
+    }
+
+    let remaining_count = history_mgr.get_index_repair_queue_count().unwrap_or(0);
+
+    Ok(crate::history::IndexRepairResultDto {
+        processed_count: pending_items.len(),
+        succeeded_count,
+        failed_count,
+        remaining_count,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -409,9 +536,9 @@ mod tests {
         assert_eq!(hits[0].item_id, "doc-1");
         assert!(hits[0].snippet.contains("空港"));
 
-        // 2. Search for "京都" (Kyoto) - Should match doc2
+        // 2. Search for "京都" (Kyoto) - doc2 matches morpheme with higher score, doc1 matches n-gram inside "東京都"
         let hits_kyoto = engine.search("京都", &opts).unwrap();
-        assert_eq!(hits_kyoto.len(), 1);
+        assert!(!hits_kyoto.is_empty());
         assert_eq!(hits_kyoto[0].item_id, "doc-2");
         assert!(hits_kyoto[0].snippet.contains("京都"));
 
@@ -471,6 +598,95 @@ mod tests {
         let opts = FulltextSearchOptions::default();
         let res = engine.search("   ", &opts);
         assert!(matches!(res, Err(FulltextError::EmptyQuery)));
+    }
+
+    #[test]
+    fn test_ngram_and_morpheme_hybrid_search() {
+        let engine = CuddleFulltextEngine::new_in_ram().unwrap();
+        let doc = make_test_item("doc-ngram", "config.rs");
+        // Body contains unknown word / code identifiers with underscores and mixed terms
+        let body = "cuddle_landlock_guardrail_v5 と セキュア暗号モジュールXYZ99";
+        engine.index_document(&doc, body).unwrap();
+        engine.commit().unwrap();
+
+        let opts = FulltextSearchOptions::default();
+
+        // 1. Search for substring code identifier with underscore (hits n-gram index)
+        let hits_code = engine.search("landlock_guardrail", &opts).unwrap();
+        assert_eq!(hits_code.len(), 1);
+        assert_eq!(hits_code[0].item_id, "doc-ngram");
+
+        // 2. Search for mixed Katakana + Alphanumeric (XYZ99)
+        let hits_mixed = engine.search("XYZ99", &opts).unwrap();
+        assert_eq!(hits_mixed.len(), 1);
+
+        // 3. Search for Japanese morpheme word
+        let hits_ja = engine.search("セキュア", &opts).unwrap();
+        assert_eq!(hits_ja.len(), 1);
+    }
+
+    #[test]
+    fn test_index_repair_queue_workflow() {
+        let history_mgr = crate::history::get_history_manager();
+
+        // Enqueue a failed indexing task
+        let path_b64 = "L2hvbWUvc3VzaWUvZG9jLnR4dA==";
+        history_mgr
+            .enqueue_index_repair(path_b64, "index", "Simulated Tantivy Lock Error")
+            .unwrap();
+
+        let count = history_mgr.get_index_repair_queue_count().unwrap();
+        assert!(count >= 1);
+
+        let items = history_mgr.list_pending_repairs(10).unwrap();
+        let target = items.iter().find(|i| i.path_base64 == path_b64).unwrap();
+        assert_eq!(target.action, "index");
+        assert_eq!(target.retry_count, 0);
+
+        // Increment retry
+        history_mgr
+            .increment_repair_retry(target.id, "Second retry failure")
+            .unwrap();
+        let items_after = history_mgr.list_pending_repairs(10).unwrap();
+        let target_after = items_after.iter().find(|i| i.id == target.id).unwrap();
+        assert_eq!(target_after.retry_count, 1);
+
+        // Delete processed item
+        history_mgr.delete_repair_item(target.id).unwrap();
+        let items_final = history_mgr.list_pending_repairs(10).unwrap();
+        assert!(!items_final.iter().any(|i| i.id == target.id));
+    }
+
+    #[test]
+    fn test_schema_mismatch_auto_recovery() {
+        let temp_dir = std::env::temp_dir()
+            .join(format!("cuddle_test_schema_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        // 1. Manually create an index with an obsolete/incompatible schema
+        let mut old_builder = Schema::builder();
+        old_builder.add_text_field("legacy_field", TEXT);
+        let old_schema = old_builder.build();
+
+        let _old_idx = Index::create_in_dir(&temp_dir, old_schema).unwrap();
+
+        // 2. Open via CuddleFulltextEngine::new_in_dir
+        // Prior to auto-migration, this threw TantivyError::SchemaError: 'An index exists but the schema does not match.'
+        let engine = CuddleFulltextEngine::new_in_dir(&temp_dir)
+            .expect("Should auto-recover from schema mismatch");
+
+        // 3. Verify the engine works and can index documents with the new schema
+        let doc = make_test_item("recovered-doc", "test.txt");
+        engine.index_document(&doc, "Auto recovery succeeded!").unwrap();
+        engine.commit().unwrap();
+
+        let hits = engine
+            .search("Auto", &FulltextSearchOptions::default())
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].item_id, "recovered-doc");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
     #[test]

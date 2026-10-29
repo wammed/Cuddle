@@ -5,7 +5,7 @@
 </p>
 
 **文書作成日：** 2026-10-29  
-**ステータス：** 全フェーズ（Phase 1〜12）実装・実機手動テスト承認完了、ソース公開配布準備完了（MIT License / README / BUILD / CI Actions 整備完了）、Phase 12（パイプライン外部連携柔軟性拡張：allowed_read_paths、入力方式 batch/stdin、型付きプレースホルダー、FreeDesktop デスクトップ通知抽象化、Nerd Font 動的ステータス判定）実装・手動検証完了済み  
+**ステータス：** 全フェーズ（Phase 1〜13）実装・テスト完了、ソース公開配布準備完了（MIT License / README / BUILD / CI Actions 整備完了）、Phase 13（検索・インデックス・本文抽出の高度化：Markdown/HTML構造化本文抽出、Office OpenXML .docx/.xlsx Tier 3抽出、形態素Lindera+N-gramハイブリッド全文検索、SQLite WAL修復キュー、除外ディレクトリ保持方針）実装・テスト完了  
 **対象：** 開発・設計・テスト担当者、次期作業セッション担当  
 
 ---
@@ -717,13 +717,20 @@
    * 【2-3】OS / デスクトップ環境ネイティブ通知の抽象化（FreeDesktop D-Bus 通知）: **実装完了・検証済み**
      * `notify.rs` を新設し、`notify-send`（COSMIC / GNOME / KDE 準拠）による `notify_desktop` および Tauri コマンド `notify_user` を実装。
      * パイプライン完了時にデスクトップ通知を自動発行。フロントエンド共通ヘルパー `notifyUser` を整備。
-4. **Phase 13: 検索・インデックス・本文抽出の高度化 【次回セッション着手予定】**
-   * 【1-4】Markdown（`pulldown-cmark`）/ HTML の構文解析本文抽出
-   * 【1-3】第 3 段階: Office 文書（`.docx`, `.xlsx` 等）の本文抽出（メモリ制限付き分離ワーカー）
-   * 【1-2】形態素解析（IPADIC）＋ n-gram 併用ハイブリッド検索
-   * 【1-1】インデックス差分更新・修復キュー（Repair Queue）
-   * 【1-5】除外設定ごとのインデックス保持方針（メタデータのみ / ファイル名のみ）
-5. **Phase 14: アーキテクチャ再検討・超大規模対応**
+4. **Phase 13: 検索・インデックス・本文抽出の高度化 【完了・検証済み】**
+   * 【1-4】Markdown（`pulldown-cmark`）/ HTML の構文解析本文抽出: **実装完了・検証済み**
+     * `pulldown-cmark` (v0.12) を用いて Markdown の見出し・段落テキストのみを抽出。HTML はタグ・`<script>`・`<style>` をストリップしエンティティ復元。
+   * 【1-3】第 3 段階: Office 文書（`.docx`, `.xlsx`）の本文抽出: **実装完了・検証済み**
+     * 外部 crate 追加なしで安全な ZIP リーダー（EOCD/Central Directory 解析 + `flate2::DeflateDecoder`）と `quick-xml` (v0.41) による `word/document.xml`・`xl/sharedStrings.xml` 抽出を内製。
+     * ZipBomb 対策（展開比率 100:1 上限、展開サイズ 10MB 上限、メモリ 256MB ガードレール）を徹底。
+   * 【1-2】形態素解析（IPADIC）＋ n-gram 併用ハイブリッド検索: **実装完了・検証済み**
+     * Tantivy スキーマに `body_ngram`（2〜3 gram トークナイザー）を追加。
+     * マルチフィールドブースト（`display_name: 3.0`, `body: 2.0`, `body_ngram: 0.8`）により形態素一致を最優先しつつ未知語・部分一致を漏れなく捕捉。
+   * 【1-1】インデックス差分更新・修復キュー（Repair Queue）: **実装完了・検証済み**
+     * SQLite WAL 内の `index_repair_queue` テーブル、自動退避・再試行機能、`process_index_repair_queue` / `get_index_repair_queue_count` コマンド、`SearchPanel` 内の保留バッジ付き修復ボタン・通知バナーを実装。
+   * 【1-5】除外設定ごとのインデックス保持方針: **実装完了・検証済み**
+     * `IndexingPolicy::MetadataOnly` による `.git` や `node_modules` などのファイル名・更新日時・サイズのみのインデックス登録制御（本文空登録）を実装。
+5. **Phase 14: アーキテクチャ再検討・超大規模対応 【次回セッション検討予定】**
    * 【3-1】確認レベル 4 段階設定（標準/厳格への集約維持を検討）
    * 【3-4】4 テーブルクラッシュリカバリー（現行 SQLite WAL + BatchJournal の堅牢性追認）
    * 【5-1】TOML 10 セクション構成（現行 4 セクション集約モデル維持を検討）

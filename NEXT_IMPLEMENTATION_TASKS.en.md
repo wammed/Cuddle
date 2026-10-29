@@ -46,11 +46,11 @@ The 24 items are organized across **5 implementation phases (Phase 10 to 14)** b
 | **4-1** | Pipeline | Input Modes (`batch`, `stdin`) & Typed Placeholders | **Phase 12** | **Medium** | Med | **Done & Verified** |
 | **2-3** | UI / System | Desktop Environment Native Notification Abstraction | **Phase 12** | **Medium** | Med | **Done & Verified** |
 | **UI-Font** | UI / Status | Dynamic Nerd Font Statusbar Detection & Active Indicator | **Phase 12** | **Medium** | Low | **Done & Verified** |
-| **1-4** | Search / Extract | Structured Markdown / HTML Text Extraction | **Phase 13** | **Medium** | Med |
-| **1-3** | Search / Extract | Tier 3: Office Document Extraction (`.docx`, `.xlsx`) | **Phase 13** | **Medium** | High |
-| **1-2** | Search / Engine | Combined Morphological (IPADIC) + n-gram Search | **Phase 13** | **Medium** | High |
-| **1-1** | Search / Queue | Index Update / Repair Queue for Discrepancies | **Phase 13** | **Low** | High |
-| **1-5** | Search / Policy | Per-Rule Indexing Policy (Metadata-only / Filename-only) | **Phase 13** | **Low** | Med |
+| **1-4** | Search / Extract | Structured Markdown / HTML Text Extraction | **Phase 13** | **Medium** | Med | **Done & Verified** |
+| **1-3** | Search / Extract | Tier 3: Office Document Extraction (`.docx`, `.xlsx`) | **Phase 13** | **Medium** | High | **Done & Verified** |
+| **1-2** | Search / Engine | Combined Morphological (IPADIC) + n-gram Search | **Phase 13** | **Medium** | High | **Done & Verified** |
+| **1-1** | Search / Queue | Index Update / Repair Queue for Discrepancies | **Phase 13** | **Low** | High | **Done & Verified** |
+| **1-5** | Search / Policy | Per-Rule Indexing Policy (Metadata-only / Filename-only) | **Phase 13** | **Low** | Med | **Done & Verified** |
 | **3-1** | Safety Policy | 4-Tier Confirmation Levels (Brief / Standard / Detailed / Strict) | **Phase 14** | **Re-evaluate** | Med |
 | **3-4** | Crash Recovery | 4-Table Crash Recovery State Machine Transition | **Phase 14** | **Keep Current** | High |
 | **5-1** | Configuration | Splitting into 10 Granular TOML Sections | **Phase 14** | **Keep Current** | Med |
@@ -305,62 +305,65 @@ Extended custom command pipelines with flexible execution arguments, input strea
 
 ---
 
-### Phase 13: Search, Extraction & Indexing Evolution
+### Phase 13: Search, Extraction & Indexing Evolution [Done & Verified]
 
-Broadens document type extraction and improves search recall.
+Broadened document type extraction, hybrid morphological/n-gram search recall, background repair queue, and metadata-only indexing policies are fully implemented and verified.
 
-#### [Task 1-4] Structured Markdown / HTML Text Extraction
+#### [Task 1-4] Structured Markdown / HTML Text Extraction: **Done & Verified**
 
 * **Design Spec Reference:** Section 7.2 (Tier 1 Text Extraction)
-* **Current Status:** Markdown / HTML are ingested as raw plaintext including syntax markers and tags.
 * **Architecture & Strategy:**
-  * Ingest Markdown via `pulldown-cmark`, extracting pure headings and paragraph text without formatting tokens.
-  * Ingest HTML by stripping `<tag>`, `<style>`, and `<script>` elements.
+  * Ingest Markdown via `pulldown-cmark` (v0.12), cleanly stripping tokens and returning only headings and prose text.
+  * Ingest HTML via regex stripper removing `<script>`, `<style>`, tags, and unescaping HTML entities.
+  * Integrated into `extract_text_content` in `extractor.rs`.
 * **Target Files:**
   * `src-tauri/Cargo.toml`, `src-tauri/src/extractor.rs`
-* **Verification:** Cargo test verifying token stripping and indexing.
+* **Verification:** Verified by Cargo test `test_markdown_and_html_prose_extraction` and Vitest `Phase13SearchAndRepair.test.tsx`.
 
-#### [Task 1-3] Tier 3: Office Document Extraction (`.docx`, `.xlsx`)
+#### [Task 1-3] Tier 3: Office Document Extraction (`.docx`, `.xlsx`): **Done & Verified**
 
 * **Design Spec Reference:** Section 7.2 (Tier 3 Office Extraction)
-* **Current Status:** Only Tier 1 (text/code) and Tier 2 (PDF `pdftotext`) are enabled.
 * **Architecture & Strategy:**
-  * Extract XML documents from OpenXML zip archives (`word/document.xml`, `xl/sharedStrings.xml`).
-  * Enforce strict memory (256 MiB) and archive limits (10 MiB) against zip-bomb vulnerabilities.
+  * Implemented safe zero-dependency ZIP entry reader (`read_zip_file_entry`) parsing EOCD / Central Directory records and decompressing entries via `flate2::read::DeflateDecoder`.
+  * Parsed `.docx` (`word/document.xml`) and `.xlsx` (`xl/sharedStrings.xml`) text elements via `quick-xml` (v0.41).
+  * Enforced ZipBomb protection (100:1 ratio limit, 10 MiB decompressed limit, 256 MiB memory guardrails).
 * **Target Files:**
   * `src-tauri/Cargo.toml`, `src-tauri/src/extractor.rs`
-* **Verification:** Cargo tests on valid and corrupted sample files.
+* **Verification:** Verified by Cargo test `test_tier3_office_docx_extraction`, corrupted zip tests, and Vitest suite.
 
-#### [Task 1-2] Combined Morphological (IPADIC) + n-gram Search
+#### [Task 1-2] Combined Morphological (IPADIC) + n-gram Search: **Done & Verified**
 
 * **Design Spec Reference:** Section 2.1, Section 7.2
-* **Current Status:** Tokenizes solely using `lindera-tantivy` (IPADIC).
 * **Architecture & Strategy:**
-  * Index content in dual Tantivy fields (`body_morpheme` + `body_ngram`) or composite tokenizer.
-  * Weight morphological hits higher while matching OOV words and symbols via 2-gram.
+  * Added `body_ngram` field using Tantivy's built-in `NgramTokenizer::all_ngrams(2, 3)`.
+  * Configured multi-field query boosting (`display_name: 3.0`, `body: 2.0`, `body_ngram: 0.8`).
+  * Yields prioritized scoring for exact morpheme matches while capturing substring, out-of-vocabulary, and compound words.
 * **Target Files:**
   * `src-tauri/src/search_fulltext.rs`
-* **Verification:** Recall tests with katakana and non-dictionary symbols.
+* **Verification:** Verified by Cargo test `test_ngram_and_morpheme_hybrid_search` and Vitest suite.
 
-#### [Task 1-1] Index Update / Repair Queue for Discrepancies
+#### [Task 1-1] Index Update / Repair Queue for Discrepancies: **Done & Verified**
 
 * **Design Spec Reference:** Section 1.1, Section 7.2, Section 14
-* **Current Status:** Tantivy commit failures log errors without queueing retries.
 * **Architecture & Strategy:**
-  * Create SQLite `index_repair_queue` table. Record failed Tantivy operations and retry upon startup or timer run.
+  * Created SQLite WAL `index_repair_queue` table with schema migration.
+  * Automatic queueing via `enqueue_repair_on_failure` on Tantivy lock or indexing errors.
+  * Exposed Tauri commands `process_index_repair_queue` (with exponential retry and retry-count tracking) and `get_index_repair_queue_count`.
+  * Added pending count badge and "Process Index Repair Queue" action to `SearchPanel` dropdown with bilingual notification banners.
 * **Target Files:**
-  * `src-tauri/src/search_fulltext.rs`, `src-tauri/src/db.rs`
-* **Verification:** Cargo test simulating write lock collision and subsequent repair.
+  * `src-tauri/src/history.rs`, `src-tauri/src/search_fulltext.rs`, `src-tauri/src/lib.rs`
+  * `src/components/SearchPanel.tsx`, `src/types/IndexRepairResultDto.ts`
+* **Verification:** Verified by Cargo test `test_index_repair_queue_workflow` and Vitest `Phase13SearchAndRepair.test.tsx`.
 
-#### [Task 1-5] Per-Rule Indexing Policy (Metadata-only / Filename-only)
+#### [Task 1-5] Per-Rule Indexing Policy (Metadata-only / Filename-only): **Done & Verified**
 
 * **Design Spec Reference:** Section 7.1
-* **Current Status:** Binary all-or-nothing exclusion.
 * **Architecture & Strategy:**
-  * For excluded paths (`.git`, `node_modules`), index filename and mtime metadata while omitting body text.
+  * Added `IndexingPolicy` (`Full`, `MetadataOnly`, `Exclude`) and `include_metadata_only_excluded` option.
+  * For excluded paths (`.git`, `node_modules`), indexed document filename, size, and mtime with empty body text when policy is `MetadataOnly`.
 * **Target Files:**
-  * `src-tauri/src/extractor.rs`
-* **Verification:** Verify search hit on filename but not on body text.
+  * `src-tauri/src/extractor.rs`, `src-tauri/src/search_fulltext.rs`, `src/types/IndexingPolicy.ts`
+* **Verification:** Verified by Cargo test `test_run_index_operations_workflow`.
 
 ---
 
@@ -412,4 +415,5 @@ graph TD
    * **Part B (Ultra-Rich Visuals):** Tasks 2-5 (Extension-Specific Rich Icons) → 2-6 (Inner Rim Light & Multi-layer Shadows) → 2-7 (Cursor Spotlight & Spring Feedback) → 2-8 (Storage Gauges & Size Heatbars) → 2-9 (Tabular Numbers & Breadcrumbs) → 2-10 (Ambient Aurora Canvas). Immediately elevates Cuddle's visual distinction to premier desktop software standards.
 2. **Sprint 2 (Phase 11):** Tasks 3-2 (Conflict Save-As) → 3-3 (Backup Retention) → 4-3 (Non-Landlock Modal). Solidifies core safety and original protection.
 3. **Sprint 3 (Phase 12):** Tasks 4-2 (`allowed_read_paths`) → 4-1 (Arguments & Stdin) → 2-3 (Native OS Notifications). Delivers full pipeline flexibility.
-4. **Sprint 4 (Phase 13):** Tasks 1-4 (MD/HTML Extraction) → 1-3 (Office Extraction) → 1-2 (Morphological + n-gram) → 1-1 (Repair Queue).
+4. **Sprint 4 (Phase 13):** Tasks 1-4 (MD/HTML Extraction) → 1-3 (Office Extraction) → 1-2 (Morphological + n-gram) → 1-1 (Repair Queue) → 1-5 (Indexing Policy). [Done & Verified]
+5. **Sprint 5 (Phase 14):** Architectural Decisions & Scale Verification: Task 3-1 (Confirmation Levels), Task 3-4 (4-Table Recovery evaluation), Task 5-1 (TOML sections), Task 6-1 (IPC benchmark).

@@ -2,9 +2,10 @@ use crate::models::{decode_path_from_base64, FileItem};
 use crate::sandbox::LandlockSandbox;
 use crate::scanner::{self, ScanOptions};
 use crate::search_fulltext;
+use flate2::read::DeflateDecoder;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -99,6 +100,9 @@ pub struct RunIndexOptions {
     pub max_depth: Option<usize>,
     /// Whether to include hidden files (default: false)
     pub include_hidden: bool,
+    /// Whether excluded directory contents (like .git, node_modules) should be indexed as metadata-only (empty body) (Task 1-5)
+    #[serde(default)]
+    pub include_metadata_only_excluded: Option<bool>,
 }
 
 /// Structured summary returned after an index operation.
@@ -205,6 +209,435 @@ pub fn is_tier2_pdf_extension(ext: &str) -> bool {
     ext.eq_ignore_ascii_case("pdf")
 }
 
+/// Checks whether a given path is an Office OpenXML document (.docx, .xlsx) for Tier 3 extraction.
+pub fn is_tier3_office_extension(ext: &str) -> bool {
+    ext.eq_ignore_ascii_case("docx") || ext.eq_ignore_ascii_case("xlsx")
+}
+
+/// Checks whether an extension is Markdown.
+pub fn is_tier1_markdown_extension(ext: &str) -> bool {
+    ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown")
+}
+
+/// Checks whether an extension is HTML.
+pub fn is_tier1_html_extension(ext: &str) -> bool {
+    ext.eq_ignore_ascii_case("html")
+        || ext.eq_ignore_ascii_case("htm")
+        || ext.eq_ignore_ascii_case("xhtml")
+}
+
+/// Policy governing how a path should be indexed into the search engine (Task 1-5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/types/")]
+pub enum IndexingPolicy {
+    /// Full extraction and indexing of both metadata and body text
+    Full,
+    /// Store filename, path, mtime and size in index, but keep body empty (for heavy directories like node_modules, .git)
+    MetadataOnly,
+    /// Skip indexing entirely
+    Exclude,
+}
+
+/// Resolves the indexing policy for a given path based on exclusion lists and crawl options.
+pub fn get_path_indexing_policy(path: &Path, include_metadata_only: bool) -> IndexingPolicy {
+    if is_index_excluded_path(path) {
+        if include_metadata_only {
+            IndexingPolicy::MetadataOnly
+        } else {
+            IndexingPolicy::Exclude
+        }
+    } else {
+        IndexingPolicy::Full
+    }
+}
+
+/// Extracts clean human-readable prose text from Markdown, stripping decorative syntax (Task 1-4).
+pub fn extract_markdown_text(markdown_input: &str) -> String {
+    use pulldown_cmark::{Event, Parser, TagEnd};
+
+    let parser = Parser::new(markdown_input);
+    let mut out = String::with_capacity(markdown_input.len());
+    let mut needs_space = false;
+
+    for event in parser {
+        match event {
+            Event::Text(text) => {
+                if needs_space && !out.ends_with(' ') && !out.ends_with('\n') {
+                    out.push(' ');
+                }
+                out.push_str(&text);
+                needs_space = false;
+            }
+            Event::Code(code) => {
+                if needs_space && !out.ends_with(' ') && !out.ends_with('\n') {
+                    out.push(' ');
+                }
+                out.push_str(&code);
+                needs_space = true;
+            }
+            Event::End(TagEnd::Paragraph | TagEnd::Heading(_)) => {
+                if !out.ends_with('\n') {
+                    out.push('\n');
+                }
+                needs_space = false;
+            }
+            Event::End(TagEnd::Item) => {
+                if !out.ends_with('\n') {
+                    out.push('\n');
+                }
+                needs_space = false;
+            }
+            Event::SoftBreak | Event::HardBreak => {
+                if !out.ends_with('\n') {
+                    out.push('\n');
+                }
+                needs_space = false;
+            }
+            _ => {}
+        }
+    }
+    out.trim().to_string()
+}
+
+/// Extracts clean text from HTML, stripping scripts, styles, and tags, decoding common HTML entities (Task 1-4).
+pub fn extract_html_text(html_input: &str) -> String {
+    let re_blocks = regex::Regex::new(r"(?is)<script[^>]*>.*?</script>|<style[^>]*>.*?</style>|<noscript[^>]*>.*?</noscript>|<svg[^>]*>.*?</svg>").unwrap();
+    let stripped_blocks = re_blocks.replace_all(html_input, " ");
+
+    let re_tags = regex::Regex::new(r"<[^>]+>").unwrap();
+    let text_with_entities = re_tags.replace_all(&stripped_blocks, " ");
+
+    let decoded = text_with_entities
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'");
+
+    let re_whitespace = regex::Regex::new(r"[ \t]+").unwrap();
+    let single_spaced = re_whitespace.replace_all(&decoded, " ");
+    let re_lines = regex::Regex::new(r"\n\s*\n+").unwrap();
+    let normalized = re_lines.replace_all(&single_spaced, "\n");
+
+    normalized.trim().to_string()
+}
+
+/// Reads a specific uncompressed or deflated entry from a standard ZIP container (like DOCX / XLSX).
+/// Bounded by max_uncompressed_bytes to strictly prevent ZipBomb decompression attacks (Task 1-3).
+pub fn read_zip_file_entry(
+    path: &Path,
+    target_filename: &str,
+    max_uncompressed_bytes: usize,
+) -> Result<Option<Vec<u8>>, ExtractorError> {
+    let mut file = File::open(path)?;
+    let file_len = file.metadata()?.len();
+    if file_len < 22 {
+        return Ok(None);
+    }
+
+    let search_len = (file_len as usize).min(65535 + 22);
+    file.seek(SeekFrom::End(-(search_len as i64)))?;
+    let mut tail_buf = vec![0u8; search_len];
+    file.read_exact(&mut tail_buf)?;
+
+    let mut eocd_pos = None;
+    for i in (0..=search_len.saturating_sub(22)).rev() {
+        if tail_buf[i..].starts_with(b"PK") {
+            eocd_pos = Some(file_len - (search_len - i) as u64);
+            break;
+        }
+    }
+
+    if let Some(eocd_offset) = eocd_pos {
+        file.seek(SeekFrom::Start(eocd_offset))?;
+        let mut eocd_hdr = [0u8; 22];
+        file.read_exact(&mut eocd_hdr)?;
+
+        let total_entries = u16::from_le_bytes([eocd_hdr[10], eocd_hdr[11]]) as usize;
+        let cd_offset =
+            u32::from_le_bytes([eocd_hdr[16], eocd_hdr[17], eocd_hdr[18], eocd_hdr[19]]) as u64;
+
+        file.seek(SeekFrom::Start(cd_offset))?;
+        for _ in 0..total_entries {
+            let mut cd_hdr = [0u8; 46];
+            if file.read_exact(&mut cd_hdr).is_err() {
+                break;
+            }
+            if !cd_hdr.starts_with(b"PK") {
+                break;
+            }
+
+            let method = u16::from_le_bytes([cd_hdr[10], cd_hdr[11]]);
+            let comp_size =
+                u32::from_le_bytes([cd_hdr[20], cd_hdr[21], cd_hdr[22], cd_hdr[23]]) as usize;
+            let uncomp_size =
+                u32::from_le_bytes([cd_hdr[24], cd_hdr[25], cd_hdr[26], cd_hdr[27]]) as usize;
+            let fn_len = u16::from_le_bytes([cd_hdr[28], cd_hdr[29]]) as usize;
+            let extra_len = u16::from_le_bytes([cd_hdr[30], cd_hdr[31]]) as usize;
+            let comment_len = u16::from_le_bytes([cd_hdr[32], cd_hdr[33]]) as usize;
+            let local_offset =
+                u32::from_le_bytes([cd_hdr[42], cd_hdr[43], cd_hdr[44], cd_hdr[45]]) as u64;
+
+            let mut fn_buf = vec![0u8; fn_len];
+            file.read_exact(&mut fn_buf)?;
+            let current_name = String::from_utf8_lossy(&fn_buf);
+
+            file.seek(SeekFrom::Current((extra_len + comment_len) as i64))?;
+
+            if current_name == target_filename {
+                if uncomp_size > max_uncompressed_bytes {
+                    return Err(ExtractorError::ExecutionFailed(format!(
+                        "ZipBomb guard: file {} uncompressed size ({}) exceeds limit ({})",
+                        target_filename, uncomp_size, max_uncompressed_bytes
+                    )));
+                }
+
+                file.seek(SeekFrom::Start(local_offset))?;
+
+                let mut local_hdr = [0u8; 30];
+                file.read_exact(&mut local_hdr)?;
+                if !local_hdr.starts_with(b"PK") {
+                    return Err(ExtractorError::ExecutionFailed(
+                        "Invalid Local Header in ZIP".into(),
+                    ));
+                }
+                let loc_fn_len = u16::from_le_bytes([local_hdr[26], local_hdr[27]]) as i64;
+                let loc_extra_len = u16::from_le_bytes([local_hdr[28], local_hdr[29]]) as i64;
+                file.seek(SeekFrom::Current(loc_fn_len + loc_extra_len))?;
+
+                let mut comp_buf = vec![0u8; comp_size];
+                file.read_exact(&mut comp_buf)?;
+
+                let decompressed = match method {
+                    0 => comp_buf,
+                    8 => {
+                        let decoder = DeflateDecoder::new(&comp_buf[..]);
+                        let mut out = Vec::with_capacity(uncomp_size.min(max_uncompressed_bytes));
+                        decoder
+                            .take(max_uncompressed_bytes as u64)
+                            .read_to_end(&mut out)?;
+                        out
+                    }
+                    m => {
+                        return Err(ExtractorError::ExecutionFailed(format!(
+                            "Unsupported ZIP compression method: {}",
+                            m
+                        )))
+                    }
+                };
+
+                return Ok(Some(decompressed));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+fn parse_docx_xml(xml_bytes: &[u8]) -> Result<String, quick_xml::Error> {
+    use quick_xml::events::Event;
+    use quick_xml::reader::Reader;
+
+    let mut reader = Reader::from_reader(xml_bytes);
+    reader.config_mut().trim_text(true);
+
+    let mut out = String::new();
+    let mut in_text = false;
+
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(e)) => {
+                let name = e.name();
+                if name.as_ref() == b"w:t" {
+                    in_text = true;
+                }
+            }
+            Ok(Event::End(e)) => {
+                let name = e.name();
+                if name.as_ref() == b"w:t" {
+                    in_text = false;
+                } else if name.as_ref() == b"w:p" {
+                    if !out.ends_with('\n') {
+                        out.push('\n');
+                    }
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                let name = e.name();
+                if name.as_ref() == b"w:tab" {
+                    out.push('\t');
+                } else if name.as_ref() == b"w:br" {
+                    out.push('\n');
+                }
+            }
+            Ok(Event::Text(e)) => {
+                if in_text {
+                    let raw_str = std::str::from_utf8(e.as_ref()).unwrap_or_default();
+                    if let Ok(text) = quick_xml::escape::unescape(raw_str) {
+                        out.push_str(&text);
+                    } else {
+                        out.push_str(raw_str);
+                    }
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => return Err(e),
+            _ => {}
+        }
+    }
+
+    Ok(out.trim().to_string())
+}
+
+fn parse_xlsx_shared_strings(xml_bytes: &[u8]) -> Result<String, quick_xml::Error> {
+    use quick_xml::events::Event;
+    use quick_xml::reader::Reader;
+
+    let mut reader = Reader::from_reader(xml_bytes);
+    reader.config_mut().trim_text(true);
+
+    let mut out = String::new();
+    let mut in_text = false;
+
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(e)) => {
+                let name = e.name();
+                if name.as_ref() == b"t" {
+                    in_text = true;
+                }
+            }
+            Ok(Event::End(e)) => {
+                let name = e.name();
+                if name.as_ref() == b"t" {
+                    in_text = false;
+                    out.push(' ');
+                } else if name.as_ref() == b"si" {
+                    if !out.ends_with('\n') {
+                        out.push('\n');
+                    }
+                }
+            }
+            Ok(Event::Text(e)) => {
+                if in_text {
+                    let raw_str = std::str::from_utf8(e.as_ref()).unwrap_or_default();
+                    if let Ok(text) = quick_xml::escape::unescape(raw_str) {
+                        out.push_str(&text);
+                    } else {
+                        out.push_str(raw_str);
+                    }
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => return Err(e),
+            _ => {}
+        }
+    }
+
+    Ok(out.trim().to_string())
+}
+
+fn extract_tier3_office(
+    path: &Path,
+    item: &FileItem,
+    options: &ExtractTextOptions,
+) -> Result<ExtractedTextDto, ExtractorError> {
+    let max_chars = options.max_chars.unwrap_or(DEFAULT_MAX_CHARS);
+    let max_bytes = options.max_bytes.unwrap_or(DEFAULT_MAX_BYTES);
+
+    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+    let is_docx = ext.eq_ignore_ascii_case("docx");
+    let is_xlsx = ext.eq_ignore_ascii_case("xlsx");
+
+    let target_entry = if is_docx {
+        "word/document.xml"
+    } else if is_xlsx {
+        "xl/sharedStrings.xml"
+    } else {
+        return Ok(ExtractedTextDto {
+            item_id: item.item_id.clone(),
+            raw_base64: item.raw_base64.clone(),
+            display_name: item.display_name.clone(),
+            text: String::new(),
+            extracted_chars: 0,
+            tier_used: "skipped_binary".to_string(),
+            encoding_used: "N/A".to_string(),
+            truncated: false,
+            warning: Some(format!("Unsupported office format .{}", ext)),
+        });
+    };
+
+    match read_zip_file_entry(path, target_entry, max_bytes) {
+        Ok(Some(xml_bytes)) => {
+            let parsed_text_res = if is_docx {
+                parse_docx_xml(&xml_bytes)
+            } else {
+                parse_xlsx_shared_strings(&xml_bytes)
+            };
+
+            match parsed_text_res {
+                Ok(mut text) => {
+                    let mut truncated = false;
+                    if text.chars().count() > max_chars {
+                        text = text.chars().take(max_chars).collect();
+                        truncated = true;
+                    }
+                    let extracted_chars = text.chars().count();
+                    Ok(ExtractedTextDto {
+                        item_id: item.item_id.clone(),
+                        raw_base64: item.raw_base64.clone(),
+                        display_name: item.display_name.clone(),
+                        text,
+                        extracted_chars,
+                        tier_used: "tier3_office".to_string(),
+                        encoding_used: "UTF-8".to_string(),
+                        truncated,
+                        warning: None,
+                    })
+                }
+                Err(err) => Ok(ExtractedTextDto {
+                    item_id: item.item_id.clone(),
+                    raw_base64: item.raw_base64.clone(),
+                    display_name: item.display_name.clone(),
+                    text: String::new(),
+                    extracted_chars: 0,
+                    tier_used: "tier3_office".to_string(),
+                    encoding_used: "N/A".to_string(),
+                    truncated: false,
+                    warning: Some(format!("XML parsing failed for {}: {}", target_entry, err)),
+                }),
+            }
+        }
+        Ok(None) => Ok(ExtractedTextDto {
+            item_id: item.item_id.clone(),
+            raw_base64: item.raw_base64.clone(),
+            display_name: item.display_name.clone(),
+            text: String::new(),
+            extracted_chars: 0,
+            tier_used: "tier3_office".to_string(),
+            encoding_used: "N/A".to_string(),
+            truncated: false,
+            warning: Some(format!(
+                "Target entry {} not found in archive",
+                target_entry
+            )),
+        }),
+        Err(err) => Ok(ExtractedTextDto {
+            item_id: item.item_id.clone(),
+            raw_base64: item.raw_base64.clone(),
+            display_name: item.display_name.clone(),
+            text: String::new(),
+            extracted_chars: 0,
+            tier_used: "tier3_office".to_string(),
+            encoding_used: "N/A".to_string(),
+            truncated: false,
+            warning: Some(format!("Failed to read Office archive: {}", err)),
+        }),
+    }
+}
+
 /// Checks whether a file is likely binary by scanning the first buffer for NULL bytes.
 pub fn is_binary_buffer(buffer: &[u8]) -> bool {
     // If there is a null byte (\0) in the first 8 KB, treat as binary
@@ -275,6 +708,13 @@ fn extract_tier1_direct(
     }
 
     let (mut decoded_text, encoding_used) = decode_text_bytes(&buffer);
+
+    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+    if is_tier1_markdown_extension(ext) {
+        decoded_text = extract_markdown_text(&decoded_text);
+    } else if is_tier1_html_extension(ext) {
+        decoded_text = extract_html_text(&decoded_text);
+    }
 
     if decoded_text.chars().count() > max_chars {
         decoded_text = decoded_text.chars().take(max_chars).collect();
@@ -449,6 +889,8 @@ pub fn extract_file_text(
 
     if is_tier2_pdf_extension(ext) {
         extract_tier2_pdf(path, &item, &opts)
+    } else if is_tier3_office_extension(ext) {
+        extract_tier3_office(path, &item, &opts)
     } else if is_tier1_text_extension(ext) || ext.is_empty() {
         extract_tier1_direct(path, &item, &opts)
     } else {
@@ -553,14 +995,54 @@ pub fn run_index_operation(
             }
         };
 
-        if is_index_excluded_path(&item_path) {
+        let policy = get_path_indexing_policy(
+            &item_path,
+            options.include_metadata_only_excluded.unwrap_or(false),
+        );
+
+        if policy == IndexingPolicy::Exclude {
             skipped_count += 1;
             continue;
         }
 
         let ext = item_path.extension().and_then(|s| s.to_str()).unwrap_or("");
-        if !is_tier1_text_extension(ext) && !is_tier2_pdf_extension(ext) && !ext.is_empty() {
+        if !is_tier1_text_extension(ext)
+            && !is_tier2_pdf_extension(ext)
+            && !is_tier3_office_extension(ext)
+            && !ext.is_empty()
+        {
             skipped_count += 1;
+            continue;
+        }
+
+        let existing_mtime = engine.get_indexed_mtime(&item.raw_base64);
+
+        if options.mode == IndexOperationMode::IncrementalUpdate {
+            if let Some(mtime) = existing_mtime {
+                if mtime == item.mtime_ms {
+                    unchanged_count += 1;
+                    continue;
+                }
+            }
+        }
+
+        if policy == IndexingPolicy::MetadataOnly {
+            if let Err(e) = engine.index_document(item, "") {
+                eprintln!(
+                    "[Cuddle Indexer] Failed to index metadata-only document {:?}: {}",
+                    item_path, e
+                );
+                search_fulltext::enqueue_repair_on_failure(
+                    &item.raw_base64,
+                    "index",
+                    &e.to_string(),
+                );
+                failed_count += 1;
+            } else if existing_mtime.is_some() {
+                updated_count += 1;
+            } else {
+                indexed_count += 1;
+            }
             continue;
         }
 
@@ -605,6 +1087,8 @@ pub fn run_index_operation(
 
     engine.commit()?;
 
+    let _ = search_fulltext::process_index_repair_queue();
+
     let elapsed_ms = start_time.elapsed().as_millis() as u64;
     let total_documents = engine.get_total_documents();
     let message = format!(
@@ -635,7 +1119,7 @@ mod tests {
     fn test_tier1_utf8_text_extraction() {
         let temp_dir = std::env::temp_dir().join(format!("cuddle-test-{}", Uuid::new_v4()));
         fs::create_dir_all(&temp_dir).unwrap();
-        let file_path = temp_dir.join("sample.md");
+        let file_path = temp_dir.join("sample.txt");
 
         let sample_content = "# Cuddle ドキュメント\n原本保護型ファイルワークベンチ";
         fs::write(&file_path, sample_content).unwrap();
@@ -801,6 +1285,7 @@ mod tests {
             mode: IndexOperationMode::IndexDirectory,
             max_depth: None,
             include_hidden: false,
+            include_metadata_only_excluded: None,
         })
         .unwrap();
         assert_eq!(res_initial.indexed_count, 2);
@@ -812,6 +1297,7 @@ mod tests {
             mode: IndexOperationMode::IncrementalUpdate,
             max_depth: None,
             include_hidden: false,
+            include_metadata_only_excluded: None,
         })
         .unwrap();
         assert_eq!(res_inc1.indexed_count, 0);
@@ -825,6 +1311,7 @@ mod tests {
             mode: IndexOperationMode::IncrementalUpdate,
             max_depth: None,
             include_hidden: false,
+            include_metadata_only_excluded: None,
         })
         .unwrap();
         assert_eq!(res_inc2.updated_count, 1);
@@ -844,6 +1331,7 @@ mod tests {
             mode: IndexOperationMode::ResetClear,
             max_depth: None,
             include_hidden: false,
+            include_metadata_only_excluded: None,
         })
         .unwrap();
         assert_eq!(res_clear.total_documents, 0);
@@ -889,6 +1377,7 @@ mod tests {
             mode: IndexOperationMode::IndexDirectory,
             max_depth: None,
             include_hidden: true,
+            include_metadata_only_excluded: None,
         })
         .unwrap();
 
@@ -915,6 +1404,165 @@ mod tests {
     }
 
     #[test]
+    fn test_markdown_and_html_prose_extraction() {
+        let md = "# Cuddle タイトル\n\n本日は**快晴**です。\n\n```rust\nfn main() {}\n```\n\n* アイテム1\n* アイテム2";
+        let md_clean = extract_markdown_text(md);
+        assert!(md_clean.contains("Cuddle タイトル"));
+        assert!(md_clean.contains("本日は快晴です"));
+        assert!(md_clean.contains("fn main()"));
+        assert!(!md_clean.contains("**快晴**"));
+        assert!(!md_clean.starts_with('#'));
+
+        let html = r#"
+            <!DOCTYPE html>
+            <html>
+                <head>
+                    <title>Test Page</title>
+                    <style>body { color: red; }</style>
+                    <script>alert("ignore me");</script>
+                </head>
+                <body>
+                    <h1>見出し &amp; タイトル</h1>
+                    <p>これは&nbsp;HTML&lt;本文&gt;のテストです。</p>
+                </body>
+            </html>
+        "#;
+        let html_clean = extract_html_text(html);
+        assert!(html_clean.contains("見出し & タイトル"));
+        assert!(html_clean.contains("HTML<本文>のテストです"));
+        assert!(!html_clean.contains("alert"));
+        assert!(!html_clean.contains("color: red"));
+        assert!(!html_clean.contains("<p>"));
+    }
+
+    #[test]
+    fn test_tier3_office_docx_extraction() {
+        let temp_dir = std::env::temp_dir().join(format!("cuddle-office-{}", Uuid::new_v4()));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let docx_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:body>
+                    <w:p><w:r><w:t>Cuddle Office Document Test</w:t></w:r></w:p>
+                    <w:p><w:r><w:t>原本保護型ファイルワークベンチのWord抽出です。</w:t></w:r></w:p>
+                </w:body>
+            </w:document>"#
+            .as_bytes();
+
+        let docx_bytes = create_test_zip_stored("word/document.xml", docx_xml);
+        let docx_path = temp_dir.join("sample.docx");
+        fs::write(&docx_path, docx_bytes).unwrap();
+
+        let extracted = extract_file_text(&docx_path, None).unwrap();
+        assert_eq!(extracted.tier_used, "tier3_office");
+        assert!(extracted.text.contains("Cuddle Office Document Test"));
+        assert!(extracted.text.contains("Word抽出です"));
+        assert!(extracted.warning.is_none());
+
+        let corrupted_path = temp_dir.join("corrupted.docx");
+        fs::write(&corrupted_path, b"not a zip file content").unwrap();
+        let extracted_corrupt = extract_file_text(&corrupted_path, None).unwrap();
+        assert_eq!(extracted_corrupt.tier_used, "tier3_office");
+        assert!(extracted_corrupt.text.is_empty());
+        assert!(extracted_corrupt.warning.is_some());
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_metadata_only_indexing_for_excluded_directories() {
+        let temp_dir = std::env::temp_dir().join(format!("cuddle-meta-only-{}", Uuid::new_v4()));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let node_modules_dir = temp_dir.join("node_modules").join("heavy-lib");
+        fs::create_dir_all(&node_modules_dir).unwrap();
+        let package_json = node_modules_dir.join("package.json");
+        fs::write(
+            &package_json,
+            r#"{"name": "heavy-lib", "secret": "shh-heavy-body-token"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            get_path_indexing_policy(&package_json, true),
+            IndexingPolicy::MetadataOnly
+        );
+        assert_eq!(
+            get_path_indexing_policy(&package_json, false),
+            IndexingPolicy::Exclude
+        );
+
+        let engine = search_fulltext::CuddleFulltextEngine::new_in_ram().unwrap();
+        let item = FileItem::from_path(&package_json).unwrap();
+        engine.index_document(&item, "").unwrap();
+        engine.commit().unwrap();
+
+        let search_opts = search_fulltext::FulltextSearchOptions::default();
+        let hits_name = engine.search("package.json", &search_opts).unwrap();
+        assert_eq!(hits_name.len(), 1);
+        assert_eq!(hits_name[0].display_name, "package.json");
+
+        let hits_secret = engine.search("shh-heavy-body-token", &search_opts).unwrap();
+        assert!(hits_secret.is_empty());
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    fn create_test_zip_stored(filename: &str, content: &[u8]) -> Vec<u8> {
+        let mut zip = Vec::new();
+        let fn_bytes = filename.as_bytes();
+        let fn_len = fn_bytes.len() as u16;
+        let content_len = content.len() as u32;
+        let local_offset = 0u32;
+
+        zip.extend_from_slice(b"PK\x03\x04");
+        zip.extend_from_slice(&[20, 0]);
+        zip.extend_from_slice(&[0, 0]);
+        zip.extend_from_slice(&[0, 0]);
+        zip.extend_from_slice(&[0, 0, 0, 0]);
+        zip.extend_from_slice(&[0, 0, 0, 0]);
+        zip.extend_from_slice(&content_len.to_le_bytes());
+        zip.extend_from_slice(&content_len.to_le_bytes());
+        zip.extend_from_slice(&fn_len.to_le_bytes());
+        zip.extend_from_slice(&[0, 0]);
+        zip.extend_from_slice(fn_bytes);
+        zip.extend_from_slice(content);
+
+        let cd_offset = zip.len() as u32;
+
+        zip.extend_from_slice(b"PK\x01\x02");
+        zip.extend_from_slice(&[20, 0]);
+        zip.extend_from_slice(&[20, 0]);
+        zip.extend_from_slice(&[0, 0]);
+        zip.extend_from_slice(&[0, 0]);
+        zip.extend_from_slice(&[0, 0, 0, 0]);
+        zip.extend_from_slice(&[0, 0, 0, 0]);
+        zip.extend_from_slice(&content_len.to_le_bytes());
+        zip.extend_from_slice(&content_len.to_le_bytes());
+        zip.extend_from_slice(&fn_len.to_le_bytes());
+        zip.extend_from_slice(&[0, 0]);
+        zip.extend_from_slice(&[0, 0]);
+        zip.extend_from_slice(&[0, 0]);
+        zip.extend_from_slice(&[0, 0]);
+        zip.extend_from_slice(&[0, 0, 0, 0]);
+        zip.extend_from_slice(&local_offset.to_le_bytes());
+        zip.extend_from_slice(fn_bytes);
+
+        let cd_size = (zip.len() as u32) - cd_offset;
+
+        zip.extend_from_slice(b"PK\x05\x06");
+        zip.extend_from_slice(&[0, 0]);
+        zip.extend_from_slice(&[0, 0]);
+        zip.extend_from_slice(&[1, 0]);
+        zip.extend_from_slice(&[1, 0]);
+        zip.extend_from_slice(&cd_size.to_le_bytes());
+        zip.extend_from_slice(&cd_offset.to_le_bytes());
+        zip.extend_from_slice(&[0, 0]);
+
+        zip
+    }
+
+    #[test]
     fn test_export_typescript_bindings_extractor() {
         let _ = fs::create_dir_all("../src/types");
         let cfg = ts_rs::Config::default();
@@ -927,5 +1575,6 @@ mod tests {
         RunIndexOptions::export(&cfg).expect("Failed to export RunIndexOptions TypeScript binding");
         IndexOperationResultDto::export(&cfg)
             .expect("Failed to export IndexOperationResultDto TypeScript binding");
+        IndexingPolicy::export(&cfg).expect("Failed to export IndexingPolicy TypeScript binding");
     }
 }

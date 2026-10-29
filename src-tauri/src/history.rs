@@ -39,6 +39,28 @@ pub struct NewHistoryEntry {
     pub details: Option<String>,
 }
 
+/// Index repair queue entry (Task 1-1)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "../../src/types/")]
+pub struct IndexRepairQueueItem {
+    pub id: i64,
+    pub path_base64: String,
+    pub action: String,
+    pub retry_count: u32,
+    pub last_error: Option<String>,
+    pub created_at_ms: i64,
+}
+
+/// Result of executing index repair queue (Task 1-1)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "../../src/types/")]
+pub struct IndexRepairResultDto {
+    pub processed_count: usize,
+    pub succeeded_count: usize,
+    pub failed_count: usize,
+    pub remaining_count: usize,
+}
+
 pub struct HistoryManager {
     conn: Mutex<Connection>,
     max_history_limit: usize,
@@ -137,7 +159,18 @@ impl HistoryManager {
                 orig_size INTEGER NOT NULL,
                 mtime_ms INTEGER NOT NULL,
                 sha256 TEXT NOT NULL
-            );",
+            );
+
+            CREATE TABLE IF NOT EXISTS index_repair_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                path_base64 TEXT NOT NULL,
+                action TEXT NOT NULL,
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT,
+                created_at_ms INTEGER NOT NULL,
+                UNIQUE(path_base64, action)
+            );
+            CREATE INDEX IF NOT EXISTS idx_repair_queue_created ON index_repair_queue(created_at_ms);",
         )
         .map_err(|e| format!("Failed to initialize SQLite schemas: {}", e))?;
 
@@ -445,6 +478,103 @@ impl HistoryManager {
 
         Ok(list)
     }
+
+    /// Enqueues a failed or pending indexing action to the repair queue (Task 1-1).
+    pub fn enqueue_index_repair(
+        &self,
+        path_base64: &str,
+        action: &str,
+        error: &str,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        let now_ms = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+
+        conn.execute(
+            "INSERT INTO index_repair_queue (path_base64, action, retry_count, last_error, created_at_ms)
+             VALUES (?1, ?2, 0, ?3, ?4)
+             ON CONFLICT(path_base64, action) DO UPDATE SET
+                 last_error = excluded.last_error,
+                 retry_count = index_repair_queue.retry_count + 1,
+                 created_at_ms = excluded.created_at_ms;",
+            params![path_base64, action, error, now_ms],
+        )
+        .map_err(|e| format!("Failed to enqueue index repair: {}", e))?;
+
+        Ok(())
+    }
+
+    /// Returns the total number of items waiting in the index repair queue (Task 1-1).
+    pub fn get_index_repair_queue_count(&self) -> Result<usize, String> {
+        let conn = self.conn.lock().unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM index_repair_queue;", [], |row| {
+                row.get(0)
+            })
+            .map_err(|e| format!("Failed to count repair queue: {}", e))?;
+        Ok(count as usize)
+    }
+
+    /// Lists pending repair items up to the specified limit (Task 1-1).
+    pub fn list_pending_repairs(
+        &self,
+        max_items: usize,
+    ) -> Result<Vec<IndexRepairQueueItem>, String> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, path_base64, action, retry_count, last_error, created_at_ms
+                 FROM index_repair_queue
+                 WHERE retry_count < 5
+                 ORDER BY created_at_ms ASC
+                 LIMIT ?1;",
+            )
+            .map_err(|e| format!("Failed to prepare list_pending_repairs: {}", e))?;
+
+        let rows = stmt
+            .query_map(params![max_items as i64], |row| {
+                Ok(IndexRepairQueueItem {
+                    id: row.get(0)?,
+                    path_base64: row.get(1)?,
+                    action: row.get(2)?,
+                    retry_count: row.get(3)?,
+                    last_error: row.get(4)?,
+                    created_at_ms: row.get(5)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query repair items: {}", e))?;
+
+        let mut items = Vec::new();
+        for r in rows {
+            if let Ok(item) = r {
+                items.push(item);
+            }
+        }
+        Ok(items)
+    }
+
+    /// Deletes a successfully processed repair item from the queue (Task 1-1).
+    pub fn delete_repair_item(&self, id: i64) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM index_repair_queue WHERE id = ?1;", params![id])
+            .map_err(|e| format!("Failed to delete repair item {}: {}", id, e))?;
+        Ok(())
+    }
+
+    /// Increments retry count and records the latest error for a failed repair attempt (Task 1-1).
+    pub fn increment_repair_retry(&self, id: i64, err: &str) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE index_repair_queue
+             SET retry_count = retry_count + 1, last_error = ?2
+             WHERE id = ?1;",
+            params![id, err],
+        )
+        .map_err(|e| format!("Failed to increment repair retry for {}: {}", id, e))?;
+        Ok(())
+    }
 }
 
 pub fn get_history_manager() -> &'static HistoryManager {
@@ -583,5 +713,7 @@ mod tests {
         let _ = std::fs::create_dir_all("../src/types");
         let cfg = ts_rs::Config::default();
         OperationHistoryDto::export(&cfg).expect("Failed to export OperationHistoryDto");
+        IndexRepairQueueItem::export(&cfg).expect("Failed to export IndexRepairQueueItem");
+        IndexRepairResultDto::export(&cfg).expect("Failed to export IndexRepairResultDto");
     }
 }

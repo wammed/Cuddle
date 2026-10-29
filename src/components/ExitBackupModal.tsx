@@ -1,8 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
-import { Archive, X, Trash2, AlertTriangle, RefreshCw, FolderArchive } from "lucide-react";
+import { Archive, X, Trash2, AlertTriangle, RefreshCw, FolderArchive, Layers } from "lucide-react";
 import type { BackupResultDto } from "../types/BackupResultDto";
+import type { BackupArchiveInfoDto } from "../types/BackupArchiveInfoDto";
+import type { AppConfig } from "../types/AppConfig";
+import { formatBytes, formatTimestamp } from "../utils/format";
 
 interface ExitBackupModalProps {
   isOpen: boolean;
@@ -24,10 +27,33 @@ export function ExitBackupModal({
   const [defaultPath, setDefaultPath] = useState<string>("");
   const [isArchiving, setIsArchiving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [existingBackups, setExistingBackups] = useState<BackupArchiveInfoDto[]>([]);
+  const [autoPrune, setAutoPrune] = useState(true);
+  const [retentionLimit, setRetentionLimit] = useState(5);
+  const [showArchiveList, setShowArchiveList] = useState(false);
+  const [deletingName, setDeletingName] = useState<string | null>(null);
+
+  const loadExistingBackups = useCallback(async () => {
+    try {
+      const list = await invoke<BackupArchiveInfoDto[]>("list_workspace_backups");
+      setExistingBackups(Array.isArray(list) ? list : []);
+    } catch (err) {
+      console.error("Failed to list backups:", err);
+      setExistingBackups([]);
+    }
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
       setError(null);
+      loadExistingBackups();
+      invoke<AppConfig>("get_app_config")
+        .then((cfg) => {
+          if (cfg?.workspace?.backup_retention_count) {
+            setRetentionLimit(cfg.workspace.backup_retention_count);
+          }
+        })
+        .catch(() => {});
       invoke<string>("get_default_backup_path")
         .then((path) => {
           setDefaultPath(path);
@@ -38,7 +64,7 @@ export function ExitBackupModal({
           setDefaultPath("");
         });
     }
-  }, [isOpen]);
+  }, [isOpen, loadExistingBackups]);
 
   if (!isOpen) return null;
 
@@ -48,6 +74,7 @@ export function ExitBackupModal({
       setError(null);
       const res = await invoke<BackupResultDto>("create_workspace_backup", {
         destinationPath: destPath.trim() ? destPath.trim() : null,
+        autoPruneLimit: autoPrune ? retentionLimit : 999,
       });
       onBackupSuccess(res);
       onClose();
@@ -56,6 +83,20 @@ export function ExitBackupModal({
       setError(typeof err === "string" ? err : String(err));
     } finally {
       setIsArchiving(false);
+    }
+  };
+
+  const handleDeleteBackup = async (filename: string) => {
+    if (!window.confirm(t("backup.delete_confirm", { name: filename }))) return;
+    try {
+      setDeletingName(filename);
+      await invoke("delete_workspace_backup", { filename });
+      await loadExistingBackups();
+    } catch (err) {
+      console.error("Failed to delete backup:", err);
+      setError(typeof err === "string" ? err : String(err));
+    } finally {
+      setDeletingName(null);
     }
   };
 
@@ -121,6 +162,67 @@ export function ExitBackupModal({
               />
             </div>
             <p className="dest-hint-text text-muted">{t("backup.dest_hint")}</p>
+          </div>
+
+          {/* Retention & Archive Management Card (Phase 11 / Task 3-3) */}
+          <div className="backup-retention-card p-3 rounded bg-black/40 border border-white/10 mb-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                <Layers size={13} className="text-teal-400" />
+                {t("backup.retention_label")} ({(existingBackups?.length ?? 0)} / {retentionLimit})
+              </span>
+              <button
+                type="button"
+                className="text-xs text-teal-400 hover:text-teal-300 underline"
+                onClick={() => setShowArchiveList(!showArchiveList)}
+              >
+                {showArchiveList ? t("common.close") : `${t("backup.archive_list_title")} (${(existingBackups?.length ?? 0)})`}
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400 mb-2">
+              {t("backup.retention_desc", { count: retentionLimit })}
+            </p>
+            <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={autoPrune}
+                onChange={(e) => setAutoPrune(e.target.checked)}
+                className="rounded accent-teal-500"
+              />
+              <span>{t("backup.auto_prune_checkbox")}</span>
+            </label>
+
+            {showArchiveList && (
+              <div className="existing-backups-list mt-3 pt-2 border-t border-white/10 max-h-36 overflow-y-auto space-y-1.5">
+                {existingBackups.length === 0 ? (
+                  <p className="text-xs text-slate-500 py-1">{t("backup.no_archives")}</p>
+                ) : (
+                  existingBackups.map((bkp) => (
+                    <div
+                      key={bkp.filename}
+                      className="flex items-center justify-between text-xs p-1.5 rounded bg-black/30 border border-white/5"
+                    >
+                      <div className="flex flex-col min-w-0 mr-2">
+                        <span className="font-mono text-slate-200 truncate">{bkp.filename}</span>
+                        <span className="text-[10px] text-slate-400">
+                          {formatTimestamp(Number(bkp.created_at_ms))} • {formatBytes(Number(bkp.size_bytes))}
+                          {bkp.file_count != null ? ` • ${t("backup.files_count", { count: bkp.file_count })}` : ""}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="text-rose-400 hover:text-rose-300 p-1 shrink-0"
+                        title={t("backup.delete_archive_btn")}
+                        onClick={() => handleDeleteBackup(bkp.filename)}
+                        disabled={deletingName === bkp.filename}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
 
           {error && (

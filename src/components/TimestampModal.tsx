@@ -185,9 +185,9 @@ export const TimestampModal: React.FC<TimestampModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-backdrop" onClick={onClose}>
       <div
-        className="modal-container timestamp-modal-dialog"
+        className="timestamp-modal-dialog"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

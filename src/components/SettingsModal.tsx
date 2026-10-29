@@ -7,6 +7,7 @@ import {
   Globe,
   HardDrive,
   ShieldCheck,
+  ShieldAlert,
   Keyboard,
   Check,
   FileCode,
@@ -16,11 +17,12 @@ import {
   Copy,
   CheckCircle2,
   Terminal,
-  ShieldAlert,
   Sparkles,
   Edit2,
   Type,
   RotateCcw,
+  Layers,
+  Save,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { THEME_PRESETS, applyTheme, getSavedThemeId } from "../utils/themePresets";
@@ -28,6 +30,8 @@ import type { ThemeCategory, ThemePreset } from "../types/ThemePreset";
 import type { Density } from "../types/Density";
 import type { AppConfig } from "../types/AppConfig";
 import type { CustomPipelineDefDto } from "../types/CustomPipelineDefDto";
+import type { BackupArchiveInfoDto } from "../types/BackupArchiveInfoDto";
+import { formatBytes, formatTimestamp } from "../utils/format";
 import { applyDensity, getSavedDensity } from "../utils/density";
 import {
   TypographySettings,
@@ -105,6 +109,7 @@ interface SettingsModalProps {
   configPath?: string;
   density?: Density;
   onDensityChange?: (density: Density) => void;
+  onOpenSecurityWarningTest?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -117,6 +122,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   configPath = "~/.config/Cuddle/config.toml",
   density,
   onDensityChange,
+  onOpenSecurityWarningTest,
 }) => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<"appearance" | "general" | "workspace" | "pipelines" | "shortcuts">("appearance");
@@ -132,6 +138,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  // Backup Retention State (Phase 11 / Task 3-3)
+  const [retentionCount, setRetentionCount] = useState<number>(5);
+  const [existingBackups, setExistingBackups] = useState<BackupArchiveInfoDto[]>([]);
+  const [retentionSaved, setRetentionSaved] = useState<boolean>(false);
+
+  const loadBackups = async () => {
+    try {
+      const list = await invoke<BackupArchiveInfoDto[]>("list_workspace_backups");
+      setExistingBackups(Array.isArray(list) ? list : []);
+    } catch (err) {
+      console.error("Failed to list backups in settings:", err);
+      setExistingBackups([]);
+    }
+  };
+
   // Form inputs
   const [formId, setFormId] = useState<string>("");
   const [formName, setFormName] = useState<string>("");
@@ -145,15 +166,48 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     setTypography(getSavedTypographySettings());
+    loadBackups();
     invoke<AppConfig>("get_app_config")
       .then((cfg) => {
         setAppConfig(cfg);
         if (cfg.custom_pipelines) {
           setCustomPipelines(cfg.custom_pipelines);
         }
+        if (cfg.workspace?.backup_retention_count) {
+          setRetentionCount(cfg.workspace.backup_retention_count);
+        }
       })
       .catch((err) => console.error("Failed to load app config:", err));
   }, [isOpen]);
+
+  const handleSaveRetention = async () => {
+    if (!appConfig) return;
+    try {
+      const updated: AppConfig = {
+        ...appConfig,
+        workspace: {
+          ...appConfig.workspace,
+          backup_retention_count: retentionCount,
+        },
+      };
+      await invoke("save_app_config", { config: updated });
+      setAppConfig(updated);
+      setRetentionSaved(true);
+      setTimeout(() => setRetentionSaved(false), 2000);
+    } catch (err) {
+      console.error("Failed to save retention count:", err);
+    }
+  };
+
+  const handleDeleteBackup = async (filename: string) => {
+    if (!window.confirm(t("backup.delete_confirm", { name: filename }))) return;
+    try {
+      await invoke("delete_workspace_backup", { filename });
+      await loadBackups();
+    } catch (err) {
+      console.error("Failed to delete backup in settings:", err);
+    }
+  };
 
   const handleCopyTemplate = async () => {
     try {
@@ -685,6 +739,85 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
+              {/* Backup Retention Management (Phase 11 / Task 3-3) */}
+              <div className="settings-card">
+                <div className="settings-card-header flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <Layers size={16} className="text-teal-400" />
+                    <h5>{t("settings.backup_management_title")}</h5>
+                  </div>
+                  <button
+                    type="button"
+                    className="dialog-btn primary small flex items-center gap-1.5"
+                    onClick={handleSaveRetention}
+                  >
+                    {retentionSaved ? (
+                      <>
+                        <Check size={13} className="text-emerald-400" />
+                        <span>{t("settings.retention_saved")}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save size={13} />
+                        <span>{t("settings.save_retention_btn")}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <p className="settings-card-desc">{t("settings.backup_management_desc")}</p>
+                <div className="backup-retention-slider-row flex items-center gap-4 my-2">
+                  <input
+                    type="range"
+                    min={1}
+                    max={10}
+                    step={1}
+                    value={retentionCount}
+                    onChange={(e) => setRetentionCount(Number(e.target.value))}
+                    className="w-48 accent-teal-500 cursor-pointer"
+                  />
+                  <span className="font-mono text-xs text-teal-300 font-bold">
+                    {t("settings.backup_retention_label", { count: retentionCount })}
+                  </span>
+                </div>
+
+                {/* Existing Archives List */}
+                <div className="mt-3 pt-3 border-t border-white/10">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-slate-300">
+                      {t("backup.archive_list_title")} ({existingBackups.length})
+                    </span>
+                  </div>
+                  {existingBackups.length === 0 ? (
+                    <p className="text-xs text-slate-500 py-1">{t("backup.no_archives")}</p>
+                  ) : (
+                    <div className="max-h-36 overflow-y-auto space-y-1.5">
+                      {existingBackups.map((bkp) => (
+                        <div
+                          key={bkp.filename}
+                          className="flex items-center justify-between text-xs p-1.5 rounded bg-black/40 border border-white/5"
+                        >
+                          <div className="flex flex-col min-w-0 mr-2">
+                            <span className="font-mono text-slate-200 truncate">{bkp.filename}</span>
+                            <span className="text-[10px] text-slate-400">
+                              {formatTimestamp(Number(bkp.created_at_ms))} • {formatBytes(Number(bkp.size_bytes))}
+                              {bkp.file_count != null ? ` • ${t("backup.files_count", { count: bkp.file_count })}` : ""}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            className="text-rose-400 hover:text-rose-300 p-1 shrink-0"
+                            title={t("backup.delete_archive_btn")}
+                            onClick={() => handleDeleteBackup(bkp.filename)}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* Landlock LSM Status */}
               <div className="settings-card">
                 <div className="settings-card-header">
@@ -692,11 +825,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <h5>{t("settings.landlock_label")}</h5>
                 </div>
                 <p className="settings-card-desc">{t("settings.landlock_active_desc")}</p>
-                <div className="settings-status-row">
+                <div className="settings-status-row flex items-center justify-between">
                   <span className={`security-pill ${landlockSupported ? "secure" : "warning"}`}>
                     <ShieldCheck size={13} />
                     <span>{landlockSupported ? `Active (ABI ${landlockAbi || "V5"})` : "Unsupported"}</span>
                   </span>
+                  {onOpenSecurityWarningTest && (
+                    <button
+                      type="button"
+                      className="px-2.5 py-1 rounded text-xs text-rose-300 hover:text-rose-100 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 transition-all flex items-center gap-1.5 cursor-pointer"
+                      onClick={() => {
+                        onClose();
+                        onOpenSecurityWarningTest();
+                      }}
+                      title={t("security_modal.test_modal_btn")}
+                    >
+                      <ShieldAlert size={13} className="text-rose-400" />
+                      <span>{t("security_modal.test_modal_btn")}</span>
+                    </button>
+                  )}
                 </div>
               </div>
 

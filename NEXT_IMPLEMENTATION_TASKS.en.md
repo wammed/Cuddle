@@ -15,6 +15,7 @@
 This document provides a systematic backlog and implementation guide for the **18 items identified during the cross-verification** between the Master Design Specification ([`FileWorkbench-Design-ver0.9.en.md`](FileWorkbench-Design-ver0.9.en.md)) and the current codebase (as of Phase 9.8 completion), plus **6 Core Visual Polish & Sensory Upgrade tasks** for a total of 24 items. It details the **prioritization, architectural design, affected files, and testing strategies** so that future engineering sessions can immediately start implementation without ambiguity.
 
 ### Non-Negotiable Core Principles
+
 1. **Absolute Original Protection:** Direct in-place editing of original files is strictly prohibited. Operations must only run within working copies (`workspace-temp/`), reflecting to originals only upon explicit user confirmation.
 2. **Kernel Isolation with Landlock LSM:** External commands and parsers must execute under restrictive Landlock rulesets (read-only system whitelist, dedicated isolated `TMPDIR`).
 3. **Full Bilingual Synchronization (EN/JA):** All UI strings, logs, warnings, and documentation must exist in both English and Japanese with 100% parity.
@@ -38,9 +39,9 @@ The 24 items are organized across **5 implementation phases (Phase 10 to 14)** b
 | **2-8** | UI / Visual | Storage Capacity Gauges & Visual Permissions/Size Metrics | **Phase 10** | **High** | Med | **Done & Verified** |
 | **2-9** | UI / Visual | Tabular Precision Typography & Interactive Breadcrumb Trail | **Phase 10** | **High** | Low | **Done & Verified** |
 | **2-10** | UI / Visual | Ambient Aurora Mesh Canvas & Subtle Micro-Grain Texture | **Phase 10** | **Medium** | Low | **Done & Verified** |
-| **3-2** | Safety / Reflect | Alternate Filename UI on Original Conflict (e.g., `.edit.pdf`) | **Phase 11** | **High** | Med |
-| **3-3** | Safety / Backup | Backup Retention (Default 5, Max 10) & Prune UI | **Phase 11** | **High** | Med |
-| **4-3** | Safety / Sandbox | Warning / Consent Modal on Non-Landlock Kernels | **Phase 11** | **Medium** | Low |
+| **3-2** | Safety / Reflect | Alternate Filename UI on Original Conflict (e.g., `.edit.pdf`) | **Phase 11** | **High** | Med | **Done & Verified** |
+| **3-3** | Safety / Backup | Backup Retention (Default 5, Max 10) & Prune UI | **Phase 11** | **High** | Med | **Done & Verified** |
+| **4-3** | Safety / Sandbox | Warning / Consent Modal on Non-Landlock Kernels | **Phase 11** | **Medium** | Low | **Done & Verified** |
 | **4-2** | Pipeline | Custom `allowed_read_paths` in Pipeline Presets | **Phase 12** | **High** | Med |
 | **4-1** | Pipeline | Input Modes (`batch`, `stdin`) & Typed Placeholders | **Phase 12** | **Medium** | Med |
 | **2-3** | UI / System | Desktop Environment Native Notification Abstraction | **Phase 12** | **Medium** | Med |
@@ -59,11 +60,13 @@ The 24 items are organized across **5 implementation phases (Phase 10 to 14)** b
 ## 3. Detailed Phase-by-Phase Implementation Plans
 
 ### Phase 10: Quick UX & Interaction Wins & Ultra-Rich Visual Polish [Completed & Verified by User]
+
 Delivers immediate day-to-day workflow improvements (Part A) alongside a comprehensive sensory and visual upgrade to world-class design standards (Part B).
 
 #### Part A: Interaction & Ergonomics
 
 ##### [Task 2-2] Pane Width & Layout Persistence across Sessions
+
 * **Design Spec Reference:** Section 3.2 (Screen Structure & Layout)
 * **Current Status:** `react-resizable-panels` initializes with static default ratios (52%, 20%, 68%, 50%), resetting whenever the app restarts.
 * **Architecture & Strategy:**
@@ -74,6 +77,7 @@ Delivers immediate day-to-day workflow improvements (Part A) alongside a compreh
 * **Verification:** Vitest test with mocked `localStorage`; manual pane resize and reload test.
 
 ##### [Task 2-1] Drag & Drop (D&D) between Browser & Workspace
+
 * **Design Spec Reference:** Section 3.2 (Operation Flow)
 * **Current Status:** Files can only be staged via toolbar buttons ("Stage Working Copy", "Stage All") and context menu.
 * **Architecture & Strategy:**
@@ -87,6 +91,7 @@ Delivers immediate day-to-day workflow improvements (Part A) alongside a compreh
 * **Verification:** Vitest mock DragEvent tests (`fireEvent.dragStart`, `fireEvent.drop`).
 
 ##### [Task 2-4] Pipeline Log Display Filter Modes
+
 * **Design Spec Reference:** Section 8.4 (Pipeline Logs and Audit Trails)
 * **Current Status:** Flat linear string dump inside `BottomTabPanel.tsx`.
 * **Architecture & Strategy:**
@@ -102,6 +107,7 @@ Delivers immediate day-to-day workflow improvements (Part A) alongside a compreh
 #### Part B: Ultra-Rich Visual Polish (6 Core Approaches)
 
 ##### [Task 2-5] Extension-Specific Rich Icons
+
 * **Design Spec Reference:** Section 1.1 (Branding & Visuals), Section 3.3 (Information Density & Icons)
 * **Current Status:** `VirtualFileList.tsx` renders all regular files with a generic, monochromatic `<FileText />` icon and directories with `<Folder />`.
 * **Architecture & Strategy:**
@@ -114,6 +120,7 @@ Delivers immediate day-to-day workflow improvements (Part A) alongside a compreh
 * **Verification:** Vitest assertions for extension-to-icon mapping and CSS class assignment.
 
 ##### [Task 2-6] Lighting & Depth Layering (Inner Rim Light & Multi-layer Shadows)
+
 * **Design Spec Reference:** Section 1.1, Section 3.1 (Glassmorphism & Cyber Dark Visual Concept)
 * **Current Status:** Surfaces rely on flat single-layer borders (`1px solid rgba(...)`) and standard shadows.
 * **Architecture & Strategy:**
@@ -125,6 +132,7 @@ Delivers immediate day-to-day workflow improvements (Part A) alongside a compreh
 * **Verification:** Visual sanity across all 30 color themes; theme contrast verification.
 
 ##### [Task 2-7] Cursor Spotlight Glow & Tactile Spring Feedback
+
 * **Design Spec Reference:** Section 3.2 (Interaction & Motion)
 * **Current Status:** Static color tints or simple 1px vertical translation on hover.
 * **Architecture & Strategy:**
@@ -139,6 +147,7 @@ Delivers immediate day-to-day workflow improvements (Part A) alongside a compreh
 * **Verification:** Vitest tests for coordinate tracking and uninterrupted click dispatch.
 
 ##### [Task 2-8] Storage Capacity Gauges & Visual Permissions/Size Metrics
+
 * **Design Spec Reference:** Section 3.3, Section 4.1, Section 5.1 (Pre-flight Capacity Checks)
 * **Current Status:** File sizes, permissions, and disk space are displayed exclusively as text strings.
 * **Architecture & Strategy:**
@@ -153,6 +162,7 @@ Delivers immediate day-to-day workflow improvements (Part A) alongside a compreh
 * **Verification:** Unit tests verifying ratio calculations and edge-case rendering (0-byte, massive files).
 
 ##### [Task 2-9] Tabular Precision Typography & Interactive Breadcrumb Trail
+
 * **Design Spec Reference:** Section 3.2, Section 3.3 (Information Density & Path Ergonomics)
 * **Current Status:** Path is plain text; numbers use proportional figures causing jagged column alignment.
 * **Architecture & Strategy:**
@@ -165,6 +175,7 @@ Delivers immediate day-to-day workflow improvements (Part A) alongside a compreh
 * **Verification:** Vitest tests for path segment parsing and ancestor navigation callbacks.
 
 ##### [Task 2-10] Ambient Aurora Mesh Canvas & Subtle Micro-Grain Texture (Theme Reactive & High Vibrancy)
+
 * **Design Spec Reference:** Section 1.1 (Cyber Dark Atmosphere)
 * **Implementation Details:**
   * **30 Color Themes Full Synchronization:** Eliminated hardcoded dark background (`#03070a`), rebinding `.ambient-aurora-mesh` to dynamic CSS radial gradients using `--bg-canvas` and `--bg-surface-base`. Switching among 30 color themes in Settings instantly and smoothly updates the background canvas.
@@ -178,51 +189,57 @@ Delivers immediate day-to-day workflow improvements (Part A) alongside a compreh
 
 ---
 
-### Phase 11: Safety, Conflict Resolution & Recovery Refinements
+### Phase 11: Safety, Conflict Resolution & Recovery Refinements [Implemented & Verified by Manual Testing]
 
-Hardens original protection guarantees and conflict handling.
+Hardened original protection guarantees, conflict handling, backup retention, and workspace resumption. Verified and approved via real-world manual testing (conflict alternate save, retention prune, window close safety intercept, and resume from backup on Start Dashboard).
 
 #### [Task 3-2] Alternate Filename UI on Original Conflict (e.g., `.edit.pdf`)
+
 * **Design Spec Reference:** Section 5.3 (External Change & Conflict Interception)
-* **Current Status:** Detecting external modifications immediately aborts reflection with `StageStatus::Conflict`, but provides no in-UI alternate save flow.
-* **Architecture & Strategy:**
-  * Implement `reflect_staged_item_as_copy(item_id, custom_suffix)` in `workspace.rs`.
-  * Transform `filename.ext` into `filename.edit.ext` (or `filename.edit.1.ext` on collision) without touching the original.
-  * In the UI, render a prompt when a conflict is detected: *"Original has been modified externally. Overwrite aborted. Would you like to save as `.edit` copy?"*
+* **Implementation Details:**
+  * Implemented `reflect_staged_item_as_copy(item_id, custom_suffix)` (default: `.edit`), `get_alternate_copy_preview`, and `generate_alternate_copy_path` in `src-tauri/src/workspace.rs` and registered Tauri IPC commands.
+  * Formats `filename.ext` into `filename.edit.ext` (or `filename.edit.1.ext` on subsequent collisions) safely without touching the original file.
+  * In `BottomTabPanel.tsx`, rendered an alternate copy box on reflection conflict with customizable suffix, real-time path preview, and one-click copy saving.
 * **Target Files:**
   * `src-tauri/src/workspace.rs`, `src-tauri/src/lib.rs`
   * `src/components/BottomTabPanel.tsx`
   * `src/locales/ja/translation.json`, `src/locales/en/translation.json`
-* **Verification:** Cargo tests for conflict detection, copy generation, and preserving original integrity.
+* **Verification:** Cargo tests (`test_reflect_staged_item_as_copy_and_collision`) and Vitest (`Phase11SafetyRefinements.test.tsx`) pass with 100% test coverage.
 
 #### [Task 3-3] Backup Retention Management & Pruning UI
+
 * **Design Spec Reference:** Section 6.1 (Backup Retention & Disk Quota)
-* **Current Status:** `backup_YYYYMMDD_HHMMSS.tar.gz` creation is implemented, but old backups accumulate indefinitely without count or prune UI.
-* **Architecture & Strategy:**
-  * Implement `list_backups()`, `cleanup_old_backups(keep_count)`, and `delete_backup(filename)` in `backup.rs`.
-  * Scan `$XDG_DATA_HOME/Cuddle/backups/`. If count exceeds limit (default: 5, max: 10), present old backup list and prune actions in the UI.
+* **Implementation Details:**
+  * Added `backup_retention_count: usize` (default: 5, range: 1..=10 with validation) to `WorkspaceSection` in `config.rs`.
+  * Implemented `BackupArchiveInfoDto`, `list_backups()`, `delete_backup(filename)`, and `prune_old_backups(keep_count)` in `backup.rs`. Integrated `auto_prune_limit` into `create_workspace_backup`.
+  * Added retention policy indicator, auto-prune checkbox, collapsible archive list, and per-backup deletion actions to `ExitBackupModal.tsx`.
+  * Added backup retention slider (1–10 generations) and archive management card to `SettingsModal.tsx`.
 * **Target Files:**
   * `src-tauri/src/backup.rs`, `src-tauri/src/config.rs`, `src-tauri/src/lib.rs`
-  * `src/components/BackupModal.tsx`
-* **Verification:** Cargo tests verifying generation, listing, and pruning when count exceeds 5.
+  * `src/components/ExitBackupModal.tsx`, `src/components/SettingsModal.tsx`
+* **Verification:** Cargo tests (`test_backup_list_delete_and_prune`) and Vitest (`ExitBackupModal.test.tsx`, `Phase11SafetyRefinements.test.tsx`) pass.
 
 #### [Task 4-3] Warning / Consent Modal on Non-Landlock Kernels
+
 * **Design Spec Reference:** Section 8.2 (Process Isolation & Runtime Security)
-* **Current Status:** Displays "Landlock: Unavailable" red badge in UI, but does not block startup or request explicit consent.
-* **Architecture & Strategy:**
-  * On mount in `App.tsx`, if Landlock probe returns `NotSupported`, display a blocking full-screen security modal (`CriticalSecurityModal`).
-  * Require explicit user confirmation before unlocking workspace operations.
+* **Implementation Details:**
+  * Created `CriticalSecurityModal.tsx` providing a full-screen blocking modal when Landlock LSM is unsupported.
+  * Detailed security risks regarding pipeline isolation and original protection reliance on internal mechanisms. Provided "Exit Application" and "I Understand the Risks & Unlock" buttons, along with a "Remember my choice" persistence checkbox.
+  * Wired `App.tsx` to inspect `get_landlock_status` upon startup and lock the UI until consent is granted.
 * **Target Files:**
-  * `src/App.tsx`, `src/components/CriticalSecurityModal.tsx`
-  * Bilingual locale translations.
-* **Verification:** Vitest test verifying modal rendering on unsupported state.
+  * `src/components/CriticalSecurityModal.tsx`
+  * `src/App.tsx`, `src/App.css`
+  * Bilingual locale translations in `src/locales/`.
+* **Verification:** Vitest test (`Phase11SafetyRefinements.test.tsx`) verified startup blocking, exit handler, consent unlock, and choice persistence.
 
 ---
 
 ### Phase 12: Pipeline Flexibility & External Tool Integrations
+
 Extends custom command pipelines with flexible arguments and sandbox whitelists.
 
 #### [Task 4-2] Custom `allowed_read_paths` in Pipeline Presets
+
 * **Design Spec Reference:** Section 8.2, Section 11 (Landlock Sandbox Whitelisting)
 * **Current Status:** `LandlockSandbox::allow_read` is supported in backend, but missing in `CustomPipelineDefDto`.
 * **Architecture & Strategy:**
@@ -235,6 +252,7 @@ Extends custom command pipelines with flexible arguments and sandbox whitelists.
 * **Verification:** Cargo test validating whitelist application to child command.
 
 #### [Task 4-1] Input Modes (`batch`, `stdin`) & Typed Placeholders
+
 * **Design Spec Reference:** Section 8.1 (Pipeline Input Modes & Placeholders)
 * **Current Status:** Supports only single-file (`per_file`) replacement with `{input}` / `{output}`.
 * **Architecture & Strategy:**
@@ -246,6 +264,7 @@ Extends custom command pipelines with flexible arguments and sandbox whitelists.
 * **Verification:** Cargo test using mock echo commands for argument and stdin piping.
 
 #### [Task 2-3] Desktop Environment Native Notification Abstraction
+
 * **Design Spec Reference:** Section 2.1, Section 13 (Notification Architecture)
 * **Current Status:** Only in-app toasts exist.
 * **Architecture & Strategy:**
@@ -258,9 +277,11 @@ Extends custom command pipelines with flexible arguments and sandbox whitelists.
 ---
 
 ### Phase 13: Search, Extraction & Indexing Evolution
+
 Broadens document type extraction and improves search recall.
 
 #### [Task 1-4] Structured Markdown / HTML Text Extraction
+
 * **Design Spec Reference:** Section 7.2 (Tier 1 Text Extraction)
 * **Current Status:** Markdown / HTML are ingested as raw plaintext including syntax markers and tags.
 * **Architecture & Strategy:**
@@ -271,6 +292,7 @@ Broadens document type extraction and improves search recall.
 * **Verification:** Cargo test verifying token stripping and indexing.
 
 #### [Task 1-3] Tier 3: Office Document Extraction (`.docx`, `.xlsx`)
+
 * **Design Spec Reference:** Section 7.2 (Tier 3 Office Extraction)
 * **Current Status:** Only Tier 1 (text/code) and Tier 2 (PDF `pdftotext`) are enabled.
 * **Architecture & Strategy:**
@@ -281,6 +303,7 @@ Broadens document type extraction and improves search recall.
 * **Verification:** Cargo tests on valid and corrupted sample files.
 
 #### [Task 1-2] Combined Morphological (IPADIC) + n-gram Search
+
 * **Design Spec Reference:** Section 2.1, Section 7.2
 * **Current Status:** Tokenizes solely using `lindera-tantivy` (IPADIC).
 * **Architecture & Strategy:**
@@ -291,6 +314,7 @@ Broadens document type extraction and improves search recall.
 * **Verification:** Recall tests with katakana and non-dictionary symbols.
 
 #### [Task 1-1] Index Update / Repair Queue for Discrepancies
+
 * **Design Spec Reference:** Section 1.1, Section 7.2, Section 14
 * **Current Status:** Tantivy commit failures log errors without queueing retries.
 * **Architecture & Strategy:**
@@ -300,6 +324,7 @@ Broadens document type extraction and improves search recall.
 * **Verification:** Cargo test simulating write lock collision and subsequent repair.
 
 #### [Task 1-5] Per-Rule Indexing Policy (Metadata-only / Filename-only)
+
 * **Design Spec Reference:** Section 7.1
 * **Current Status:** Binary all-or-nothing exclusion.
 * **Architecture & Strategy:**
@@ -311,18 +336,23 @@ Broadens document type extraction and improves search recall.
 ---
 
 ### Phase 14: Architectural Decisions & Scale Verification
+
 Validates current pragmatic simplifications against excessive design complexity.
 
 #### [Task 3-1] 4-Tier Confirmation Levels: Re-evaluation
+
 * Keep safety unified around current "Standard / Strict" modal protections. Eliminating "Brief" prevents catastrophic accidental loss.
 
 #### [Task 3-4] 4-Table Crash Recovery: Keep Current
+
 * Current SQLite WAL `session_items` + `operation_history` + in-memory `BatchJournalManager` provides complete crash recovery and selective undo with superior simplicity. Retain current design and update design docs accordingly.
 
 #### [Task 5-1] 10 Granular TOML Sections: Keep Current
+
 * Current 4 sections (`[app]`, `[workspace]`, `[security]`, `[[custom_pipelines]]`) are clean, robust against corruption, and sufficient. Introduce sub-sections only when settings genuinely expand.
 
 #### [Task 6-1] IPC Chunked Streaming: Benchmark First
+
 * Given `@tanstack/react-virtual` currently renders 10,000 items at 60fps, measure IPC latency before introducing streaming pagination complexity.
 
 ---
@@ -354,4 +384,3 @@ graph TD
 2. **Sprint 2 (Phase 11):** Tasks 3-2 (Conflict Save-As) → 3-3 (Backup Retention) → 4-3 (Non-Landlock Modal). Solidifies core safety and original protection.
 3. **Sprint 3 (Phase 12):** Tasks 4-2 (`allowed_read_paths`) → 4-1 (Arguments & Stdin) → 2-3 (Native OS Notifications). Delivers full pipeline flexibility.
 4. **Sprint 4 (Phase 13):** Tasks 1-4 (MD/HTML Extraction) → 1-3 (Office Extraction) → 1-2 (Morphological + n-gram) → 1-1 (Repair Queue).
-

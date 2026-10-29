@@ -6,7 +6,9 @@
     "statusbar_phase": "Phase 6.3 Workspace Backup & Recovery Active",
     "statusbar_staged": "Staged: {{count}} files",
     "statusbar_history": "History: {{count}} records",
-    "statusbar_nerd_font": "Nerd Font: Pre-required"
+    "statusbar_nerd_font": "Nerd Font: Pre-required",
+    "exit_btn": "Exit",
+    "exit_confirm": "Are you sure you want to exit Cuddle?"
   },
   "common": {
     "switch_language": "Language",
@@ -111,7 +113,14 @@
     "mode_overwrite_desc": "Overwrites the original file in place using temp file swap and atomic rename(2) within the same directory.",
     "mode_backup_origin": "Mode B: Backup Original as .origin (Recommended)",
     "mode_backup_desc": "Safely renames original to a timestamped .origin file before placing the deliverable in its original path.",
-    "backup_preview_label": "Planned Backup File (Target)"
+    "backup_preview_label": "Planned Backup File (Target)",
+    "save_as_copy_btn": "Save as Alternate Copy (.edit)",
+    "save_as_copy_title": "Save Alternate Copy on Conflict",
+    "save_as_copy_desc": "Original was modified externally. Overwrite was prevented. Save deliverable as an alternate copy without modifying original.",
+    "save_as_copy_success": "Saved as alternate copy: {{path}}",
+    "custom_suffix_label": "Suffix (before extension)",
+    "copy_preview_label": "Saved Copy Path Preview",
+    "save_as_copy_hint": "Saves deliverable as copy without touching original"
   },
   "policy": {
     "title": "Operation Safety Policy (OperationPolicy)",
@@ -342,7 +351,8 @@
     "type_chmod": "Change Mode (chmod)",
     "type_undo_chmod": "Undo Mode",
     "type_touch_mtime": "Timestamp Change",
-    "type_undo_touch_mtime": "Undo Timestamp"
+    "type_undo_touch_mtime": "Undo Timestamp",
+    "type_reflect_copy": "Save as Copy"
   },
   "backup": {
     "dialog_title": "Session Exit Backup & Safety Check",
@@ -356,7 +366,17 @@
     "archiving": "Creating tar.gz Archive...",
     "backup_success": "Saved backup archive: {{path}} ({{count}} files, {{size}})",
     "backup_failed": "Failed to create backup",
-    "action_open_modal": "Backup / Exit"
+    "action_open_modal": "Backup / Exit",
+    "retention_label": "Backup Retention Count",
+    "retention_desc": "Retains up to {{count}} recent archives and prunes older ones",
+    "auto_prune_checkbox": "Automatically prune oldest backups exceeding limit",
+    "archive_list_title": "Existing Backup Archives",
+    "no_archives": "No backup archives found",
+    "delete_archive_btn": "Delete",
+    "delete_confirm": "Delete backup archive '{{name}}'?",
+    "delete_success": "Deleted backup archive: {{name}}",
+    "prune_success": "Pruned {{count}} older backup archives",
+    "files_count": "{{count}} files"
   },
   "pipeline": {
     "tools_title": "External Tool Ecosystem (Phase 7.1)",
@@ -538,7 +558,12 @@
     "preset_template_webp_name": "WebP Lossless Custom Converter",
     "preset_template_webp_desc": "High-quality conversion of PNG/JPEG to WebP using cwebp (Quality 85)",
     "preset_template_exif_name": "ExifTool Strip Metadata",
-    "preset_template_exif_desc": "Strip all Exif/GPS metadata using exiftool"
+    "preset_template_exif_desc": "Strip all Exif/GPS metadata using exiftool",
+    "backup_management_title": "Backup Retention & Archiving (tar.gz)",
+    "backup_management_desc": "Configure the maximum number of workspace backup archives to retain (1 to 10 generations).",
+    "backup_retention_label": "Retention limit: {{count}} generations",
+    "save_retention_btn": "Save Retention",
+    "retention_saved": "Retention limit saved"
   },
   "custom_pipelines": {
     "title": "User-Defined Pipeline Configuration",
@@ -590,6 +615,12 @@
     "feature_pipeline_link": "View Presets",
     "feature_rename_desc": "Regex replacement, zero-padded numbering, and Unicode normalization",
     "feature_rename_link": "Launch Rename",
+    "btn_resume_backup": "Resume from Backup",
+    "resume_backup_desc": "Restore staged working copies from the last saved backup archive",
+    "resume_backup_confirm": "Do you want to restore workspace from backup \"{{filename}}\" ({{count}} files)?",
+    "resume_backup_success": "Restored {{count}} files from backup archive",
+    "no_backups_found": "No backup archives found to restore",
+    "select_backup_to_restore": "Select Backup to Restore",
     "loc_home": "Home",
     "loc_project": "Project",
     "status_landlock": "Landlock LSM",
@@ -813,5 +844,17 @@
     "filter_search_placeholder": "Search logs...",
     "count_label": "{{filtered}} / {{total}} entries",
     "clear_logs_btn": "Clear Logs"
+  },
+  "security_modal": {
+    "title": "Critical Security Warning: Landlock LSM Unavailable",
+    "desc_p1": "The current Linux kernel does not support Landlock LSM (Linux Security Module) or it is disabled.",
+    "desc_p2": "Workspace staging copy isolation (workspace-temp/) remains active, but kernel-level filesystem write restrictions cannot be physically enforced on external tools (ImageMagick, FFmpeg, etc.).",
+    "risks_title": "Important Security Considerations",
+    "risk_1": "When executing external tools or custom pipelines, sandboxed filesystem boundaries cannot be kernel-enforced.",
+    "risk_2": "Cuddle's internal processing (reflection, bulk rename, chmod, etc.) remains strictly protected by conflict detection.",
+    "btn_exit": "Exit Application",
+    "btn_proceed": "I Understand the Risks & Unlock",
+    "remember_choice": "Remember my choice on this machine",
+    "test_modal_btn": "Test Unsupported Warning Modal"
   }
 }

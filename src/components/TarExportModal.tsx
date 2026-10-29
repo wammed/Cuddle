@@ -121,9 +121,9 @@ export const TarExportModal: React.FC<TarExportModalProps> = ({
   const selectedCount = selectedIds.length;
 
   return (
-    <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true">
+    <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
       <div
-        className="modal-container tar-export-modal-dialog"
+        className="tar-export-modal-dialog"
         onClick={(e) => e.stopPropagation()}
         style={{ maxWidth: "680px", width: "90%" }}
       >

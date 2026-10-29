@@ -11,4 +11,8 @@ temp_directory: string | null,
 /**
  * Minimum disk free space required relative to original file size (default: 1.5x)
  */
-min_free_space_multiplier: number, };
+min_free_space_multiplier: number, 
+/**
+ * Number of recent workspace backup archives to retain (default: 5, min: 1, max: 10)
+ */
+backup_retention_count: number, };

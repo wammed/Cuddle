@@ -427,7 +427,12 @@ impl WorkspaceManager {
         OperationPolicy::validate_reflection(&orig_path)?;
 
         // 2. TOCTOU Race & External Conflict Verification
-        OperationPolicy::verify_conflict(&staged.original_snapshot, true)?;
+        if let Err(e) = OperationPolicy::verify_conflict(&staged.original_snapshot, true) {
+            staged.status = StageStatus::Conflict;
+            let hist_mgr = crate::history::get_history_manager();
+            let _ = hist_mgr.save_session_item(staged);
+            return Err(WorkspaceError::Policy(e));
+        }
 
         let orig_parent = orig_path
             .parent()
@@ -497,9 +502,80 @@ impl WorkspaceManager {
         Ok((staged.clone(), backup_origin_path))
     }
 
+    /// Saves the staged working copy as an alternate copy (e.g., .edit.ext) without modifying the original.
+    /// Used when a conflict is detected or when the user explicitly requests non-destructive export.
+    /// Returns (updated StagedItemDto, PathBuf of saved copy).
+    pub fn reflect_staged_item_as_copy(
+        &self,
+        stage_id: &str,
+        custom_suffix: Option<String>,
+    ) -> Result<(StagedItemDto, PathBuf), WorkspaceError> {
+        let mut map = self.staged_items.lock().unwrap();
+        let staged = map
+            .get_mut(stage_id)
+            .ok_or_else(|| WorkspaceError::NotFound(stage_id.to_string()))?;
+
+        let orig_path = decode_path_from_base64(&staged.raw_base64)?;
+        let staged_path = decode_path_from_base64(&staged.staged_raw_base64)?;
+
+        // 1. Policy Validation: Forbidden Zone (Outside $HOME, mount boundary, external storage)
+        OperationPolicy::validate_reflection(&orig_path)?;
+
+        let orig_parent = orig_path
+            .parent()
+            .ok_or(WorkspaceError::StagingDirUnavailable)?;
+
+        // 2. Generate collision-resistant alternate copy path
+        let target_copy_path = generate_alternate_copy_path(&orig_path, custom_suffix.as_deref());
+
+        // 3. Atomic placement via temporary file in same directory
+        let tmp_copy_name = format!(".cuddle_copy_{}.tmp", Uuid::new_v4());
+        let tmp_copy_path = orig_parent.join(tmp_copy_name);
+
+        if let Err(e) = fs::copy(&staged_path, &tmp_copy_path) {
+            let _ = fs::remove_file(&tmp_copy_path);
+            return Err(WorkspaceError::Io(e));
+        }
+
+        if let Err(e) = fs::rename(&tmp_copy_path, &target_copy_path) {
+            let _ = fs::remove_file(&tmp_copy_path);
+            return Err(WorkspaceError::Io(e));
+        }
+
+        // 4. Update status to Reflected
+        staged.status = StageStatus::Reflected;
+
+        let details = format!(
+            "Saved alternate copy: {} (original {} preserved untouched)",
+            target_copy_path.display(),
+            orig_path.display()
+        );
+
+        let hist_mgr = crate::history::get_history_manager();
+        let _ = hist_mgr.save_session_item(staged);
+        let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
+            operation_id: uuid::Uuid::new_v4().to_string(),
+            operation_type: "ReflectAsCopy".to_string(),
+            display_name: staged.display_name.clone(),
+            original_path: Some(staged.original_snapshot.canonical_path.clone()),
+            staged_path: Some(target_copy_path.to_string_lossy().to_string()),
+            inode: None,
+            status: "Success".to_string(),
+            can_undo: false,
+            details: Some(details),
+        });
+
+        Ok((staged.clone(), target_copy_path))
+    }
+
     /// Generates timestamped .origin backup path (Design 5.2 Mode B)
     pub fn get_origin_backup_preview(&self, orig_path: &Path) -> PathBuf {
         generate_origin_backup_path(orig_path)
+    }
+
+    /// Generates alternate copy preview path (Task 3-2)
+    pub fn get_alternate_copy_preview(&self, orig_path: &Path, suffix: Option<&str>) -> PathBuf {
+        generate_alternate_copy_path(orig_path, suffix)
     }
 
     /// Lists all currently active staged items.
@@ -545,6 +621,12 @@ impl WorkspaceManager {
         }
 
         Ok(restored)
+    }
+
+    /// Injects or replaces a staged item in the active workspace registry.
+    pub fn insert_staged_item(&self, item: StagedItemDto) {
+        let mut map = self.staged_items.lock().unwrap();
+        map.insert(item.stage_id.clone(), item);
     }
 
     /// Clears all staged files from the staging area.
@@ -610,6 +692,43 @@ pub fn generate_origin_backup_path(orig_path: &Path) -> PathBuf {
             format!("{}_{}_{}.origin.{}", stem, timestamp, counter, e)
         } else {
             format!("{}_{}_{}.origin", stem, timestamp, counter)
+        };
+        candidate = parent.join(unique_name);
+        counter += 1;
+    }
+    candidate
+}
+
+/// Generates an alternate non-destructive copy path with a custom or default suffix (e.g. .edit).
+/// Automatically resolves collisions: filename.ext -> filename.edit.ext -> filename.edit.1.ext
+pub fn generate_alternate_copy_path(orig_path: &Path, suffix: Option<&str>) -> PathBuf {
+    let parent = orig_path.parent().unwrap_or_else(|| Path::new("."));
+    let stem = orig_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file");
+    let ext = orig_path.extension().and_then(|s| s.to_str());
+    let raw_suffix = suffix.unwrap_or("edit").trim();
+    let clean_suffix = raw_suffix.trim_start_matches('.');
+    let effective_suffix = if clean_suffix.is_empty() {
+        "edit"
+    } else {
+        clean_suffix
+    };
+
+    let candidate_name = if let Some(e) = ext {
+        format!("{}.{}.{}", stem, effective_suffix, e)
+    } else {
+        format!("{}.{}", stem, effective_suffix)
+    };
+
+    let mut candidate = parent.join(&candidate_name);
+    let mut counter = 1;
+    while candidate.exists() {
+        let unique_name = if let Some(e) = ext {
+            format!("{}.{}.{}.{}", stem, effective_suffix, counter, e)
+        } else {
+            format!("{}.{}.{}", stem, effective_suffix, counter)
         };
         candidate = parent.join(unique_name);
         counter += 1;
@@ -878,6 +997,59 @@ mod tests {
             fs::read(&orig_file).unwrap(),
             b"Mutated Deliverable Version 2"
         );
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_reflect_staged_item_as_copy_and_collision() {
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_reflect_copy_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("document.pdf");
+        fs::write(&orig_file, b"Original PDF Content").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+
+        // Mutate staged working copy
+        fs::write(&staged.staged_path, b"Edited Deliverable Staged").unwrap();
+
+        // Simulate external modification to original creating a conflict
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        fs::write(&orig_file, b"Externally Mutated Original").unwrap();
+
+        // Standard reflection must fail with Conflict
+        let reflect_err = mgr.reflect_staged_file(&staged.stage_id);
+        assert!(reflect_err.is_err());
+
+        // Reflect as alternate copy with default .edit suffix
+        let (saved_item, copy_path) = mgr
+            .reflect_staged_item_as_copy(&staged.stage_id, None)
+            .expect("Alternate copy save must succeed even when conflict exists");
+
+        assert_eq!(saved_item.status, StageStatus::Reflected);
+        assert!(copy_path.exists());
+        assert_eq!(copy_path, test_dir.join("document.edit.pdf"));
+        assert_eq!(fs::read(&copy_path).unwrap(), b"Edited Deliverable Staged");
+
+        // Verify original file was preserved untouched with external modification!
+        assert_eq!(
+            fs::read(&orig_file).unwrap(),
+            b"Externally Mutated Original"
+        );
+
+        // Verify collision handling: second alternate copy should get sequence number .edit.1.pdf
+        let staged_2 = mgr.stage_file(&orig_file).unwrap();
+        fs::write(&staged_2.staged_path, b"Second Edit Deliverable").unwrap();
+
+        let (_, copy_path_2) = mgr
+            .reflect_staged_item_as_copy(&staged_2.stage_id, Some("edit".to_string()))
+            .unwrap();
+
+        assert_eq!(copy_path_2, test_dir.join("document.edit.1.pdf"));
+        assert_eq!(fs::read(&copy_path_2).unwrap(), b"Second Edit Deliverable");
 
         let _ = fs::remove_dir_all(&test_dir);
     }

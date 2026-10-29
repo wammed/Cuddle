@@ -9,6 +9,7 @@ import {
   Home,
   Briefcase,
   Folder,
+  LogOut,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { SupportedLanguage } from "../i18n";
@@ -24,6 +25,7 @@ interface HeaderProps {
   onToggleBottom: () => void;
   onResetLayout: () => void;
   onOpenSettings?: () => void;
+  onExit?: () => void;
   activeView?: "start" | "workbench";
   onToggleView?: () => void;
   currentPath?: string;
@@ -41,6 +43,7 @@ export function Header({
   onToggleBottom,
   onResetLayout,
   onOpenSettings,
+  onExit,
   activeView = "workbench",
   onToggleView,
   currentPath,
@@ -131,6 +134,19 @@ export function Header({
             <Globe size={14} />
             <span>{currentLang === "ja" ? "English" : "日本語"}</span>
           </button>
+
+          {/* Exit / Quit Button */}
+          {onExit && (
+            <button
+              type="button"
+              className="header-icon-btn header-exit-btn"
+              onClick={onExit}
+              title={t("app.exit_btn")}
+            >
+              <LogOut size={14} className="text-rose-400" />
+              <span className="exit-btn-label">{t("app.exit_btn")}</span>
+            </button>
+          )}
         </div>
       </div>
 

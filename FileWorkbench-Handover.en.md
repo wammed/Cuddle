@@ -4,8 +4,8 @@
   <strong>English</strong> | <a href="FileWorkbench-Handover.ja.md">日本語</a>
 </p>
 
-**Document Date:** 2026-10-26  
-**Status:** All Phases (Phase 1–9) Implementation & Verification Completed; Source Distribution Ready (MIT License / README / BUILD / GitHub Actions CI); On-Demand Search Indexing UI & systemd Periodic Timer Implemented  
+**Document Date:** 2026-10-29  
+**Status:** All Phases (Phase 1–11) fully implemented and approved via real-world manual testing. Conflict alternate save, retention prune, window close safety intercept, start dashboard resume switch, and non-Landlock warning modal verified (199 Cargo / 108 Vitest 100% passing; ready for Phase 12).  
 **Target Audience:** Development, Architecture, and QA Teams; Next Working Session Maintainers  
 
 ---
@@ -671,13 +671,22 @@ Based on comprehensive cross-verification between the Master Design Specificatio
    * [2-8] Storage Safety Gauge, Inline Heat-Bar & Permission Chips: **Done & Verified**
    * [2-9] Tabular Figures & Interactive Breadcrumb Trail: **Done & Verified**
    * [2-10] Ambient Aurora Mesh Background & Subtle Noise Grain (Theme Reactive & High Vibrancy): **Done & Verified**
-2. **Phase 11: Safety, Conflict Resolution & Recovery Refinements [Scheduled Next Session]**
-   * [3-2] Alternate Filename UI on Original Conflict (e.g., `.edit.pdf`) & non-destructive save
-   * [3-3] Backup Retention Management (default 5, max 10) & Prune UI
-   * [4-3] Warning / Consent Modal on Non-Landlock Kernels
-3. **Phase 12: Pipeline Flexibility & External Tool Integrations**
+2. **Phase 11: Safety, Conflict Resolution & Recovery Refinements [Implemented & Verified by Manual Testing]**
+   * [3-2] Alternate Filename UI on Original Conflict (e.g., `.edit.pdf`) & non-destructive save: **Done & Verified via Manual Testing**
+     * Implemented backend `reflect_staged_item_as_copy`, `get_alternate_copy_preview`, collision-safe numeric suffixes (`.edit.1.ext`).
+     * Added conflict-triggered alternate copy save box to reflection dialog in `BottomTabPanel`.
+   * [3-3] Backup Retention Management (default 5, max 10) & Prune UI: **Done & Verified via Manual Testing**
+     * Added `backup_retention_count` to `config.rs` and `list_backups`, `delete_backup`, `prune_old_backups`, `restore_workspace_backup` to `backup.rs`.
+     * Added retention indicator, auto-prune toggle, and archive list with delete buttons to `ExitBackupModal` and `SettingsModal`.
+     * Added "Resume from Backup" switch and archive selection dialog to Start Dashboard (`StartPage.tsx`).
+   * [4-3] Warning / Consent Modal on Non-Landlock Kernels: **Done & Verified via Manual Testing**
+     * Created `CriticalSecurityModal` blocking application use until consent is provided on unsupported kernels, with choice persistence.
+   * [Window Close Safety Intercept & Header Exit Button]: **Done & Verified via Manual Testing**
+     * Implemented `onCloseRequested` interception in Tauri 2 for Zero Data Loss and prominent Header exit button.
+3. **Phase 12: Pipeline Flexibility & External Tool Integrations [Scheduled Next Session]**
    * [4-2] Custom `allowed_read_paths` in Pipeline Presets (Landlock integration)
    * [4-1] Input Modes (`batch`, `stdin`) & Typed Placeholders (`{InputList}`, `{WorkspaceDirectory}`)
+   * [2-3] Desktop Environment Native Notification Abstraction (FreeDesktop D-Bus Notifications)
    * [2-3] Desktop Environment Native Notification Abstraction (FreeDesktop D-Bus)
 4. **Phase 13: Search, Extraction & Indexing Evolution**
    * [1-4] Structured Markdown (`pulldown-cmark`) / HTML Text Extraction

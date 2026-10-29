@@ -6,7 +6,9 @@
     "statusbar_phase": "Phase 6.3 ワークスペースバックアップ＆リカバリ稼働中",
     "statusbar_staged": "ステージング: {{count}} ファイル",
     "statusbar_history": "履歴: {{count}} 件",
-    "statusbar_nerd_font": "Nerd Font: 導入推奨"
+    "statusbar_nerd_font": "Nerd Font: 導入推奨",
+    "exit_btn": "終了",
+    "exit_confirm": "Cuddle を終了しますか？"
   },
   "common": {
     "switch_language": "言語切替",
@@ -111,7 +113,14 @@
     "mode_overwrite_desc": "原本と同一ディレクトリの一時ファイル置換と原子的 rename(2) を用いて原本を成果物で上書きします。",
     "mode_backup_origin": "方式 B: 原本を .origin として退避保存 (推奨)",
     "mode_backup_desc": "原本をタイムスタンプ付き .origin ファイルへ安全にリネーム退避した上で作業成果物を配置します。",
-    "backup_preview_label": "退避先バックアップファイル名 (予定)"
+    "backup_preview_label": "退避先バックアップファイル名 (予定)",
+    "save_as_copy_btn": ".edit を付加して別名保存",
+    "save_as_copy_title": "原本競合時の別名保存",
+    "save_as_copy_desc": "原本が外部で変更されたため上書きを停止しました。原本を破壊せずに別名として保存します。",
+    "save_as_copy_success": "別名保存が完了しました: {{path}}",
+    "custom_suffix_label": "サフィックス（拡張子の前）",
+    "copy_preview_label": "保存先パスプレビュー (予定)",
+    "save_as_copy_hint": "原本には一切触れず別名保存します"
   },
   "policy": {
     "title": "安全操作ポリシー (OperationPolicy)",
@@ -342,7 +351,8 @@
     "type_chmod": "権限変更 (chmod)",
     "type_undo_chmod": "権限取消",
     "type_touch_mtime": "タイムスタンプ変更",
-    "type_undo_touch_mtime": "日時取消"
+    "type_undo_touch_mtime": "日時取消",
+    "type_reflect_copy": "別名保存"
   },
   "backup": {
     "dialog_title": "終了時バックアップ & 安全確認",
@@ -356,7 +366,17 @@
     "archiving": "アーカイブ作成中 (tar.gz)...",
     "backup_success": "バックアップを保存しました: {{path}} ({{count}} 件, {{size}})",
     "backup_failed": "バックアップの作成に失敗しました",
-    "action_open_modal": "バックアップ / 終了"
+    "action_open_modal": "バックアップ / 終了",
+    "retention_label": "バックアップ保持世代数",
+    "retention_desc": "最大 {{count}} 世代まで保持し、古いアーカイブを自動整理します",
+    "auto_prune_checkbox": "上限超過時に最も古い世代を自動削除する",
+    "archive_list_title": "保存済みバックアップ一覧",
+    "no_archives": "バックアップアーカイブはありません",
+    "delete_archive_btn": "削除",
+    "delete_confirm": "バックアップ「{{name}}」を削除しますか？",
+    "delete_success": "バックアップを削除しました: {{name}}",
+    "prune_success": "{{count}} 件の古いバックアップを整理しました",
+    "files_count": "{{count}} ファイル"
   },
   "pipeline": {
     "tools_title": "外部ツール連携環境 (Phase 7.1)",
@@ -538,7 +558,12 @@
     "preset_template_webp_name": "WebP 可逆圧縮カスタムコンバータ",
     "preset_template_webp_desc": "cwebp を使用して PNG/JPEG を WebP に高品質変換 (品質 85)",
     "preset_template_exif_name": "ExifTool メタデータ完全消去",
-    "preset_template_exif_desc": "exiftool を用いて全 Exif/GPS メタデータを消去"
+    "preset_template_exif_desc": "exiftool を用いて全 Exif/GPS メタデータを消去",
+    "backup_management_title": "バックアップ世代管理 (tar.gz)",
+    "backup_management_desc": "ワークスペース終了時に作成されるバックアップアーカイブの最大保持世代数を設定します（1〜10世代）。",
+    "backup_retention_label": "保持世代数上限: {{count}} 世代",
+    "save_retention_btn": "保持数を保存",
+    "retention_saved": "保持世代数を保存しました"
   },
   "custom_pipelines": {
     "title": "ユーザー作成パイプライン設定",
@@ -590,6 +615,12 @@
     "feature_pipeline_link": "プリセット一覧",
     "feature_rename_desc": "正規表現置換、連番ゼロ埋め、Unicode/全半角正規化",
     "feature_rename_link": "リネーム起動",
+    "btn_resume_backup": "バックアップから再開",
+    "resume_backup_desc": "前回終了時に保存したアーカイブから作業コピーを復元し再開します",
+    "resume_backup_confirm": "保存済みバックアップ \"{{filename}}\"（{{count}} ファイル）から作業ワークスペースを復元して再開しますか？",
+    "resume_backup_success": "バックアップから {{count}} 件の作業コピーを復元しました",
+    "no_backups_found": "復元可能なバックアップアーカイブがありません",
+    "select_backup_to_restore": "再開するバックアップを選択",
     "loc_home": "ホーム",
     "loc_project": "プロジェクト",
     "status_landlock": "Landlock LSM",
@@ -813,5 +844,17 @@
     "filter_search_placeholder": "ログ内を検索...",
     "count_label": "{{filtered}} / {{total}} 件",
     "clear_logs_btn": "ログ消去"
+  },
+  "security_modal": {
+    "title": "重大セキュリティ警告: Landlock LSM が利用できません",
+    "desc_p1": "現在の Linux カーネルは Landlock LSM（Linux セキュリティモジュール）をサポートしていないか、無効化されています。",
+    "desc_p2": "原本ファイルを保護する作業コピー（workspace-temp/）による分離は維持されますが、外部ツール（ImageMagick、FFmpeg 等）の実行時にカーネルレベルのファイルシステム書き込み制限を物理的に強制できません。",
+    "risks_title": "セキュリティ上の注意事項",
+    "risk_1": "外部ツールやカスタムパイプラインを実行する際、サンドボックスによるディレクトリ制限が機能しません。",
+    "risk_2": "Cuddle 内部処理（原本反映、リネーム、属性変更等）は引き続き原本変更検知・競合遮断で保護されます。",
+    "btn_exit": "アプリケーションを終了",
+    "btn_proceed": "リスクを理解して操作をアンロック",
+    "remember_choice": "この端末で次回以降も同意を記憶する",
+    "test_modal_btn": "非対応警告ダイアログをテスト表示"
   }
 }

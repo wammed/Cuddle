@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   Eye,
   History,
@@ -26,6 +27,7 @@ import {
   Image as ImageIcon,
   Search,
   Filter,
+  Copy,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
@@ -57,6 +59,7 @@ interface BottomTabPanelProps {
   stagedItems?: StagedItemDto[];
   onResetStagedItem?: (stageId: string) => void;
   onReflectStagedItem?: (stageId: string, mode?: ReflectionMode) => Promise<void> | void;
+  onReflectStagedItemAsCopy?: (stageId: string, suffix?: string) => Promise<void> | void;
   onUndoHistoryItem?: (operationId: string) => Promise<void> | void;
   onClose: () => void;
   currentPath?: string;
@@ -77,6 +80,7 @@ export function BottomTabPanel({
   stagedItems = [],
   onResetStagedItem,
   onReflectStagedItem,
+  onReflectStagedItemAsCopy,
   onUndoHistoryItem,
   onClose,
   currentPath,
@@ -102,6 +106,9 @@ export function BottomTabPanel({
   const [reflectError, setReflectError] = useState<string | null>(null);
   const [reflectionMode, setReflectionMode] = useState<ReflectionMode>("BackupOrigin");
   const [backupPreviewPath, setBackupPreviewPath] = useState<string | null>(null);
+  const [alternateSuffix, setAlternateSuffix] = useState(".edit");
+  const [alternatePreviewPath, setAlternatePreviewPath] = useState<string | null>(null);
+  const [isSavingCopy, setIsSavingCopy] = useState(false);
   const [isUndoingId, setIsUndoingId] = useState<string | null>(null);
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
   const [externalTools, setExternalTools] = useState<ExternalToolStatusDto[]>([]);
@@ -228,6 +235,46 @@ export function BottomTabPanel({
     }
   }, [showReflectModal, matchedStaged]);
 
+  // Helper to compute immediate estimated alternate path so preview never lags or stays empty
+  const computeImmediateAlternatePath = (origPath: string, suffix: string): string => {
+    if (!origPath) return "";
+    const rawSuffix = suffix.trim();
+    const cleanSuffix = rawSuffix.replace(/^\.+/, "") || "edit";
+    const lastSlash = origPath.lastIndexOf("/");
+    const filename = lastSlash >= 0 ? origPath.substring(lastSlash + 1) : origPath;
+    const parent = lastSlash >= 0 ? origPath.substring(0, lastSlash) : "";
+    const dotIdx = filename.lastIndexOf(".");
+    let targetName: string;
+    if (dotIdx > 0) {
+      const stem = filename.substring(0, dotIdx);
+      const ext = filename.substring(dotIdx + 1);
+      targetName = `${stem}.${cleanSuffix}.${ext}`;
+    } else {
+      targetName = `${filename}.${cleanSuffix}`;
+    }
+    return parent ? `${parent}/${targetName}` : targetName;
+  };
+
+  // Load alternate copy preview path whenever reflection modal opens or suffix changes (Task 3-2)
+  useEffect(() => {
+    if (showReflectModal && matchedStaged?.original_snapshot?.canonical_path) {
+      const origPath = matchedStaged.original_snapshot.canonical_path;
+      // 1. Immediately provide client-side estimated preview so UI never flickers or stays empty
+      const immediate = computeImmediateAlternatePath(origPath, alternateSuffix);
+      setAlternatePreviewPath(immediate);
+
+      // 2. Fetch authoritative collision-checked path from backend
+      invoke<string>("get_alternate_copy_preview", {
+        path: origPath,
+        suffix: alternateSuffix,
+      })
+        .then((preview) => {
+          if (preview) setAlternatePreviewPath(preview);
+        })
+        .catch((err) => console.warn("Failed to load backend alternate copy preview, using client estimate:", err));
+    }
+  }, [showReflectModal, matchedStaged, alternateSuffix]);
+
   const loadDiff = useCallback(async (stageId: string) => {
     try {
       setIsDiffLoading(true);
@@ -285,6 +332,30 @@ export function BottomTabPanel({
       setReflectError(errMsg);
     } finally {
       setIsReflecting(false);
+    }
+  };
+
+  const handleSaveAsAlternateCopy = async () => {
+    if (!matchedStaged) return;
+    try {
+      setIsSavingCopy(true);
+      if (onReflectStagedItemAsCopy) {
+        await onReflectStagedItemAsCopy(matchedStaged.stage_id, alternateSuffix);
+      } else {
+        await invoke("reflect_staged_file_as_copy", {
+          stageId: matchedStaged.stage_id,
+          suffix: alternateSuffix,
+        });
+      }
+      setShowReflectModal(false);
+      setReflectError(null);
+      await loadDiff(matchedStaged.stage_id);
+    } catch (err) {
+      console.error("Save as alternate copy failed:", err);
+      const errMsg = typeof err === "string" ? err : String(err);
+      setReflectError(errMsg);
+    } finally {
+      setIsSavingCopy(false);
     }
   };
 
@@ -394,12 +465,22 @@ export function BottomTabPanel({
     );
   };
 
+  const isConflict =
+    matchedStaged?.status === "Conflict" ||
+    Boolean(
+      reflectError &&
+        (reflectError.toLowerCase().includes("conflict") ||
+          reflectError.includes("競合") ||
+          reflectError.toLowerCase().includes("modified") ||
+          reflectError.toLowerCase().includes("policy"))
+    );
+
   return (
     <div className="panel-container bottom-tab-container">
-      {/* Reflection Confirmation Modal */}
-      {showReflectModal && matchedStaged && (
-        <div className="modal-backdrop">
-          <div className="reflect-confirm-dialog">
+      {/* Reflection Confirmation Modal (Rendered to document.body to prevent clipping by panel-container) */}
+      {showReflectModal && matchedStaged && createPortal(
+        <div className="modal-backdrop" onClick={() => setShowReflectModal(false)}>
+          <div className="reflect-confirm-dialog" onClick={(e) => e.stopPropagation()}>
             <div className="dialog-header">
               <div className="dialog-title-group">
                 <AlertTriangle size={18} className={reflectError ? "text-red-400" : "text-amber-400"} />
@@ -426,8 +507,51 @@ export function BottomTabPanel({
                     <h5>{t("reflection.reflect_failed")}</h5>
                   </div>
                   <p className="dialog-error-text">{reflectError}</p>
-                  {(reflectError.includes("Conflict") || reflectError.includes("conflict")) && (
-                    <p className="dialog-conflict-note">{t("reflection.conflict_detected_detail")}</p>
+                  {(isConflict || reflectError) && (
+                    <div className="conflict-alternate-save-box mt-3 pt-3 border-t border-red-500/30">
+                      <p className="dialog-conflict-note mb-2">{t("reflection.conflict_detected_detail")}</p>
+                      <div className="flex flex-col gap-2 p-2.5 rounded bg-black/40 border border-teal-500/30">
+                        <div className="flex items-center justify-between text-xs font-semibold text-teal-300">
+                          <span className="flex items-center gap-1.5">
+                            <Copy size={13} className="text-teal-400" />
+                            {t("reflection.save_as_copy_title")}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-300">{t("reflection.save_as_copy_desc")}</p>
+                        <div className="flex items-center gap-2 text-xs">
+                          <label className="text-slate-400 shrink-0">{t("reflection.custom_suffix_label")}:</label>
+                          <input
+                            type="text"
+                            className="bg-black/60 border border-white/20 rounded px-2 py-0.5 text-xs text-teal-300 font-mono w-24 focus:outline-none focus:border-teal-400"
+                            value={alternateSuffix}
+                            onChange={(e) => setAlternateSuffix(e.target.value)}
+                            placeholder=".edit"
+                          />
+                        </div>
+                        {alternatePreviewPath && (
+                          <div className="text-[11px] font-mono text-teal-400 break-all bg-teal-950/40 p-1.5 rounded border border-teal-500/20">
+                            <span className="text-slate-400 mr-1">{t("reflection.copy_preview_label")}:</span>
+                            {alternatePreviewPath}
+                          </div>
+                        )}
+
+                        <div className="pt-2 mt-1 border-t border-teal-500/20 flex items-center justify-between">
+                          <span className="text-[11px] text-slate-400">
+                            {t("reflection.save_as_copy_hint")}
+                          </span>
+                          <button
+                            type="button"
+                            className="dialog-btn primary save-copy-action-btn"
+                            onClick={handleSaveAsAlternateCopy}
+                            disabled={isSavingCopy}
+                            title={t("reflection.save_as_copy_btn")}
+                          >
+                            <Copy size={14} />
+                            <span>{isSavingCopy ? "Saving..." : t("reflection.save_as_copy_btn")}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </div>
               ) : (
@@ -459,37 +583,39 @@ export function BottomTabPanel({
                 )}
               </div>
 
-              {/* Reflection Mode Selection (Design 5.2) */}
-              <div className="dialog-mode-selection">
-                <label className="dialog-mode-group-label">{t("reflection.mode_label")}</label>
-                <div className="dialog-mode-cards">
-                  <div
-                    className={`dialog-mode-card ${reflectionMode === "BackupOrigin" ? "selected" : ""}`}
-                    onClick={() => setReflectionMode("BackupOrigin")}
-                  >
-                    <div className="mode-card-radio">
-                      <span className={`custom-radio ${reflectionMode === "BackupOrigin" ? "checked" : ""}`} />
+              {/* Reflection Mode Selection (Design 5.2) - Only show when no conflict error */}
+              {!reflectError && (
+                <div className="dialog-mode-selection">
+                  <label className="dialog-mode-group-label">{t("reflection.mode_label")}</label>
+                  <div className="dialog-mode-cards">
+                    <div
+                      className={`dialog-mode-card ${reflectionMode === "BackupOrigin" ? "selected" : ""}`}
+                      onClick={() => setReflectionMode("BackupOrigin")}
+                    >
+                      <div className="mode-card-radio">
+                        <span className={`custom-radio ${reflectionMode === "BackupOrigin" ? "checked" : ""}`} />
+                      </div>
+                      <div className="mode-card-content">
+                        <span className="mode-card-title">{t("reflection.mode_backup_origin")}</span>
+                        <p className="mode-card-desc">{t("reflection.mode_backup_desc")}</p>
+                      </div>
                     </div>
-                    <div className="mode-card-content">
-                      <span className="mode-card-title">{t("reflection.mode_backup_origin")}</span>
-                      <p className="mode-card-desc">{t("reflection.mode_backup_desc")}</p>
-                    </div>
-                  </div>
 
-                  <div
-                    className={`dialog-mode-card ${reflectionMode === "Overwrite" ? "selected" : ""}`}
-                    onClick={() => setReflectionMode("Overwrite")}
-                  >
-                    <div className="mode-card-radio">
-                      <span className={`custom-radio ${reflectionMode === "Overwrite" ? "checked" : ""}`} />
-                    </div>
-                    <div className="mode-card-content">
-                      <span className="mode-card-title">{t("reflection.mode_overwrite")}</span>
-                      <p className="mode-card-desc">{t("reflection.mode_overwrite_desc")}</p>
+                    <div
+                      className={`dialog-mode-card ${reflectionMode === "Overwrite" ? "selected" : ""}`}
+                      onClick={() => setReflectionMode("Overwrite")}
+                    >
+                      <div className="mode-card-radio">
+                        <span className={`custom-radio ${reflectionMode === "Overwrite" ? "checked" : ""}`} />
+                      </div>
+                      <div className="mode-card-content">
+                        <span className="mode-card-title">{t("reflection.mode_overwrite")}</span>
+                        <p className="mode-card-desc">{t("reflection.mode_overwrite_desc")}</p>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <div className="dialog-footer">
@@ -506,19 +632,32 @@ export function BottomTabPanel({
               </button>
 
               {reflectError ? (
-                <button
-                  type="button"
-                  className="dialog-btn secondary text-amber-400"
-                  onClick={async () => {
-                    await handleReset();
-                    setShowReflectModal(false);
-                    setReflectError(null);
-                  }}
-                  title={t("diff.reset_to_original")}
-                >
-                  <RotateCcw size={14} />
-                  <span>{t("diff.reset_to_original")}</span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="dialog-btn secondary text-amber-400"
+                    onClick={async () => {
+                      await handleReset();
+                      setShowReflectModal(false);
+                      setReflectError(null);
+                    }}
+                    title={t("diff.reset_to_original")}
+                  >
+                    <RotateCcw size={14} />
+                    <span>{t("diff.reset_to_original")}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="dialog-btn primary save-copy-action-btn"
+                    onClick={handleSaveAsAlternateCopy}
+                    disabled={isSavingCopy}
+                    title={t("reflection.save_as_copy_btn")}
+                  >
+                    <Copy size={14} />
+                    <span>{isSavingCopy ? "Saving..." : t("reflection.save_as_copy_btn")}</span>
+                  </button>
+                </>
               ) : (
                 <button
                   type="button"
@@ -532,7 +671,8 @@ export function BottomTabPanel({
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <div className="bottom-tabs-header">

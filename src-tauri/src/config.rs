@@ -7,6 +7,13 @@ use ts_rs::TS;
 const APP_DIR_NAME: &str = "Cuddle";
 const CONFIG_FILE_NAME: &str = "config.toml";
 pub const DEFAULT_MIN_FREE_SPACE_MULTIPLIER: f64 = 1.5;
+pub const DEFAULT_BACKUP_RETENTION_COUNT: usize = 5;
+pub const MAX_BACKUP_RETENTION_COUNT: usize = 10;
+pub const MIN_BACKUP_RETENTION_COUNT: usize = 1;
+
+fn default_backup_retention() -> usize {
+    DEFAULT_BACKUP_RETENTION_COUNT
+}
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
@@ -124,6 +131,9 @@ pub struct WorkspaceSection {
     pub temp_directory: Option<String>,
     /// Minimum disk free space required relative to original file size (default: 1.5x)
     pub min_free_space_multiplier: f64,
+    /// Number of recent workspace backup archives to retain (default: 5, min: 1, max: 10)
+    #[serde(default = "default_backup_retention")]
+    pub backup_retention_count: usize,
 }
 
 impl Default for WorkspaceSection {
@@ -131,6 +141,7 @@ impl Default for WorkspaceSection {
         Self {
             temp_directory: None,
             min_free_space_multiplier: DEFAULT_MIN_FREE_SPACE_MULTIPLIER,
+            backup_retention_count: DEFAULT_BACKUP_RETENTION_COUNT,
         }
     }
 }
@@ -176,6 +187,11 @@ pub fn validate_and_sanitize(mut config: AppConfig) -> AppConfig {
         );
         config.workspace.min_free_space_multiplier = DEFAULT_MIN_FREE_SPACE_MULTIPLIER;
     }
+
+    config.workspace.backup_retention_count = config
+        .workspace
+        .backup_retention_count
+        .clamp(MIN_BACKUP_RETENTION_COUNT, MAX_BACKUP_RETENTION_COUNT);
 
     config
 }
@@ -318,7 +334,7 @@ mod tests {
         let parent = path.parent().unwrap();
         fs::create_dir_all(parent).unwrap();
 
-        // Deliberately dangerous TOML: disable Landlock, set multiplier to 0.1
+        // Deliberately dangerous TOML: disable Landlock, set multiplier to 0.1, retention to 999
         let dangerous_toml = r#"
 [app]
 language = "en"
@@ -326,6 +342,7 @@ theme = "light"
 
 [workspace]
 min_free_space_multiplier = 0.1
+backup_retention_count = 999
 
 [security]
 enforce_landlock = false
@@ -344,6 +361,10 @@ enforce_landlock = false
         assert_eq!(
             loaded.workspace.min_free_space_multiplier, DEFAULT_MIN_FREE_SPACE_MULTIPLIER,
             "Multiplier must be forced to safe default!"
+        );
+        assert_eq!(
+            loaded.workspace.backup_retention_count, MAX_BACKUP_RETENTION_COUNT,
+            "Retention count must be clamped to max 10!"
         );
 
         // Clean up

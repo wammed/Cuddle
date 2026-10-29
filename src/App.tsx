@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { Panel, Group, Separator, useDefaultLayout } from "react-resizable-panels";
@@ -15,6 +15,7 @@ import type { OperationHistoryDto } from "./types/OperationHistoryDto";
 import type { BackupResultDto } from "./types/BackupResultDto";
 import type { ReflectionMode } from "./types/ReflectionMode";
 import type { ReflectExecutionResultDto } from "./types/ReflectExecutionResultDto";
+import type { ReflectAsCopyResultDto } from "./types/ReflectAsCopyResultDto";
 import type { UndoHistoryResultDto } from "./types/UndoHistoryResultDto";
 import type { ImagePreviewDto } from "./types/ImagePreviewDto";
 import { formatBytes } from "./utils/format";
@@ -36,6 +37,7 @@ import type { TarExportResultDto } from "./types/TarExportResultDto";
 import { ExitBackupModal } from "./components/ExitBackupModal";
 import { PipelineModal } from "./components/PipelineModal";
 import { SettingsModal } from "./components/SettingsModal";
+import { CriticalSecurityModal } from "./components/CriticalSecurityModal";
 import { StartPage } from "./components/StartPage";
 import { applyTheme, getSavedThemeId } from "./utils/themePresets";
 import type { Density } from "./types/Density";
@@ -57,6 +59,10 @@ export function App() {
   const [browserItems, setBrowserItems] = useState<FileItem[]>([]);
   const [stagedFiles, setStagedFiles] = useState<FileItem[]>([]);
   const [stagedItems, setStagedItems] = useState<StagedItemDto[]>([]);
+  const stagedItemsRef = useRef<StagedItemDto[]>(stagedItems);
+  useEffect(() => {
+    stagedItemsRef.current = stagedItems;
+  }, [stagedItems]);
   const [selectedItem, setSelectedItem] = useState<FileItem | null>(null);
   const [bulkRenameOpen, setBulkRenameOpen] = useState(false);
   const [chmodOpen, setChmodOpen] = useState(false);
@@ -74,6 +80,14 @@ export function App() {
   const [bottomTab, setBottomTab] = useState<BottomTabId>("preview");
 
   const [landlock, setLandlock] = useState<LandlockStatus | null>(null);
+  const [securityWarningDismissed, setSecurityWarningDismissed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("cuddle-landlock-warning-dismissed") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const [securityWarningTestOpen, setSecurityWarningTestOpen] = useState(false);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const [isScanning, setIsScanning] = useState(false);
 
@@ -388,6 +402,25 @@ export function App() {
     }
   };
 
+  const handleReflectStagedItemAsCopy = async (stageId: string, suffix?: string) => {
+    try {
+      const res = await invoke<ReflectAsCopyResultDto>("reflect_staged_file_as_copy", {
+        stageId,
+        suffix: suffix || null,
+      });
+      const updated = res.staged_item;
+      setStagedItems((prev) => prev.map((s) => (s.stage_id === stageId ? updated : s)));
+      addHistory(`Saved alternate copy of "${updated.display_name}" to ${res.copy_path}`);
+      addLog(`Saved alternate copy: ${res.copy_path} (original preserved untouched)`);
+      showToast(t("reflection.save_as_copy_success", { path: res.copy_path }));
+      await scanDirectory(currentPath);
+      await loadHistory();
+    } catch (err) {
+      addLog(`Failed to save alternate copy of ${stageId}: ${String(err)}`);
+      throw err;
+    }
+  };
+
   const handleUndoHistoryItem = async (operationId: string) => {
     try {
       const res = await invoke<UndoHistoryResultDto>("undo_history_operation", { operationId });
@@ -401,6 +434,27 @@ export function App() {
       const errStr = typeof err === "string" ? err : String(err);
       addLog(`Selective Undo failed: ${errStr}`);
       throw err;
+    }
+  };
+
+  const handleSecurityConsent = (remember: boolean) => {
+    setSecurityWarningDismissed(true);
+    if (remember) {
+      try {
+        localStorage.setItem("cuddle-landlock-warning-dismissed", "true");
+      } catch (e) {
+        console.error("Failed to save security consent to localStorage:", e);
+      }
+    }
+    addLog("User consented to run under non-Landlock kernel environment");
+  };
+
+  const handleSecurityExit = async () => {
+    try {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      await getCurrentWindow().close();
+    } catch {
+      window.close();
     }
   };
 
@@ -643,6 +697,47 @@ export function App() {
     handleUndoBatch,
   ]);
 
+  // Tauri window close request interception (Zero Data Loss on staging files)
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    import("@tauri-apps/api/window")
+      .then(({ getCurrentWindow }) => {
+        getCurrentWindow()
+          .onCloseRequested((event) => {
+            if (stagedItemsRef.current && stagedItemsRef.current.length > 0) {
+              event.preventDefault();
+              setExitBackupOpen(true);
+            }
+          })
+          .then((fn) => {
+            unlisten = fn;
+          })
+          .catch((err) => {
+            console.warn("Failed to attach onCloseRequested listener:", err);
+          });
+      })
+      .catch(() => {});
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
+
+  const handleRequestExit = useCallback(async () => {
+    if (stagedItems.length > 0) {
+      setExitBackupOpen(true);
+    } else {
+      if (window.confirm(t("app.exit_confirm"))) {
+        try {
+          await invoke("exit_cuddle_app");
+        } catch {
+          const { getCurrentWindow } = await import("@tauri-apps/api/window");
+          await getCurrentWindow().destroy();
+        }
+      }
+    }
+  }, [stagedItems.length, t]);
+
   const handleBackupSuccess = async (result: BackupResultDto) => {
     const successMsg = t("backup.backup_success", {
       path: result.archive_path,
@@ -654,12 +749,65 @@ export function App() {
     showToast(successMsg);
     await loadHistory();
     await handleClearWorkspace();
+    setExitBackupOpen(false);
+    try {
+      await invoke("exit_cuddle_app");
+    } catch {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      await getCurrentWindow().destroy();
+    }
   };
 
   const handleDiscardAndExit = async () => {
     await handleClearWorkspace();
+    setExitBackupOpen(false);
     showToast(t("workspace.clear_all_btn"));
+    try {
+      await invoke("exit_cuddle_app");
+    } catch {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      await getCurrentWindow().destroy();
+    }
   };
+
+  const handleRestoreBackup = useCallback(
+    async (archivePath?: string) => {
+      try {
+        const restored = await invoke<StagedItemDto[]>("restore_workspace_backup", {
+          archivePath: archivePath || null,
+        });
+        setStagedItems(restored);
+
+        const updatedFiles: FileItem[] = restored.map((s) => ({
+          item_id: s.stage_id,
+          raw_base64: s.staged_raw_base64,
+          display_name: s.display_name,
+          parent_raw_base64: null,
+          is_dir: false,
+          is_symlink: false,
+          size: BigInt(s.size),
+          mtime_ms: BigInt(s.staged_at_ms),
+          readonly: false,
+          inode: BigInt(s.original_snapshot.inode),
+          dev: BigInt(s.original_snapshot.dev),
+        }));
+        setStagedFiles(updatedFiles);
+        if (updatedFiles.length > 0) {
+          setSelectedItem(updatedFiles[updatedFiles.length - 1]);
+        }
+
+        addHistory(`Restored ${restored.length} working copies from backup`);
+        addLog(`Restored workspace from backup archive (${restored.length} items)`);
+        showToast(t("start.resume_backup_success", { count: restored.length }));
+        await loadHistory();
+        setCurrentView("workbench");
+      } catch (err) {
+        console.error("Failed to restore workspace from backup:", err);
+        showToast(typeof err === "string" ? err : String(err));
+      }
+    },
+    [addHistory, addLog, loadHistory, showToast, t]
+  );
 
   const handlePipelineSuccess = useCallback(async () => {
     try {
@@ -810,6 +958,7 @@ export function App() {
         onToggleBottom={() => setBottomVisible((v) => !v)}
         onResetLayout={handleResetLayout}
         onOpenSettings={() => setSettingsOpen(true)}
+        onExit={handleRequestExit}
         activeView={currentView}
         onToggleView={() => setCurrentView((v) => (v === "start" ? "workbench" : "start"))}
         currentPath={currentPath}
@@ -833,6 +982,7 @@ export function App() {
           }}
           onOpenSettings={() => setSettingsOpen(true)}
           onSwitchToWorkbench={() => setCurrentView("workbench")}
+          onResumeBackup={handleRestoreBackup}
           systemPaths={systemPaths}
           landlockSupported={landlock?.supported ?? false}
           landlockAbi={landlock?.abi_version ?? null}
@@ -985,6 +1135,7 @@ export function App() {
                       stagedItems={stagedItems}
                       onResetStagedItem={handleResetStagedItem}
                       onReflectStagedItem={handleReflectStagedItem}
+                      onReflectStagedItemAsCopy={handleReflectStagedItemAsCopy}
                       onUndoHistoryItem={handleUndoHistoryItem}
                       onClose={() => setBottomVisible(false)}
                       currentPath={currentPath}
@@ -1034,6 +1185,7 @@ export function App() {
           setDensity(d);
           applyDensity(d);
         }}
+        onOpenSecurityWarningTest={() => setSecurityWarningTestOpen(true)}
       />
 
       {/* Bulk Rename & Normalization Modal (Phase 5.1 & 5.2) */}
@@ -1090,6 +1242,16 @@ export function App() {
           onExecuteSuccess={handlePipelineSuccess}
         />
       )}
+
+      {/* Critical Security Warning Modal on Non-Landlock Kernels (Phase 11 / Task 4-3) */}
+      <CriticalSecurityModal
+        isOpen={((landlock !== null && !landlock.supported && !securityWarningDismissed) || securityWarningTestOpen)}
+        onConsent={(remember) => {
+          setSecurityWarningTestOpen(false);
+          handleSecurityConsent(remember);
+        }}
+        onExit={handleSecurityExit}
+      />
 
       <footer className="cuddle-global-statusbar">
         <div className="statusbar-left">

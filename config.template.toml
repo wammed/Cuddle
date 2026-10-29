@@ -69,6 +69,11 @@ temp_directory = null
 #   - Mandatory Guardrail: Values below 1.5 are strictly rejected to prevent out-of-disk crashes.
 min_free_space_multiplier = 1.5
 
+# Number of recent workspace backup archives to retain:
+#   - Default: 5 (Keeps up to 5 most recent tar.gz backups in $XDG_DATA_HOME/Cuddle/backups/)
+#   - Range: 1 to 10. Automatically prunes oldest archives exceeding this count.
+backup_retention_count = 5
+
 [security]
 # Enforce Linux Landlock LSM kernel-level process isolation:
 #   - true (Default & Enforced)

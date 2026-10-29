@@ -32,6 +32,13 @@ pub struct ReflectExecutionResultDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export, export_to = "../../src/types/")]
+pub struct ReflectAsCopyResultDto {
+    pub staged_item: workspace::StagedItemDto,
+    pub copy_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export, export_to = "../../src/types/")]
 pub struct UndoHistoryResultDto {
     pub operation_id: String,
     pub operation_type: String,
@@ -342,6 +349,29 @@ fn get_origin_backup_preview(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn reflect_staged_file_as_copy(
+    stage_id: String,
+    suffix: Option<String>,
+) -> Result<ReflectAsCopyResultDto, String> {
+    let mgr = workspace::get_workspace_manager();
+    let (staged_item, copy_path) = mgr
+        .reflect_staged_item_as_copy(&stage_id, suffix)
+        .map_err(|e| e.to_string())?;
+
+    Ok(ReflectAsCopyResultDto {
+        staged_item,
+        copy_path: copy_path.to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
+fn get_alternate_copy_preview(path: String, suffix: Option<String>) -> Result<String, String> {
+    let p = std::path::Path::new(&path);
+    let preview = workspace::generate_alternate_copy_path(p, suffix.as_deref());
+    Ok(preview.to_string_lossy().to_string())
+}
+
+#[tauri::command]
 fn undo_history_operation(operation_id: String) -> Result<UndoHistoryResultDto, String> {
     let hist_mgr = history::get_history_manager();
     let op = hist_mgr
@@ -589,10 +619,35 @@ fn get_default_backup_path() -> Result<String, String> {
 #[tauri::command]
 fn create_workspace_backup(
     destination_path: Option<String>,
+    auto_prune_limit: Option<usize>,
 ) -> Result<backup::BackupResultDto, String> {
     let mgr = workspace::get_workspace_manager();
     let staged = mgr.list_staged();
-    backup::create_workspace_backup(destination_path, &staged)
+    let cfg = config::load_or_create_config();
+    let limit = auto_prune_limit.unwrap_or(cfg.workspace.backup_retention_count);
+    backup::create_workspace_backup(destination_path, &staged, Some(limit))
+}
+
+#[tauri::command]
+fn list_workspace_backups() -> Result<Vec<backup::BackupArchiveInfoDto>, String> {
+    backup::list_backups()
+}
+
+#[tauri::command]
+fn delete_workspace_backup(filename: String) -> Result<(), String> {
+    backup::delete_backup(&filename)
+}
+
+#[tauri::command]
+fn prune_workspace_backups(keep_count: usize) -> Result<Vec<String>, String> {
+    backup::prune_old_backups(keep_count)
+}
+
+#[tauri::command]
+fn restore_workspace_backup(
+    archive_path: Option<String>,
+) -> Result<Vec<workspace::StagedItemDto>, String> {
+    backup::restore_workspace_backup(archive_path)
 }
 
 #[tauri::command]
@@ -822,6 +877,11 @@ async fn execute_custom_pipeline(
     Ok(res)
 }
 
+#[tauri::command]
+fn exit_cuddle_app(app_handle: tauri::AppHandle) {
+    app_handle.exit(0);
+}
+
 static GUI_LOCK: std::sync::Mutex<Option<periodic_index::AppLock>> = std::sync::Mutex::new(None);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -845,6 +905,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            exit_cuddle_app,
             greet,
             get_landlock_status,
             get_demo_items,
@@ -874,6 +935,8 @@ pub fn run() {
             get_file_diff,
             reset_staged_file,
             reflect_staged_file,
+            reflect_staged_file_as_copy,
+            get_alternate_copy_preview,
             get_origin_backup_preview,
             generate_bulk_rename_plan,
             execute_bulk_rename,
@@ -892,6 +955,10 @@ pub fn run() {
             clear_operation_history,
             get_default_backup_path,
             create_workspace_backup,
+            list_workspace_backups,
+            delete_workspace_backup,
+            prune_workspace_backups,
+            restore_workspace_backup,
             has_unreflected_staged_items,
             probe_external_tools,
             execute_sandboxed_command,
@@ -925,6 +992,7 @@ mod tests {
         let cfg = ts_rs::Config::default();
         ReflectExecutionResultDto::export(&cfg)
             .expect("Failed to export ReflectExecutionResultDto");
+        ReflectAsCopyResultDto::export(&cfg).expect("Failed to export ReflectAsCopyResultDto");
         UndoHistoryResultDto::export(&cfg).expect("Failed to export UndoHistoryResultDto");
     }
 

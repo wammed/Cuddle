@@ -4,8 +4,8 @@
   <a href="FileWorkbench-Handover.en.md">English</a> | <strong>日本語</strong>
 </p>
 
-**文書作成日：** 2026-10-26  
-**ステータス：** 全フェーズ（Phase 1〜9）実装・検証完了、ソース公開配布準備完了（MIT License / README / BUILD / CI Actions 整備完了）、検索インデックス明示的管理UI & systemd定期更新タイマー実装完了  
+**文書作成日：** 2026-10-29  
+**ステータス：** 全フェーズ（Phase 1〜11）実装・実機手動テスト承認完了、ソース公開配布準備完了（MIT License / README / BUILD / CI Actions 整備完了）、原本競合別名保存・バックアップ世代管理（プルーニング）・終了時安全インターセプト・スタートページ再開スイッチ・Landlock 非対応警告モーダル検証完了 (199 Cargo / 108 Vitest 全件パス、次回 Phase 12 開始)  
 **対象：** 開発・設計・テスト担当者、次期作業セッション担当  
 
 ---
@@ -280,12 +280,14 @@
 メジャーフェーズ 6（バックアップ・履歴・UNDO・セッション復元）の自動テストがすべて完了したため、**手動テストチェックリストによる実機検証確認**および**フェーズ開始前意思決定ゲートの合意**を経てメジャーフェーズ 7（外部ツール連携 & パイプラインランナー）へ移行する。
 
 ### 7.1 Phase 7.1 の目的と設計方針（外部コマンド安全実行エンジン）
+
 * **プロセス分離 & Landlock LSM / cgroups 安全隔離実行：**
   * 外部ツール（ImageMagick、FFmpeg、pandoc 等）の実行を `workspace-temp/` 領域のみ読み書き許可で隔離実行。
   * メモリ・CPU・実行時間タイムアウト（30秒等）の上限保護。
   * シェル文字列展開（`sh -c`）を完全排除した引数配列実行。
 
 ### 7.2 Phase 7.2 の目的と設計方針（30種パイプラインプリセット & DAG ワークフロー）
+
 * **合意済み 30 種パイプラインプリセット体系：**
   * **画像・ビジュアル処理系（1〜8）：**
     1. Web配信用軽量化（Exif削除 $\rightarrow$ 1920px縮小 $\rightarrow$ WebP品質80 $\rightarrow$ `_web`付与）
@@ -327,6 +329,7 @@
   * 各プリセットの必要ツール（`magick`, `ffmpeg`, `qpdf`, `pdfimages`, `exiftool` 等）の `$PATH` 実在を検知し、未インストール時は分かりやすい案内を表示。純Rust完結プリセット（14〜20, 26〜29）は外部ツール不要で即時利用可能。
 
 ### 7.3 Phase 7.3（リアルタイム進捗 UI & キャンセル制御）：完了
+
 * **非同期ストリーミング通知と UI 統合：**
   * 各ファイルの処理状況（待機・実行中・成功・失敗）をリアルタイムに進捗プログレスバーで表示（Tauri イベント `pipeline-progress`）。
   * `PipelineCancellationManager` による子プロセスの即時 SIGKILL 中断と RollbackAll 安全終了。
@@ -337,10 +340,12 @@
 ## 8. Phase 8（UI/UX 最終調整、仮想スクロール、レイアウト最適化 & カラーテーマ）：完了
 
 ### 8.1 ユーザー合意事項（意思決定ゲート）
+
 1. **カラーテーマ選定：** `Midnight Teal / Cyber Dark`（深海ダーク `#060c11`, `#09141b` をベースに、サイバーティール `#14b8a6`、ネオンミント `#2dd4bf` のアクセントを取り入れたサイバー調ダークパレット）。
 2. **ボタン隠れ問題解決方針：** `下部固定アクションバー方式`（全モーダル・ダイアログでフッターボタンを画面下部に固定配置し、入力・設定・リスト領域のみを独立スクロールさせて、ウィンドウが小さくてもボタンが絶対に隠れない構造に統一）。
 
 ### 8.2 実装内容
+
 * **下部固定アクションバー（Fixed Bottom Action Bar）：**
   * `.reflect-confirm-dialog`, `.bulk-rename-modal`, `.exit-backup-dialog`, `.pipeline-modal-dialog` の全モーダルにおいて、共通アクションバー（`.dialog-footer`, `.dialog-actions-bar`）に `flex-shrink: 0; margin-top: auto; position: relative; z-index: 10;` を設定。
   * コンテンツボディ部（`.dialog-body`, `.bulk-rename-body`, `.pipeline-config-scroll`）に `flex: 1; min-height: 0; overflow-y: auto;` を徹底し、エラーバナーやプレビューテーブルが長くなってもボタンバーが画面内に常に固定表示される構造を確立。
@@ -455,13 +460,15 @@
 ## 9. Phase 9（未実装コア機能 & ソース公開配布体制）：完了
 
 ### 9.1 ユーザー合意事項（意思決定ゲート）
+
 1. **配布方針（Distribution Policy）：** 初期リリースではライセンス管理等の煩雑さを避けるためバイナリパッケージ（deb, AppImage, Flatpak 等）の配布は行わず、**ソースコードのみを公開し、必須前提パッケージおよびビルド手順（README / BUILD）を完全に明記する**。
 2. **エディタ連携リネーム（vidir型）仕様：**
-   - **インターフェース：** アプリ内テキストエディタ ＋ 外部エディタ（`$VISUAL`, `$EDITOR`, VS Code, nano 等）呼び出しの両方に対応。
-   - **フォーマット：** 設計書 9.4 準拠のシンプルなタブ区切りテキスト形式（`[item_id]<TAB>[ファイル名]`）。
-   - **安全保護：** `item_id` で照合し、行削除は「ファイル削除」と解釈せず「変更なし（リネーム対象外）」として扱う。Two-Phase Rename およびロールバックジャーナル（UNDO）を完全適用。
+   * **インターフェース：** アプリ内テキストエディタ ＋ 外部エディタ（`$VISUAL`, `$EDITOR`, VS Code, nano 等）呼び出しの両方に対応。
+   * **フォーマット：** 設計書 9.4 準拠のシンプルなタブ区切りテキスト形式（`[item_id]<TAB>[ファイル名]`）。
+   * **安全保護：** `item_id` で照合し、行削除は「ファイル削除」と解釈せず「変更なし（リネーム対象外）」として扱う。Two-Phase Rename およびロールバックジャーナル（UNDO）を完全適用。
 
 ### 9.2 実装内容（Phase 9.1: エディタ連携リネーム vidir型）：完了
+
 * **バックエンドエンジン（`src-tauri/src/batch.rs`, `src-tauri/src/lib.rs`）：**
   * `generate_vidir_buffer`: 対象一覧から設計書 9.4 準拠のタブ区切りバッファを生成（安全上の注意事項ヘッダー付き）。
   * `parse_vidir_buffer`: 編集後のテキストをパースし、行削除されたアイテムは `OperationStatus::Unchanged` として安全に保持。重複衝突（`ConflictDuplicate`）、ディスク上既存衝突（`ConflictExistsOnDisk`）、不正ファイル名（`InvalidFilename`）を厳格に検出。
@@ -480,6 +487,7 @@
   * Vitest 51 件全件 100% パス（`BulkRenameModal.test.tsx` に vidir 連携テスト追加）、Cargo test 141 件全件 100% パス、TypeScript 型チェック / Vite ビルド完全成功。
 
 ### 9.3 実装内容（Phase 9.2: 一括属性変更 chmod 8進数＆シンボリック）：完了
+
 * **バックエンドエンジン（`src-tauri/src/chmod.rs`, `src-tauri/src/lib.rs`）：**
   * `parse_octal_mode`: 3桁/4桁の8進数（例: `644`, `0755`, `4755`）を厳格にパース。
   * `parse_symbolic_mode`: POSIX chmod 互換のカンマ区切りシンボリック表現（例: `u+x`, `go-w`, `a+r`, `u=rwx,go=rx`、プレフィックス省略形式 `+x`, `-w`）を解釈。
@@ -502,7 +510,9 @@
     * `FileBrowserPanel.tsx`: 右クリックコンテキストメニューから個別・一括属性変更を起動可能。
 * **多言語同期（`ja/translation.json`, `en/translation.json`）：**
   * `chmod` セクションの全キー（タイトル、タブ、プリセット、マトリクス、警告、ステータス、ボタン等）を日英完全同期。
+
 ### 9.4 実装内容（Phase 9.3: タイムスタンプ一括変更 & ワークスペース tar/tar.gz エクスポート）：完了
+
 * **バックエンドエンジン（`src-tauri/src/timestamp.rs`, `src-tauri/src/export_tar.rs`, `src-tauri/src/lib.rs`）：**
   * **タイムスタンプ一括変更（`timestamp.rs`）：**
     * `filetime = "0.2"` および `kamadak-exif = "0.6"` による高精度タイムスタンプ制御。
@@ -544,7 +554,9 @@
     * `FileBrowserPanel.tsx`: 右クリックコンテキストメニューから個別・一括日時変更を起動可能。
 * **多言語同期（`ja/translation.json`, `en/translation.json`）：**
   * `timestamp` および `tar_export` セクションの全キー（タイトル、タブ、説明、プレースホルダー、ステータス、ボタン等）を日英完全同期。
+
 ### 9.6 実装内容（Phase 9.5: 原本への反映方式（方式 A / 方式 B）& 選択的 UNDO（Selective Undo））：完了
+
 * **原本への反映方式（設計書 5.2 独立操作の徹底）：**
   * **2つの反映モード（`workspace::ReflectionMode`）：**
     * **方式 A（`Overwrite`）：** 原本と同一親ディレクトリ内に一時ファイル（`.cuddle_reflect_<uuid>.tmp`）を作成・コピー検証後、POSIX 原子的 `fs::rename(2)` により原本を安全に置換。
@@ -576,6 +588,7 @@
   * TypeScript 型チェック / Vite 本番ビルド完全成功。
 
 ### 9.7 実装内容（Phase 9.6: デスクトップランチャー自動登録 & DE別インストーラー・アンインストーラー）：完了
+
 * **マルチデスクトップ環境（DE）対応インストーラー（`scripts/`）：**
   * **CachyOS + COSMIC DE（Wayland）特化版（`scripts/install-cosmic.sh`）：**
     * CachyOS / Arch Linux および System76 COSMIC Desktop Environment（`cosmic-comp`, `cosmic-app-library`, `cosmic-launcher`）に最適化。
@@ -597,6 +610,7 @@
   * `README.ja.md` / `README.md`: クイックスタート内にワンライナーインストールコマンドを追記。
 
 ### 9.8 実装内容（全文検索インデックス明示的管理UI & 設計書 7.3 準拠 systemd 定期更新タイマー）：完了
+
 * **検索インデックス明示的管理 UI（`SearchPanel.tsx`, `App.css`, 各種パネル）：**
   * 検索入力枠右隣に専用の「インデックス管理（Database）」ドロップダウンスイッチを新設。
   * **リアルタイム統計 ＆ 対象ディレクトリ表示：**
@@ -660,6 +674,7 @@
 統合基本設計書（[`FileWorkbench-Design-ver0.9.ja.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Design-ver0.9.ja.md)）と現行コードベースの網羅的照合に基づき、未実装または差異のある 18 項目をトリアージし、[`NEXT_IMPLEMENTATION_TASKS.ja.md`](file:///home/susie/git/wammed/Cuddle/NEXT_IMPLEMENTATION_TASKS.ja.md) として策定しました。
 
 ### フェーズ構成と推奨着手フロー
+
 1. **Phase 10: UX ＆ 操作性クイックウィン ＆ 視覚的超リッチ化 【実装完了・手動テスト承認済み】**
    * 【2-2】ペイン幅・配置のセッション間復元（`react-resizable-panels` / `localStorage`）: **実装完了・実機検証済み**
    * 【2-1】ブラウザー ⇔ ワークスペース間のドラッグ＆ドロップ（D&D ステージング）: **実装完了・実機検証済み**
@@ -670,11 +685,19 @@
    * 【2-8】ストレージ容量ゲージ ＆ パーミッション/サイズ視覚化（インラインサイズヒートバー、パーミッションチップ）: **実装完了・実機検証済み**
    * 【2-9】等幅数字（Tabular Figures）＆ インタラクティブ・ブレッドクラム: **実装完了・実機検証済み**
    * 【2-10】アンビエント・オーロラメッシュ背景 ＆ 微細グレイン（30色テーマ完全同期 ＆ 高輝度オーブ）: **実装完了・実機検証済み**
-2. **Phase 11: 安全設計 ＆ 原本反映・リカバリーの洗練 【次回セッション着手予定】**
-   * 【3-2】原本競合時の別名保存（例: `.edit.pdf`）の UI 提示と安全退避フロー
-   * 【3-3】バックアップ保持数（既定 5 件、上限 10 件）の管理と古い世代の削除 UI
-   * 【4-3】Landlock 非対応環境での起動ブロック / 同意ダイアログ
-3. **Phase 12: パイプライン実行・外部連携の柔軟性拡張**
+2. **Phase 11: 安全設計 ＆ 原本反映・リカバリーの洗練 【実装完了・手動テスト承認済み】**
+   * 【3-2】原本競合時の別名保存（例: `.edit.pdf`）の UI 提示と安全退避フロー: **実装完了・実機手動テスト承認済み**
+     * バックエンド `reflect_staged_item_as_copy`（サフィックス指定・衝突時連番付与）、`get_alternate_copy_preview` を実装。
+     * 原本を一切改変せずに成果物を安全保存。原本反映モーダルで競合検知時に専用別名保存UIを表示。
+   * 【3-3】バックアップ保持数（既定 5 件、上限 10 件）の管理と古い世代の削除 UI: **実装完了・実機手動テスト承認済み**
+     * バックエンド `config.rs`（`backup_retention_count`）、`backup.rs`（`list_backups`, `delete_backup`, `prune_old_backups`, `restore_workspace_backup`）を実装。
+     * `ExitBackupModal` に保持ポリシーインジケーター、自動プルーニングチェック、アーカイブ一覧＆個別削除ボタンを実装。`SettingsModal` に世代数スライダーを追加。
+     * スタートページ（`StartPage.tsx`）に「バックアップから再開」スイッチおよびアーカイブ選択モーダルを追加。
+   * 【4-3】Landlock 非対応環境での起動ブロック / 同意ダイアログ: **実装完了・実機手動テスト承認済み**
+     * `CriticalSecurityModal` を新設。Landlock LSM 非対応またはカーネル制約時に全画面警告を表示し、同意または終了を強制。選択記憶トグルを実装。
+   * 【終了時安全インターセプト & ヘッダー終了ボタン】: **実装完了・実機手動テスト承認済み**
+     * ウィンドウ右上×ボタン押下時の `onCloseRequested` インターセプトによる Zero Data Loss 保証、およびヘッダー終了ボタンを実装。
+3. **Phase 12: パイプライン実行・外部連携の柔軟性拡張 【次回セッション着手予定】**
    * 【4-2】ユーザー定義カスタムパイプラインでの `allowed_read_paths` 指定（Landlock 連携）
    * 【4-1】入力方式（`batch`, `stdin`）と型付きプレースホルダー（`{InputList}`, `{WorkspaceDirectory}`）
    * 【2-3】OS / デスクトップ環境ネイティブ通知の抽象化（FreeDesktop D-Bus 通知）

@@ -367,6 +367,30 @@ body {
   box-shadow: 0 0 12px var(--border-glow);
 }
 
+.header-exit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.header-exit-btn:hover {
+  background: rgba(244, 63, 94, 0.12);
+  border-color: rgba(244, 63, 94, 0.4);
+  color: #fb7185;
+}
+
+.exit-btn-label {
+  font-weight: 500;
+}
+
 /* Row 2: Secondary Tool Bar (Directory Path Chip & Layout Panel Toggles) */
 .header-secondary-row {
   height: 34px;
@@ -4977,6 +5001,47 @@ body {
   color: var(--accent-brand-bright);
 }
 
+.start-resume-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  background: rgba(168, 85, 247, 0.15);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  border-radius: var(--radius-xs);
+  color: #e9d5ff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.start-resume-btn:hover:not(:disabled) {
+  background: rgba(168, 85, 247, 0.25);
+  border-color: rgba(192, 132, 252, 0.7);
+  box-shadow: 0 0 16px rgba(168, 85, 247, 0.35);
+  transform: translateY(-1px);
+}
+
+.start-resume-btn.disabled,
+.start-resume-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.resume-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 6px;
+  background: rgba(168, 85, 247, 0.35);
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+  color: #f3e8ff;
+}
+
 /* Feature Cards Grid */
 .start-section-heading {
   display: flex;
@@ -4993,8 +5058,14 @@ body {
 
 .start-action-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 16px;
+}
+
+@media (max-width: 1200px) {
+  .start-action-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .start-feature-card {
@@ -5040,6 +5111,12 @@ body {
   background: rgba(245, 158, 11, 0.12);
   color: #fbbf24;
   border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.feature-card-icon-wrap.backup {
+  background: rgba(168, 85, 247, 0.12);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.3);
 }
 
 .feature-card-body h5 {
@@ -6713,11 +6790,23 @@ body {
    Chmod Modal Styles (Midnight Teal & Cyber Dark)
    ========================================================================== */
 .chmod-modal-dialog {
-  max-width: 760px;
   width: 90vw;
+  max-width: 760px;
   max-height: 88vh;
+  background: rgba(13, 20, 32, 0.98);
+  border: 1px solid rgba(45, 212, 191, 0.35);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8), 0 0 24px rgba(20, 184, 166, 0.15);
+  overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.chmod-modal-dialog .dialog-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
 }
 
 .chmod-tab-bar {
@@ -6899,9 +6988,23 @@ body {
 
 /* Timestamp Modal */
 .timestamp-modal-dialog {
+  width: 90vw;
+  max-width: 760px;
+  max-height: 88vh;
   background: rgba(13, 20, 32, 0.98);
-  border: 1px solid rgba(45, 212, 191, 0.3);
+  border: 1px solid rgba(45, 212, 191, 0.35);
+  border-radius: var(--radius-sm);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8), 0 0 24px rgba(20, 184, 166, 0.15);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.timestamp-modal-dialog .dialog-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
 }
 
 .timestamp-tab-bar {
@@ -7054,9 +7157,23 @@ body {
 
 /* Tar Export Modal */
 .tar-export-modal-dialog {
+  width: 90vw;
+  max-width: 680px;
+  max-height: 88vh;
   background: rgba(13, 20, 32, 0.98);
-  border: 1px solid rgba(45, 212, 191, 0.3);
+  border: 1px solid rgba(45, 212, 191, 0.35);
+  border-radius: var(--radius-sm);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8), 0 0 24px rgba(20, 184, 166, 0.15);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.tar-export-modal-dialog .modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
 }
 
 .tar-section-label {
@@ -8192,4 +8309,55 @@ button:active:not(:disabled),
 .current-path-badge:hover .breadcrumb-edit-icon {
   opacity: 0.9;
   color: #38bdf8;
+}
+
+/* ==============================================================================
+ * Phase 11: Safety, Conflict Resolution & Recovery Refinements
+ * ============================================================================== */
+
+/* Task 3-2: Conflict Alternate Copy Styles */
+.dialog-btn.primary.save-copy-action-btn {
+  background: linear-gradient(135deg, #0f766e 0%, #0d9488 100%);
+  color: #ccfbf1;
+  border: 1px solid rgba(45, 212, 191, 0.5);
+  box-shadow: 0 2px 8px rgba(13, 148, 136, 0.3);
+}
+
+.dialog-btn.primary.save-copy-action-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #14b8a6 0%, #2dd4bf 100%);
+  color: #042f2e;
+  box-shadow: 0 4px 14px rgba(45, 212, 191, 0.45);
+}
+
+.conflict-alternate-save-box {
+  background: rgba(13, 148, 136, 0.06);
+  border-radius: var(--radius-xs);
+  padding: 10px;
+}
+
+/* Task 3-3: Backup Retention Card Styles */
+.backup-retention-card {
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--transition-fast);
+}
+
+.backup-retention-card:hover {
+  border-color: rgba(45, 212, 191, 0.25);
+}
+
+.backup-retention-slider-row input[type="range"] {
+  accent-color: var(--accent-brand-bright, #2dd4bf);
+}
+
+/* Task 4-3: Critical Security Modal Styles */
+.critical-security-backdrop {
+  background: rgba(2, 6, 12, 0.88);
+  backdrop-filter: blur(16px);
+}
+
+.critical-security-dialog {
+  animation: modal-fade-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 40px -10px rgba(244, 63, 94, 0.25);
 }

@@ -1548,7 +1548,10 @@ impl PipelineRunner {
         let notif_body = if failure_count == 0 {
             format!("Preset executed successfully on {} items.", success_count)
         } else {
-            format!("Completed with {} succeeded and {} failed.", success_count, failure_count)
+            format!(
+                "Completed with {} succeeded and {} failed.",
+                success_count, failure_count
+            )
         };
         let notif_level = if failure_count == 0 {
             NotificationLevel::Success
@@ -1733,7 +1736,9 @@ impl PipelineRunner {
                     cmd
                 }
                 ExecutionInputMode::BatchList | ExecutionInputMode::StandardInput => {
-                    batch_or_stdin_cmd.clone().unwrap_or_else(|| vec![resolved_exec_str.clone()])
+                    batch_or_stdin_cmd
+                        .clone()
+                        .unwrap_or_else(|| vec![resolved_exec_str.clone()])
                 }
             };
 
@@ -2068,7 +2073,8 @@ impl PipelineRunner {
                         &base_workspace,
                     );
 
-                    let stdin_content = if pipeline.input_mode == ExecutionInputMode::StandardInput {
+                    let stdin_content = if pipeline.input_mode == ExecutionInputMode::StandardInput
+                    {
                         let lines = all_staged_paths
                             .iter()
                             .map(|p| p.to_string_lossy().to_string())
@@ -2112,7 +2118,8 @@ impl PipelineRunner {
                                     .extension()
                                     .and_then(|e| e.to_str())
                                     .unwrap_or("");
-                                let final_ext = pipeline.output_extension.as_deref().unwrap_or(orig_ext);
+                                let final_ext =
+                                    pipeline.output_extension.as_deref().unwrap_or(orig_ext);
                                 let suffix = &pipeline.default_suffix;
 
                                 let output_name = if !suffix.is_empty() && !stem.ends_with(suffix) {
@@ -2128,7 +2135,9 @@ impl PipelineRunner {
                                 };
 
                                 let proposed_output_path = parent_dir.join(&output_name);
-                                if proposed_output_path.exists() && output_name != staged.display_name {
+                                if proposed_output_path.exists()
+                                    && output_name != staged.display_name
+                                {
                                     let _ = workspace_manager.update_staged_path(
                                         stage_id,
                                         &proposed_output_path,
@@ -2200,7 +2209,10 @@ impl PipelineRunner {
         let notif_body = if failure_count == 0 {
             format!("Pipeline executed successfully on {} items.", success_count)
         } else {
-            format!("Completed with {} succeeded and {} failed.", success_count, failure_count)
+            format!(
+                "Completed with {} succeeded and {} failed.",
+                success_count, failure_count
+            )
         };
         let notif_level = if failure_count == 0 {
             NotificationLevel::Success
@@ -2958,7 +2970,8 @@ mod tests {
 
     #[test]
     fn test_custom_pipeline_dry_run_with_modes_and_allowed_reads() {
-        let temp_dir = std::env::temp_dir().join(format!("cuddle_pipe_dry_{}", uuid::Uuid::new_v4()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("cuddle_pipe_dry_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
 
         let ws_mgr = crate::workspace::WorkspaceManager::new();
@@ -2979,7 +2992,11 @@ mod tests {
             name: "Echo PerFile".to_string(),
             description: "Test per file".to_string(),
             executable: "echo".to_string(),
-            args: vec!["{input}".to_string(), "to".to_string(), "{output}".to_string()],
+            args: vec![
+                "{input}".to_string(),
+                "to".to_string(),
+                "{output}".to_string(),
+            ],
             supported_extensions: vec!["txt".to_string()],
             output_extension: Some("bak".to_string()),
             default_suffix: "_copy".to_string(),
@@ -2987,10 +3004,14 @@ mod tests {
             input_mode: ExecutionInputMode::PerFile,
         };
 
-        let dry_per_file = PipelineRunner::dry_run_custom_pipeline(&per_file_def, &stage_ids, &ws_mgr).unwrap();
+        let dry_per_file =
+            PipelineRunner::dry_run_custom_pipeline(&per_file_def, &stage_ids, &ws_mgr).unwrap();
         assert!(dry_per_file.can_proceed_to_execution);
         assert_eq!(dry_per_file.items.len(), 2);
-        assert!(dry_per_file.items[0].expanded_command.iter().any(|arg| arg.contains(".bak")));
+        assert!(dry_per_file.items[0]
+            .expanded_command
+            .iter()
+            .any(|arg| arg.contains(".bak")));
 
         // 2. BatchList pipeline with {InputList}
         let batch_def = crate::config::CustomPipelineDefDto {
@@ -3006,12 +3027,21 @@ mod tests {
             input_mode: ExecutionInputMode::BatchList,
         };
 
-        let dry_batch = PipelineRunner::dry_run_custom_pipeline(&batch_def, &stage_ids, &ws_mgr).unwrap();
+        let dry_batch =
+            PipelineRunner::dry_run_custom_pipeline(&batch_def, &stage_ids, &ws_mgr).unwrap();
         assert!(dry_batch.can_proceed_to_execution);
         assert_eq!(dry_batch.items.len(), 2);
-        assert!(dry_batch.items[0].expanded_command.contains(&"--batch".to_string()));
-        assert!(dry_batch.items[0].expanded_command.iter().any(|a| a.contains("sample1.txt")));
-        assert!(dry_batch.items[0].expanded_command.iter().any(|a| a.contains("sample2.txt")));
+        assert!(dry_batch.items[0]
+            .expanded_command
+            .contains(&"--batch".to_string()));
+        assert!(dry_batch.items[0]
+            .expanded_command
+            .iter()
+            .any(|a| a.contains("sample1.txt")));
+        assert!(dry_batch.items[0]
+            .expanded_command
+            .iter()
+            .any(|a| a.contains("sample2.txt")));
 
         // 3. StandardInput pipeline
         let stdin_def = crate::config::CustomPipelineDefDto {
@@ -3027,9 +3057,14 @@ mod tests {
             input_mode: ExecutionInputMode::StandardInput,
         };
 
-        let dry_stdin = PipelineRunner::dry_run_custom_pipeline(&stdin_def, &stage_ids, &ws_mgr).unwrap();
+        let dry_stdin =
+            PipelineRunner::dry_run_custom_pipeline(&stdin_def, &stage_ids, &ws_mgr).unwrap();
         assert!(dry_stdin.can_proceed_to_execution);
-        assert!(dry_stdin.items[0].message.as_deref().unwrap().contains("[stdin stream input]"));
+        assert!(dry_stdin.items[0]
+            .message
+            .as_deref()
+            .unwrap()
+            .contains("[stdin stream input]"));
 
         // Clean up
         let _ = std::fs::remove_dir_all(&temp_dir);

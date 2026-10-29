@@ -246,4 +246,36 @@ describe("App component (6-Region Main Shell)", () => {
     expect(screen.getByText("安全第一の原本保護型ファイル作業環境")).toBeDefined();
     expect(screen.getByText("主要機能・ワークフロー")).toBeDefined();
   });
+
+  it("dynamically updates statusbar Nerd Font indicator when typography settings change", async () => {
+    localStorage.clear();
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    render(<App />);
+
+    // Initially recommended
+    expect(screen.getByText("Nerd Font: 導入推奨")).toBeDefined();
+
+    // Dynamically apply Nerd Font setting via typography utility
+    const { applyTypographySettings, DEFAULT_TYPOGRAPHY_SETTINGS } = await import("../utils/typography");
+    await act(async () => {
+      applyTypographySettings({
+        ...DEFAULT_TYPOGRAPHY_SETTINGS,
+        monoFontPreset: "nerd",
+      });
+    });
+
+    // Should reactively update to "適用中"
+    expect(screen.getByText("Nerd Font: 適用中")).toBeDefined();
+
+    // Clicking the statusbar indicator should open SettingsModal
+    const nerdFontBtn = screen.getByRole("button", { name: /Nerd Font: 適用中/ });
+    await act(async () => {
+      fireEvent.click(nerdFontBtn);
+    });
+
+    expect(screen.getByText("環境設定 & 外観")).toBeDefined();
+  });
 });

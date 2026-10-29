@@ -7,6 +7,9 @@ import {
   applyTypographySettings,
   getSavedTypographySettings,
   resetTypographySettings,
+  isNerdFontConfigured,
+  detectSystemNerdFont,
+  getNerdFontStatus,
   TypographySettings,
 } from "../utils/typography";
 
@@ -94,5 +97,87 @@ describe("Typography Utility (Phase 8.10)", () => {
     expect(FONT_SIZE_STEPS).toContain(14);
     expect(FONT_SIZE_STEPS[0]).toBe(11);
     expect(FONT_SIZE_STEPS[FONT_SIZE_STEPS.length - 1]).toBe(18);
+  });
+
+  describe("Nerd Font Status Detection", () => {
+    it("identifies when Nerd Font is configured via mono preset", () => {
+      expect(isNerdFontConfigured({ ...DEFAULT_TYPOGRAPHY_SETTINGS, monoFontPreset: "nerd" })).toBe(true);
+      expect(isNerdFontConfigured({ ...DEFAULT_TYPOGRAPHY_SETTINGS, monoFontPreset: "default" })).toBe(false);
+    });
+
+    it("identifies when Nerd Font is configured via custom mono or ui font", () => {
+      expect(
+        isNerdFontConfigured({
+          ...DEFAULT_TYPOGRAPHY_SETTINGS,
+          monoFontPreset: "custom",
+          customMonoFont: "Hack Nerd Font",
+        })
+      ).toBe(true);
+
+      expect(
+        isNerdFontConfigured({
+          ...DEFAULT_TYPOGRAPHY_SETTINGS,
+          uiFontPreset: "custom",
+          customUiFont: "Symbols Nerd Font Mono",
+        })
+      ).toBe(true);
+
+      expect(
+        isNerdFontConfigured({
+          ...DEFAULT_TYPOGRAPHY_SETTINGS,
+          monoFontPreset: "custom",
+          customMonoFont: "Consolas",
+        })
+      ).toBe(false);
+    });
+
+    it("detects system fonts safely when document.fonts is missing or mocked", () => {
+      // Missing document.fonts
+      const origFonts = (document as any).fonts;
+      (document as any).fonts = undefined;
+      expect(detectSystemNerdFont()).toBe(false);
+
+      // Mocked document.fonts.check returning true for Nerd Font
+      (document as any).fonts = {
+        check: (font: string) => font.includes("JetBrainsMono Nerd Font"),
+      };
+      expect(detectSystemNerdFont()).toBe(true);
+
+      // Restore
+      (document as any).fonts = origFonts;
+    });
+
+    it("evaluates getNerdFontStatus properly", () => {
+      // 1. When explicitly configured -> active
+      const configured: TypographySettings = {
+        ...DEFAULT_TYPOGRAPHY_SETTINGS,
+        monoFontPreset: "nerd",
+      };
+      expect(getNerdFontStatus(configured)).toBe("active");
+
+      // 2. When not configured and no fonts detected -> recommended
+      expect(getNerdFontStatus(DEFAULT_TYPOGRAPHY_SETTINGS)).toBe("recommended");
+    });
+
+    it("dispatches cuddle:typography-changed event on applyTypographySettings", () => {
+      let receivedDetail: TypographySettings | null = null;
+      const handler = (e: Event) => {
+        receivedDetail = (e as CustomEvent).detail;
+      };
+      window.addEventListener("cuddle:typography-changed", handler);
+
+      const targetSettings: TypographySettings = {
+        uiFontPreset: "default",
+        customUiFont: "",
+        monoFontPreset: "nerd",
+        customMonoFont: "",
+        fontSize: 15,
+      };
+
+      applyTypographySettings(targetSettings);
+
+      expect(receivedDetail).toEqual(targetSettings);
+      window.removeEventListener("cuddle:typography-changed", handler);
+    });
   });
 });

@@ -7,6 +7,10 @@
     "statusbar_staged": "Staged: {{count}} files",
     "statusbar_history": "History: {{count}} records",
     "statusbar_nerd_font": "Nerd Font: Pre-required",
+    "statusbar_nerd_font_active": "Nerd Font: Active",
+    "statusbar_nerd_font_detected": "Nerd Font: Detected",
+    "statusbar_nerd_font_recommended": "Nerd Font: Recommended",
+    "statusbar_nerd_font_tooltip": "Click to open Typography & Appearance settings",
     "exit_btn": "Exit",
     "exit_confirm": "Are you sure you want to exit Cuddle?"
   },

@@ -185,9 +185,98 @@ export function applyTypographySettings(settings: TypographySettings): void {
   } catch (e) {
     console.error("Failed to save typography settings to localStorage:", e);
   }
+
+  // Notify listeners (e.g. statusbar, other components)
+  if (typeof window !== "undefined") {
+    try {
+      window.dispatchEvent(
+        new CustomEvent("cuddle:typography-changed", { detail: settings })
+      );
+    } catch (e) {
+      // Ignore in non-standard or headless environments
+    }
+  }
 }
 
 export function resetTypographySettings(): TypographySettings {
   applyTypographySettings(DEFAULT_TYPOGRAPHY_SETTINGS);
   return DEFAULT_TYPOGRAPHY_SETTINGS;
+}
+
+export type NerdFontStatus = "active" | "detected" | "recommended";
+
+/**
+ * Checks whether Nerd Font is explicitly configured in settings
+ * (either by choosing the 'nerd' preset or naming a Nerd Font in custom UI/Mono font).
+ */
+export function isNerdFontConfigured(settings?: TypographySettings): boolean {
+  const s = settings || getSavedTypographySettings();
+  if (s.monoFontPreset === "nerd") {
+    return true;
+  }
+  if (s.monoFontPreset === "custom" && /nerd/i.test(s.customMonoFont)) {
+    return true;
+  }
+  if (s.uiFontPreset === "custom" && /nerd/i.test(s.customUiFont)) {
+    return true;
+  }
+  const chosenMono = MONO_FONT_PRESETS.find((p) => p.id === s.monoFontPreset);
+  if (chosenMono && /nerd/i.test(chosenMono.stack)) {
+    return true;
+  }
+  const chosenUi = UI_FONT_PRESETS.find((p) => p.id === s.uiFontPreset);
+  if (chosenUi && /nerd/i.test(chosenUi.stack)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Checks whether any Nerd Font family is installed on the host system via document.fonts API.
+ */
+export function detectSystemNerdFont(): boolean {
+  if (
+    typeof document === "undefined" ||
+    !document.fonts ||
+    typeof document.fonts.check !== "function"
+  ) {
+    return false;
+  }
+  try {
+    const candidateFonts = [
+      '12px "Symbols Nerd Font"',
+      '12px "JetBrainsMono Nerd Font"',
+      '12px "JetBrainsMonoNL Nerd Font"',
+      '12px "FiraCode Nerd Font"',
+      '12px "Hack Nerd Font"',
+      '12px "CaskaydiaCove Nerd Font"',
+      '12px "MesloLGS NF"',
+      '12px "SauceCodePro Nerd Font"',
+    ];
+    return candidateFonts.some((font) => {
+      try {
+        return document.fonts.check(font);
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Determines current status of Nerd Font for statusbar and settings UI:
+ * - "active": User explicitly configured a Nerd Font preset or custom font.
+ * - "detected": Nerd Font is available on the host system but not currently configured as primary.
+ * - "recommended": Nerd Font is neither configured nor detected.
+ */
+export function getNerdFontStatus(settings?: TypographySettings): NerdFontStatus {
+  if (isNerdFontConfigured(settings)) {
+    return "active";
+  }
+  if (detectSystemNerdFont()) {
+    return "detected";
+  }
+  return "recommended";
 }

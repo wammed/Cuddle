@@ -426,7 +426,10 @@ allowed_read_paths = ["/etc/hosts", "/opt/data"]
 input_mode = "batch_list"
 "#;
         let def_explicit: CustomPipelineDefDto = toml::from_str(toml_explicit).unwrap();
-        assert_eq!(def_explicit.allowed_read_paths, vec!["/etc/hosts", "/opt/data"]);
+        assert_eq!(
+            def_explicit.allowed_read_paths,
+            vec!["/etc/hosts", "/opt/data"]
+        );
         assert_eq!(def_explicit.input_mode, ExecutionInputMode::BatchList);
     }
 

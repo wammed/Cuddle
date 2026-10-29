@@ -42,9 +42,10 @@ The 24 items are organized across **5 implementation phases (Phase 10 to 14)** b
 | **3-2** | Safety / Reflect | Alternate Filename UI on Original Conflict (e.g., `.edit.pdf`) | **Phase 11** | **High** | Med | **Done & Verified** |
 | **3-3** | Safety / Backup | Backup Retention (Default 5, Max 10) & Prune UI | **Phase 11** | **High** | Med | **Done & Verified** |
 | **4-3** | Safety / Sandbox | Warning / Consent Modal on Non-Landlock Kernels | **Phase 11** | **Medium** | Low | **Done & Verified** |
-| **4-2** | Pipeline | Custom `allowed_read_paths` in Pipeline Presets | **Phase 12** | **High** | Med | **Implemented (Pending Manual Test)** |
-| **4-1** | Pipeline | Input Modes (`batch`, `stdin`) & Typed Placeholders | **Phase 12** | **Medium** | Med | **Implemented (Pending Manual Test)** |
-| **2-3** | UI / System | Desktop Environment Native Notification Abstraction | **Phase 12** | **Medium** | Med | **Implemented (Pending Manual Test)** |
+| **4-2** | Pipeline | Custom `allowed_read_paths` in Pipeline Presets | **Phase 12** | **High** | Med | **Done & Verified** |
+| **4-1** | Pipeline | Input Modes (`batch`, `stdin`) & Typed Placeholders | **Phase 12** | **Medium** | Med | **Done & Verified** |
+| **2-3** | UI / System | Desktop Environment Native Notification Abstraction | **Phase 12** | **Medium** | Med | **Done & Verified** |
+| **UI-Font** | UI / Status | Dynamic Nerd Font Statusbar Detection & Active Indicator | **Phase 12** | **Medium** | Low | **Done & Verified** |
 | **1-4** | Search / Extract | Structured Markdown / HTML Text Extraction | **Phase 13** | **Medium** | Med |
 | **1-3** | Search / Extract | Tier 3: Office Document Extraction (`.docx`, `.xlsx`) | **Phase 13** | **Medium** | High |
 | **1-2** | Search / Engine | Combined Morphological (IPADIC) + n-gram Search | **Phase 13** | **Medium** | High |
@@ -234,9 +235,26 @@ Hardened original protection guarantees, conflict handling, backup retention, an
 
 ---
 
-### Phase 12: Pipeline Flexibility & External Tool Integrations [Implemented & Pending Manual Test]
+### Phase 12: Pipeline Flexibility & External Tool Integrations [Done & Verified]
 
-Extended custom command pipelines with flexible execution arguments, input stream modes, and Landlock sandbox read whitelists. Fully tested and verified (202 Cargo tests passed, 19 Vitest files / 113 tests 100% passing).
+Extended custom command pipelines with flexible execution arguments, input stream modes, Landlock sandbox read whitelists, and dynamic statusbar font status indicators. Fully tested and verified through manual verification scenarios and automated suites (208 Cargo tests passed, 19 Vitest files / 119 tests 100% passing).
+
+#### [Refinement] Dynamic Nerd Font Statusbar Detection & Active Indicator
+
+* **Issue:** When choosing a custom font or Nerd Font preset in Settings, the bottom-right statusbar permanently displayed "Nerd Font: Pre-required" / "Nerd Font: 導入推奨" as a static label.
+* **Implementation:**
+  * Added `isNerdFontConfigured(settings)`, `detectSystemNerdFont()`, and `getNerdFontStatus(settings)` to `src/utils/typography.ts`.
+  * Emits `cuddle:typography-changed` custom window event upon `applyTypographySettings(settings)` for real-time reactivity without page reloads.
+  * In `src/App.tsx`, rendered `statusbar-nerd-font-btn` with 3 dynamic states:
+    * `active`: Emerald dot and "Nerd Font: Active" (`Nerd Font: 適用中`)
+    * `detected`: Cyan dot and "Nerd Font: Detected" (`Nerd Font: 検出済`)
+    * `recommended`: Slate dot and "Nerd Font: Recommended" (`Nerd Font: 導入推奨`)
+  * Clicking the statusbar indicator immediately opens the Typography and Appearance preferences modal.
+* **Impacted Files:**
+  * `src/utils/typography.ts`, `src/App.tsx`, `src/App.css`
+  * `src/locales/ja/translation.json`, `src/locales/en/translation.json`
+  * `src/__tests__/Typography.test.ts`, `src/__tests__/App.test.tsx`
+* **Verification:** Vitest test suite verifies reactive DOM updates on font setting changes.
 
 #### [Task 4-2] Custom `allowed_read_paths` in Pipeline Presets
 

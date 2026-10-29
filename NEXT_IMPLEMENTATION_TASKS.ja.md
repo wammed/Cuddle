@@ -42,9 +42,10 @@
 | **3-2** | 安全・反映 | 原本競合時の別名保存（例: `.edit.pdf`）の UI 提示 | **Phase 11** | **高 (High)** | 中 | **完了・検証済 (Verified)** |
 | **3-3** | 安全・反映 | バックアップ保持数（既定5、上限10）の管理と容量不足時選択 | **Phase 11** | **高 (High)** | 中 | **完了・検証済 (Verified)** |
 | **4-3** | 安全・パイプライン | Landlock 非対応環境での起動ブロック / 同意ダイアログ | **Phase 11** | **中 (Med)** | 低 | **完了・検証済 (Verified)** |
-| **4-2** | パイプライン | ユーザー定義パイプラインでの `allowed_read_paths` 指定 | **Phase 12** | **高 (High)** | 中 | **実装完了 (手動テスト待ち)** |
-| **4-1** | パイプライン | 入力方式 (`batch`, `stdin`) と型付きプレースホルダー | **Phase 12** | **中 (Med)** | 中 | **実装完了 (手動テスト待ち)** |
-| **2-3** | UI・通知 | OS / デスクトップ環境ネイティブ通知の抽象化 | **Phase 12** | **中 (Med)** | 中 | **実装完了 (手動テスト待ち)** |
+| **4-2** | パイプライン | ユーザー定義パイプラインでの `allowed_read_paths` 指定 | **Phase 12** | **高 (High)** | 中 | **完了・検証済 (Verified)** |
+| **4-1** | パイプライン | 入力方式 (`batch`, `stdin`) と型付きプレースホルダー | **Phase 12** | **中 (Med)** | 中 | **完了・検証済 (Verified)** |
+| **2-3** | UI・通知 | OS / デスクトップ環境ネイティブ通知の抽象化 | **Phase 12** | **中 (Med)** | 中 | **完了・検証済 (Verified)** |
+| **UI-Font** | UI・ステータス | Nerd Font ステータスバー動的判定＆適用中表示 | **Phase 12** | **中 (Med)** | 低 | **完了・検証済 (Verified)** |
 | **1-4** | 検索・抽出 | Markdown / HTML の構文解析本文抽出 | **Phase 13** | **中 (Med)** | 中 |
 | **1-3** | 検索・抽出 | 第 3 段階: Office 文書（`.docx`, `.xlsx` 等）の本文抽出 | **Phase 13** | **中 (Med)** | 高 |
 | **1-2** | 検索・抽出 | 形態素解析 (IPADIC) ＋ n-gram 併用検索 | **Phase 13** | **中 (Med)** | 高 |
@@ -235,9 +236,23 @@
 
 ---
 
-### Phase 12: パイプライン実行・外部連携の柔軟性拡張 【実装完了・手動テスト待ち】
+### Phase 12: パイプライン実行・外部連携の柔軟性拡張 【完了・手動検証済】
 
-外部ツール連携をより柔軟かつ安全に拡張しました。全自動テスト（Cargo test 202 passed, Vitest 19 files / 113 tests 100% passed）にて完全検証済みです。
+外部ツール連携をより柔軟かつ安全に拡張し、ステータスバーのフォント判定を動的化しました。手動テスト（シナリオ1〜3）および全自動テスト（Cargo test 208 passed, Vitest 19 files / 119 tests 100% passed）にて完全検証済みです。
+
+#### 【追加改修】Nerd Font ステータスバー動的判定＆適用中表示
+
+* **課題：** フォント設定でカスタム設定やプリセットから Nerd Font を指定しても、ウィンドウ右下隅のステータスバーに「Nerd Font: 導入推奨」と固定表示されていた。
+* **実装内容：**
+  * `src/utils/typography.ts` に `isNerdFontConfigured(settings)`, `detectSystemNerdFont()`, `getNerdFontStatus(settings)` を追加。
+  * `applyTypographySettings(settings)` 時に `cuddle:typography-changed` イベントをディスパッチし、設定変更時に即座にリアルタイム通知。
+  * `src/App.tsx` のステータスバーに `statusbar-nerd-font-btn` を導入。3つの状態（`active`: エメラルド点灯「適用中」、`detected`: シアン点灯「検出済」、`recommended`: スレート点灯「導入推奨」）を動的表示。
+  * ステータスバーの Nerd Font インジケーターをクリックすると、直接フォント・外観設定モーダルを開くクイック導線を整備。
+* **影響ファイル：**
+  * `src/utils/typography.ts`, `src/App.tsx`, `src/App.css`
+  * `src/locales/ja/translation.json`, `src/locales/en/translation.json`
+  * `src/__tests__/Typography.test.ts`, `src/__tests__/App.test.tsx`
+* **検証結果：** 設定変更イベントに連動して表示が動的更新されることを Vitest で検証済み。
 
 #### 【タスク 4-2】ユーザー定義パイプラインでの `allowed_read_paths` 指定
 

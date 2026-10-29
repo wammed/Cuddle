@@ -92,7 +92,11 @@ mod tests {
     #[test]
     fn test_notify_desktop_does_not_panic() {
         // notify_desktop should not panic even if executed in CI/test environment
-        let res = notify_desktop("Cuddle Test", "Testing desktop notification abstraction", NotificationLevel::Info);
+        let res = notify_desktop(
+            "Cuddle Test",
+            "Testing desktop notification abstraction",
+            NotificationLevel::Info,
+        );
         assert!(res.is_ok());
     }
 
@@ -103,4 +107,3 @@ mod tests {
         let _ = NotificationLevel::export(&cfg);
     }
 }
-

@@ -2119,6 +2119,53 @@ body {
   color: rgba(255, 255, 255, 0.15);
 }
 
+.statusbar-nerd-font-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: none;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.statusbar-nerd-font-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.statusbar-nerd-font-btn .nerd-font-indicator {
+  font-size: 8px;
+  line-height: 1;
+}
+
+.statusbar-nerd-font-btn.status-active {
+  color: #a7f3d0;
+}
+
+.statusbar-nerd-font-btn.status-active .nerd-font-indicator {
+  color: #10b981;
+  text-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+}
+
+.statusbar-nerd-font-btn.status-detected {
+  color: #a5f3fc;
+}
+
+.statusbar-nerd-font-btn.status-detected .nerd-font-indicator {
+  color: #06b6d4;
+  text-shadow: 0 0 6px rgba(6, 182, 212, 0.6);
+}
+
+.statusbar-nerd-font-btn.status-recommended .nerd-font-indicator {
+  color: #64748b;
+}
+
 /* OperationPolicy & Snapshot Card Styles (Phase 3.2) */
 .policy-evaluation-card {
   margin-top: 8px;

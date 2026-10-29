@@ -5,7 +5,7 @@
 </p>
 
 **Document Date:** 2026-10-29  
-**Status:** All Phases (Phase 1–11) fully implemented and approved via real-world manual testing. Open-source distribution ready (MIT License / README / BUILD / CI Actions complete); Phase 12 (Pipeline External Integration Flexibility: allowed_read_paths, input modes batch/stdin, typed placeholders, FreeDesktop native notifications) implemented with automated tests passing (202 Cargo / 113 Vitest 100% pass; ready for manual testing verification).  
+**Status:** All Phases (Phase 1–12) fully implemented and approved via real-world manual testing. Open-source distribution ready (MIT License / README / BUILD / CI Actions complete); Phase 12 (Pipeline External Integration Flexibility: allowed_read_paths, input modes batch/stdin, typed placeholders, FreeDesktop native notifications, dynamic Nerd Font status detection) fully tested and verified (208 Cargo / 119 Vitest 100% pass).  
 **Target Audience:** Development, Architecture, and QA Teams; Next Working Session Maintainers  
 
 ---
@@ -697,12 +697,20 @@ Based on comprehensive cross-verification between the Master Design Specificatio
      * Created `CriticalSecurityModal` blocking application use until consent is provided on unsupported kernels, with choice persistence.
    * [Window Close Safety Intercept & Header Exit Button]: **Done & Verified via Manual Testing**
      * Implemented `onCloseRequested` interception in Tauri 2 for Zero Data Loss and prominent Header exit button.
-3. **Phase 12: Pipeline Flexibility & External Tool Integrations [Implemented & Pending Manual Test]**
-   * [4-2] Custom `allowed_read_paths` in Pipeline Presets (Landlock integration): **Done & Verified**
+3. **Phase 12: Pipeline Flexibility & External Tool Integrations [Done & Verified via Manual Testing]**
+   * [4-2] Custom `allowed_read_paths` in Pipeline Presets (Landlock integration): **Done & Verified via Manual Testing**
      * Added `allowed_read_paths: Vec<String>` to `CustomPipelineDefDto`. Dynamically registered to `LandlockSandbox::allow_read` during dry-run and execution.
      * Added allowed read paths input and Landlock Read badges to `SettingsModal`, as well as Risk Specification display in `PipelineModal`.
-   * [4-1] Input Modes (`batch`, `stdin`) & Typed Placeholders (`{InputList}`, `{WorkspaceDirectory}`): **Done & Verified**
+   * [4-1] Input Modes (`batch`, `stdin`) & Typed Placeholders (`{InputList}`, `{WorkspaceDirectory}`): **Done & Verified via Manual Testing**
      * Introduced `ExecutionInputMode` (`PerFile`, `BatchList`, `StandardInput`).
+     * Typed placeholder expansion for `{input}`, `{output}`, `{InputList}`, `{WorkspaceDirectory}`.
+     * Child process stdin streaming via `SandboxedExecutor`.
+   * [2-3] Desktop Environment Native Notification Abstraction: **Done & Verified via Manual Testing**
+     * Native notification dispatch via `notify.rs` (`notify_desktop`) conforming to FreeDesktop Desktop Notifications Spec.
+     * Automated pipeline completion alerts, `notify_user` command, and frontend `notifyUser` utility.
+   * [Refinement] Dynamic Nerd Font Statusbar Detection & Active Indicator: **Done & Verified via Manual Testing**
+     * Added `isNerdFontConfigured`, `detectSystemNerdFont`, `getNerdFontStatus` in `src/utils/typography.ts`.
+     * Real-time UI updates via `cuddle:typography-changed` custom event, 3-state display (`Active` / `Detected` / `Recommended`), and quick shortcut to SettingsModal.
      * Implemented typed placeholder expansion (`{input}`, `{output}`, `{InputList}` safe argument splatting, `{WorkspaceDirectory}`).
      * Extended `SandboxedExecutor` with `stdin_input: Option<String>` for streaming file paths to child stdin with EOF closing.
      * Added input mode select and quick-insert placeholder pills in `SettingsModal`.

@@ -42,7 +42,12 @@ import { StartPage } from "./components/StartPage";
 import { applyTheme, getSavedThemeId } from "./utils/themePresets";
 import type { Density } from "./types/Density";
 import { applyDensity, getSavedDensity } from "./utils/density";
-import { applyTypographySettings, getSavedTypographySettings } from "./utils/typography";
+import {
+  applyTypographySettings,
+  getSavedTypographySettings,
+  getNerdFontStatus,
+  type NerdFontStatus,
+} from "./utils/typography";
 import "./App.css";
 
 interface LandlockStatus {
@@ -77,6 +82,7 @@ export function App() {
   const [canUndo, setCanUndo] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [density, setDensity] = useState<Density>(() => getSavedDensity());
+  const [nerdFontStatus, setNerdFontStatus] = useState<NerdFontStatus>(() => getNerdFontStatus());
   const [bottomTab, setBottomTab] = useState<BottomTabId>("preview");
 
   const [landlock, setLandlock] = useState<LandlockStatus | null>(null);
@@ -218,6 +224,24 @@ export function App() {
       scanDirectory(parentPath);
     }
   }, [parentPath, scanDirectory]);
+
+  useEffect(() => {
+    const updateNerdFont = () => {
+      setNerdFontStatus(getNerdFontStatus());
+    };
+
+    if (typeof document !== "undefined" && (document as any).fonts?.ready) {
+      (document as any).fonts.ready.then(updateNerdFont).catch(() => {});
+    }
+
+    window.addEventListener("cuddle:typography-changed", updateNerdFont);
+    window.addEventListener("storage", updateNerdFont);
+
+    return () => {
+      window.removeEventListener("cuddle:typography-changed", updateNerdFont);
+      window.removeEventListener("storage", updateNerdFont);
+    };
+  }, []);
 
   useEffect(() => {
     applyDensity(density);
@@ -1264,7 +1288,15 @@ export function App() {
           <span className="status-sep">|</span>
           <span>{t("app.statusbar_history", { count: historyItems.length })}</span>
           <span className="status-sep">|</span>
-          <span>{t("app.statusbar_nerd_font")}</span>
+          <button
+            type="button"
+            className={`statusbar-nerd-font-btn status-${nerdFontStatus}`}
+            onClick={() => setSettingsOpen(true)}
+            title={t("app.statusbar_nerd_font_tooltip")}
+          >
+            <span className="nerd-font-indicator" aria-hidden="true">●</span>
+            <span>{t(`app.statusbar_nerd_font_${nerdFontStatus}`)}</span>
+          </button>
         </div>
       </footer>
     </div>

@@ -5,7 +5,7 @@
 </p>
 
 **文書作成日：** 2026-10-29  
-**ステータス：** 全フェーズ（Phase 1〜11）実装・実機手動テスト承認完了、ソース公開配布準備完了（MIT License / README / BUILD / CI Actions 整備完了）、Phase 12（パイプライン外部連携柔軟性拡張：allowed_read_paths、入力方式 batch/stdin、型付きプレースホルダー、FreeDesktop デスクトップ通知抽象化）実装・自動テスト合格完了（実機手動テスト実施中）  
+**ステータス：** 全フェーズ（Phase 1〜12）実装・実機手動テスト承認完了、ソース公開配布準備完了（MIT License / README / BUILD / CI Actions 整備完了）、Phase 12（パイプライン外部連携柔軟性拡張：allowed_read_paths、入力方式 batch/stdin、型付きプレースホルダー、FreeDesktop デスクトップ通知抽象化、Nerd Font 動的ステータス判定）実装・手動検証完了済み  
 **対象：** 開発・設計・テスト担当者、次期作業セッション担当  
 
 ---
@@ -697,12 +697,20 @@
      * `CriticalSecurityModal` を新設。Landlock LSM 非対応またはカーネル制約時に全画面警告を表示し、同意または終了を強制。選択記憶トグルを実装。
    * 【終了時安全インターセプト & ヘッダー終了ボタン】: **実装完了・実機手動テスト承認済み**
      * ウィンドウ右上×ボタン押下時の `onCloseRequested` インターセプトによる Zero Data Loss 保証、およびヘッダー終了ボタンを実装。
-3. **Phase 12: パイプライン実行・外部連携の柔軟性拡張 【実装完了・実機手動テスト待ち】**
-   * 【4-2】ユーザー定義カスタムパイプラインでの `allowed_read_paths` 指定（Landlock 連携）: **実装完了・検証済み**
+3. **Phase 12: パイプライン実行・外部連携の柔軟性拡張 【完了・実機手動テスト承認済み】**
+   * 【4-2】ユーザー定義カスタムパイプラインでの `allowed_read_paths` 指定（Landlock 連携）: **実装完了・実機手動テスト承認済み**
      * `CustomPipelineDefDto` に `allowed_read_paths: Vec<String>` を追加。パイプライン実行時および事前 Dry-Run 時に Landlock LSM の allow_read に動的登録。
      * `SettingsModal` に設定欄・Landlock Read バッジ、`PipelineModal` のリスク説明に許可パスを表示。
-   * 【4-1】入力方式（`batch`, `stdin`）と型付きプレースホルダー（`{InputList}`, `{WorkspaceDirectory}`）: **実装完了・検証済み**
+   * 【4-1】入力方式（`batch`, `stdin`）と型付きプレースホルダー（`{InputList}`, `{WorkspaceDirectory}`）: **実装完了・実機手動テスト承認済み**
      * `ExecutionInputMode`（`PerFile`, `BatchList`, `StandardInput`）を導入。
+     * `{input}`, `{output}`, `{InputList}`, `{WorkspaceDirectory}` のプレースホルダー展開。
+     * `SandboxedExecutor` での子プロセス stdin ストリーミング。
+   * 【2-3】OS / デスクトップ環境ネイティブ通知の抽象化: **実装完了・実機手動テスト承認済み**
+     * `notify.rs`（`notify_desktop`）による FreeDesktop D-Bus / `notify-send` 連携。
+     * パイプライン一括実行完了通知の自動発行、`notify_user` Tauri コマンドおよびフロントエンド `notifyUser` 抽象化ユーティリティ。
+   * 【追加改修】Nerd Font ステータスバー動的判定＆適用中表示: **実装完了・実機手動テスト承認済み**
+     * `src/utils/typography.ts` に `isNerdFontConfigured`, `detectSystemNerdFont`, `getNerdFontStatus` を追加。
+     * `cuddle:typography-changed` イベント通知によるリアルタイム更新、3段階ステータス表示（`適用中` / `検出済` / `導入推奨`）、クリックでの設定モーダルクイックオープン導線。
      * `expand_command_arguments` による `{input}`, `{output}`, `{InputList}`（安全なスプラット展開）, `{WorkspaceDirectory}` のプレースホルダー置換。
      * `SandboxedExecutor` での子プロセス `stdin` ストリーミング送信と EOF クローズ処理。
      * `SettingsModal` に入力方式選択とワンクリック挿入ピルを追加。

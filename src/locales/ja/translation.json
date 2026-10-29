@@ -7,6 +7,10 @@
     "statusbar_staged": "ステージング: {{count}} ファイル",
     "statusbar_history": "履歴: {{count}} 件",
     "statusbar_nerd_font": "Nerd Font: 導入推奨",
+    "statusbar_nerd_font_active": "Nerd Font: 適用中",
+    "statusbar_nerd_font_detected": "Nerd Font: 検出済",
+    "statusbar_nerd_font_recommended": "Nerd Font: 導入推奨",
+    "statusbar_nerd_font_tooltip": "クリックしてフォント・表示設定を開く",
     "exit_btn": "終了",
     "exit_confirm": "Cuddle を終了しますか？"
   },

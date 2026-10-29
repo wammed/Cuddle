@@ -17,6 +17,10 @@ export default defineConfig(() => ({
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   clearScreen: false,
+  build: {
+    // Desktop apps load assets from local disk/memory; threshold adjusted to 1500 kB to suppress web-oriented warnings
+    chunkSizeWarningLimit: 1500,
+  },
   server: {
     port: 1420,
     strictPort: true,

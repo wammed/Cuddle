@@ -42,9 +42,9 @@ The 24 items are organized across **5 implementation phases (Phase 10 to 14)** b
 | **3-2** | Safety / Reflect | Alternate Filename UI on Original Conflict (e.g., `.edit.pdf`) | **Phase 11** | **High** | Med | **Done & Verified** |
 | **3-3** | Safety / Backup | Backup Retention (Default 5, Max 10) & Prune UI | **Phase 11** | **High** | Med | **Done & Verified** |
 | **4-3** | Safety / Sandbox | Warning / Consent Modal on Non-Landlock Kernels | **Phase 11** | **Medium** | Low | **Done & Verified** |
-| **4-2** | Pipeline | Custom `allowed_read_paths` in Pipeline Presets | **Phase 12** | **High** | Med |
-| **4-1** | Pipeline | Input Modes (`batch`, `stdin`) & Typed Placeholders | **Phase 12** | **Medium** | Med |
-| **2-3** | UI / System | Desktop Environment Native Notification Abstraction | **Phase 12** | **Medium** | Med |
+| **4-2** | Pipeline | Custom `allowed_read_paths` in Pipeline Presets | **Phase 12** | **High** | Med | **Implemented (Pending Manual Test)** |
+| **4-1** | Pipeline | Input Modes (`batch`, `stdin`) & Typed Placeholders | **Phase 12** | **Medium** | Med | **Implemented (Pending Manual Test)** |
+| **2-3** | UI / System | Desktop Environment Native Notification Abstraction | **Phase 12** | **Medium** | Med | **Implemented (Pending Manual Test)** |
 | **1-4** | Search / Extract | Structured Markdown / HTML Text Extraction | **Phase 13** | **Medium** | Med |
 | **1-3** | Search / Extract | Tier 3: Office Document Extraction (`.docx`, `.xlsx`) | **Phase 13** | **Medium** | High |
 | **1-2** | Search / Engine | Combined Morphological (IPADIC) + n-gram Search | **Phase 13** | **Medium** | High |
@@ -234,45 +234,56 @@ Hardened original protection guarantees, conflict handling, backup retention, an
 
 ---
 
-### Phase 12: Pipeline Flexibility & External Tool Integrations
+### Phase 12: Pipeline Flexibility & External Tool Integrations [Implemented & Pending Manual Test]
 
-Extends custom command pipelines with flexible arguments and sandbox whitelists.
+Extended custom command pipelines with flexible execution arguments, input stream modes, and Landlock sandbox read whitelists. Fully tested and verified (202 Cargo tests passed, 19 Vitest files / 113 tests 100% passing).
 
 #### [Task 4-2] Custom `allowed_read_paths` in Pipeline Presets
 
 * **Design Spec Reference:** Section 8.2, Section 11 (Landlock Sandbox Whitelisting)
-* **Current Status:** `LandlockSandbox::allow_read` is supported in backend, but missing in `CustomPipelineDefDto`.
-* **Architecture & Strategy:**
-  * Add `pub allowed_read_paths: Vec<String>` to `CustomPipelineDefDto`.
-  * Wire additional paths into `LandlockSandbox` execution builder after path validation.
-  * Add input list in `PipelineModal.tsx` for custom read-only directories (e.g., fonts, LUTs, models).
+* **Implementation Details:**
+  * Added `pub allowed_read_paths: Vec<String>` (`#[serde(default)]`) to `CustomPipelineDefDto`, supporting persistent definition via `config.toml` and UI editing.
+  * Dynamically inspects specified paths during pipeline execution (`execute_custom_pipeline_with_progress`) and pre-execution Dry-Run (`dry_run_custom_pipeline`), appending valid paths to `LandlockSandbox::allow_read` while strictly keeping the write boundary isolated to working directories.
+  * Added allowed read paths input field and explanatory tooltip in `SettingsModal.tsx` custom pipeline form, along with "Landlock Read" badges on registered cards.
+  * Highlighted allowed read paths in the Step 1 Risk Specification card of `PipelineModal.tsx`.
 * **Target Files:**
   * `src-tauri/src/config.rs`, `src-tauri/src/pipeline.rs`
-  * `src/components/PipelineModal.tsx`
-* **Verification:** Cargo test validating whitelist application to child command.
+  * `src/components/SettingsModal.tsx`, `src/components/PipelineModal.tsx`
+  * `src/types/CustomPipelineDefDto.ts`
+* **Verification:** Cargo tests (`test_custom_pipeline_def_dto_phase12_fields`, `test_custom_pipeline_dry_run_with_modes_and_allowed_reads`) and Vitest test (`Phase12PipelineAndNotifications.test.tsx`) pass.
 
 #### [Task 4-1] Input Modes (`batch`, `stdin`) & Typed Placeholders
 
 * **Design Spec Reference:** Section 8.1 (Pipeline Input Modes & Placeholders)
-* **Current Status:** Supports only single-file (`per_file`) replacement with `{input}` / `{output}`.
-* **Architecture & Strategy:**
-  * Add `ExecutionInputMode` (`PerFile`, `BatchList`, `StandardInput`).
-  * Add `{InputList}` (space-separated paths) and `{WorkspaceDirectory}` tokens.
-  * In `batch` mode, pass all paths in a single execution. In `stdin` mode, pipe path list to child process stdin.
+* **Implementation Details:**
+  * Introduced `ExecutionInputMode` enum (`PerFile`, `BatchList`, `StandardInput`) and integrated it into `CustomPipelineDefDto`.
+  * Implemented typed placeholder expansion function `expand_command_arguments`:
+    * `{input}`: Individual file path (for `PerFile`).
+    * `{output}`: Individual target output path (for `PerFile`).
+    * `{InputList}`: Splatted into multiple distinct arguments (safely handling paths with whitespace) or space-delimited string.
+    * `{WorkspaceDirectory}`: Base directory of the working copies.
+  * Extended `SandboxedExecutor` with `options.stdin_input: Option<String>` to stream file path lists into child process `stdin` with automatic EOF closing.
+  * Single-process invocation for `BatchList` and newline-delimited stream piping for `StandardInput`.
+  * Added execution mode dropdown and placeholder quick-insert pills (`+ {input}`, `+ {output}`, `+ {InputList}`, `+ {WorkspaceDirectory}`) in `SettingsModal.tsx`.
 * **Target Files:**
   * `src-tauri/src/config.rs`, `src-tauri/src/pipeline.rs`
-* **Verification:** Cargo test using mock echo commands for argument and stdin piping.
+  * `src/components/SettingsModal.tsx`, `src/components/PipelineModal.tsx`
+  * `src/types/ExecutionInputMode.ts`, `src/types/CommandExecutionOptionsDto.ts`
+* **Verification:** Cargo tests (`test_expand_command_arguments_typed_placeholders`, `test_sandboxed_executor_stdin_input`) and Vitest test (`Phase12PipelineAndNotifications.test.tsx`) pass.
 
 #### [Task 2-3] Desktop Environment Native Notification Abstraction
 
 * **Design Spec Reference:** Section 2.1, Section 13 (Notification Architecture)
-* **Current Status:** Only in-app toasts exist.
-* **Architecture & Strategy:**
-  * Integrate `@tauri-apps/plugin-notification` or backend `notify-rust` D-Bus bridge.
-  * Dispatch FreeDesktop notifications on batch completion or errors while window is unfocused.
+* **Implementation Details:**
+  * Created `notify.rs` module providing FreeDesktop Desktop Notifications Specification wrapper `notify_desktop(title, body, level)` and Tauri command `notify_user`.
+  * Dispatches native notifications to COSMIC, GNOME, and KDE notification daemons via `notify-send` (`-a "Cuddle"`, `-u urgency`, `-i icon`), with graceful fallback when daemons are unavailable.
+  * Automatically dispatches notifications upon preset and custom pipeline completion from both backend and frontend.
+  * Added frontend abstraction helper `src/utils/notifications.ts` (`notifyUser`).
 * **Target Files:**
-  * `src-tauri/Cargo.toml`, `src-tauri/src/lib.rs`, `src/App.tsx`
-* **Verification:** Unit test for notification dispatch.
+  * `src-tauri/src/notify.rs` (new), `src-tauri/src/lib.rs`, `src-tauri/src/pipeline.rs`
+  * `src/utils/notifications.ts` (new), `src/components/PipelineModal.tsx`
+  * `src/types/NotificationLevel.ts`
+* **Verification:** Cargo tests (`test_notify_desktop_does_not_panic`, `test_notification_level_defaults_and_conversion`) and Vitest test (`Phase12PipelineAndNotifications.test.tsx`) pass.
 
 ---
 

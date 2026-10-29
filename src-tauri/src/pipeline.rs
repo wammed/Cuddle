@@ -1,4 +1,6 @@
+use crate::config::ExecutionInputMode;
 use crate::models::AppErrorDto;
+use crate::notify::{notify_desktop, NotificationLevel};
 use crate::sandbox::LandlockSandbox;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -79,6 +81,8 @@ pub struct CommandExecutionOptionsDto {
     pub allowed_read_paths: Vec<String>,
     pub allowed_write_paths: Vec<String>,
     pub working_dir: Option<String>,
+    #[serde(default)]
+    pub stdin_input: Option<String>,
 }
 
 impl Default for CommandExecutionOptionsDto {
@@ -89,6 +93,7 @@ impl Default for CommandExecutionOptionsDto {
             allowed_read_paths: Vec::new(),
             allowed_write_paths: Vec::new(),
             working_dir: None,
+            stdin_input: None,
         }
     }
 }
@@ -461,6 +466,9 @@ impl SandboxedExecutor {
         cmd.args(args);
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
+        if options.stdin_input.is_some() {
+            cmd.stdin(Stdio::piped());
+        }
 
         if let Some(ref wd) = options.working_dir {
             cmd.current_dir(wd);
@@ -475,6 +483,16 @@ impl SandboxedExecutor {
                 format!("Failed to spawn {}: {}", executable, e),
             )
         })?;
+
+        // If stdin input is specified, stream it to child stdin and close pipe (Task 4-1)
+        if let Some(ref input_str) = options.stdin_input {
+            if let Some(mut stdin) = child.stdin.take() {
+                use std::io::Write;
+                let _ = stdin.write_all(input_str.as_bytes());
+                let _ = stdin.flush();
+                // Dropping stdin here sends EOF to child process
+            }
+        }
 
         // Monitor process with timeout and cancellation check
         loop {
@@ -1525,6 +1543,20 @@ impl PipelineRunner {
 
         cancel_mgr.unregister_job(&job_id);
 
+        // Native desktop notification on preset completion (Task 2-3)
+        let notif_title = format!("Cuddle: {}", req.preset_id);
+        let notif_body = if failure_count == 0 {
+            format!("Preset executed successfully on {} items.", success_count)
+        } else {
+            format!("Completed with {} succeeded and {} failed.", success_count, failure_count)
+        };
+        let notif_level = if failure_count == 0 {
+            NotificationLevel::Success
+        } else {
+            NotificationLevel::Warning
+        };
+        let _ = notify_desktop(&notif_title, &notif_body, notif_level);
+
         Ok(PipelineExecutionResultDto {
             preset_id: req.preset_id.clone(),
             total_count: req.stage_ids.len(),
@@ -1533,6 +1565,55 @@ impl PipelineRunner {
             is_cancelled,
             item_results,
         })
+    }
+
+    /// Expands command argument templates with typed placeholders (Design Section 8.1, Task 4-1).
+    ///
+    /// Supported placeholders:
+    /// - `{input}`: Individual staged input file path.
+    /// - `{output}`: Individual target output file path.
+    /// - `{InputList}`: List of all input files. If the argument is exactly "{InputList}",
+    ///   it is splatted into multiple individual arguments to safely handle spaces in filenames.
+    ///   Otherwise, it is replaced with a space-delimited string.
+    /// - `{WorkspaceDirectory}`: Base directory of the working copies.
+    pub fn expand_command_arguments(
+        args_template: &[String],
+        input_file: Option<&Path>,
+        output_file: Option<&Path>,
+        all_input_files: &[PathBuf],
+        workspace_dir: &Path,
+    ) -> Vec<String> {
+        let input_str = input_file
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let output_str = output_file
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let ws_str = workspace_dir.to_string_lossy().to_string();
+        let input_list_joined = all_input_files
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        let mut result = Vec::new();
+        for arg in args_template {
+            if arg == "{InputList}" {
+                if !all_input_files.is_empty() {
+                    for p in all_input_files {
+                        result.push(p.to_string_lossy().to_string());
+                    }
+                }
+            } else {
+                let replaced = arg
+                    .replace("{input}", &input_str)
+                    .replace("{output}", &output_str)
+                    .replace("{InputList}", &input_list_joined)
+                    .replace("{WorkspaceDirectory}", &ws_str);
+                result.push(replaced);
+            }
+        }
+        result
     }
 
     /// Dry-Run validation for user-defined custom pipeline as mandated by Design Section 8.3.
@@ -1549,9 +1630,47 @@ impl PipelineRunner {
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| format!("[Not found in PATH: {}]", pipeline.executable));
 
+        // Collect all staged paths and find working workspace dir
+        let mut all_staged_paths = Vec::new();
+        let mut first_parent_dir: Option<PathBuf> = None;
+        for stage_id in stage_ids {
+            if let Ok(staged) = workspace_manager.get_staged(stage_id) {
+                let p = PathBuf::from(&staged.staged_path);
+                if first_parent_dir.is_none() {
+                    first_parent_dir = p.parent().map(|d| d.to_path_buf());
+                }
+                all_staged_paths.push(p);
+            }
+        }
+        let workspace_dir = first_parent_dir.unwrap_or_else(std::env::temp_dir);
+
+        // Pre-validate allowed_read_paths under Landlock (Task 4-2)
+        let mut unreadable_paths = Vec::new();
+        for custom_path in &pipeline.allowed_read_paths {
+            let p = Path::new(custom_path);
+            if !p.exists() {
+                unreadable_paths.push(custom_path.clone());
+            }
+        }
+
         let mut items = Vec::new();
         let mut valid_items = 0;
         let mut has_conflicts = false;
+
+        // Shared batch / stdin expanded command
+        let batch_or_stdin_cmd = if pipeline.input_mode != ExecutionInputMode::PerFile {
+            let mut cmd = vec![resolved_exec_str.clone()];
+            cmd.extend(Self::expand_command_arguments(
+                &pipeline.args,
+                None,
+                None,
+                &all_staged_paths,
+                &workspace_dir,
+            ));
+            Some(cmd)
+        } else {
+            None
+        };
 
         for stage_id in stage_ids {
             let staged = match workspace_manager.get_staged(stage_id) {
@@ -1572,7 +1691,7 @@ impl PipelineRunner {
             };
 
             let staged_path = PathBuf::from(&staged.staged_path);
-            let parent_dir = staged_path.parent().unwrap_or_else(|| Path::new("/tmp"));
+            let parent_dir = staged_path.parent().unwrap_or(&workspace_dir);
 
             let stem = staged_path
                 .file_stem()
@@ -1600,15 +1719,23 @@ impl PipelineRunner {
 
             let proposed_output_path = parent_dir.join(&output_name);
 
-            // Expand command template
-            let mut expanded_cmd = Vec::new();
-            expanded_cmd.push(resolved_exec_str.clone());
-            for arg in &pipeline.args {
-                let replaced = arg
-                    .replace("{input}", &staged_path.to_string_lossy())
-                    .replace("{output}", &proposed_output_path.to_string_lossy());
-                expanded_cmd.push(replaced);
-            }
+            // Expand command template depending on input mode (Task 4-1)
+            let expanded_cmd = match pipeline.input_mode {
+                ExecutionInputMode::PerFile => {
+                    let mut cmd = vec![resolved_exec_str.clone()];
+                    cmd.extend(Self::expand_command_arguments(
+                        &pipeline.args,
+                        Some(&staged_path),
+                        Some(&proposed_output_path),
+                        &all_staged_paths,
+                        parent_dir,
+                    ));
+                    cmd
+                }
+                ExecutionInputMode::BatchList | ExecutionInputMode::StandardInput => {
+                    batch_or_stdin_cmd.clone().unwrap_or_else(|| vec![resolved_exec_str.clone()])
+                }
+            };
 
             // Check conflict: does output already exist and is not identical to input?
             let conflict = proposed_output_path.exists() && proposed_output_path != staged_path;
@@ -1632,23 +1759,39 @@ impl PipelineRunner {
                 valid_items += 1;
             }
 
-            let message = if !executable_found {
-                Some(format!(
+            let mut message_parts = Vec::new();
+            if !executable_found {
+                message_parts.push(format!(
                     "Executable '{}' not found in system PATH",
                     pipeline.executable
-                ))
-            } else if conflict {
-                Some(format!(
+                ));
+            }
+            if conflict {
+                message_parts.push(format!(
                     "Output file '{}' already exists in staging area",
                     output_name
-                ))
-            } else if !ext_compatible {
-                Some(format!(
+                ));
+            }
+            if !ext_compatible {
+                message_parts.push(format!(
                     "Extension '.{}' is not in supported extensions list",
                     orig_ext
-                ))
-            } else {
+                ));
+            }
+            if pipeline.input_mode == ExecutionInputMode::StandardInput {
+                message_parts.push("[stdin stream input]".to_string());
+            }
+            if !unreadable_paths.is_empty() {
+                message_parts.push(format!(
+                    "Note: allowed read path(s) not found: {}",
+                    unreadable_paths.join(", ")
+                ));
+            }
+
+            let message = if message_parts.is_empty() {
                 None
+            } else {
+                Some(message_parts.join(" | "))
             };
 
             items.push(CustomPipelineDryRunItemDto {
@@ -1712,112 +1855,82 @@ impl PipelineRunner {
                 )
             })?;
 
-        for (idx, stage_id) in stage_ids.iter().enumerate() {
-            if cancel_flag.load(Ordering::SeqCst) {
-                is_cancelled = true;
-                break;
-            }
+        // Collect all staged items and paths
+        let mut valid_staged = Vec::new();
+        let mut all_staged_paths = Vec::new();
+        let mut workspace_dir: Option<PathBuf> = None;
 
-            let staged = match workspace_manager.get_staged(stage_id) {
-                Ok(s) => s,
+        for stage_id in stage_ids {
+            match workspace_manager.get_staged(stage_id) {
+                Ok(s) => {
+                    let p = PathBuf::from(&s.staged_path);
+                    if workspace_dir.is_none() {
+                        workspace_dir = p.parent().map(|d| d.to_path_buf());
+                    }
+                    all_staged_paths.push(p);
+                    valid_staged.push((stage_id.clone(), s));
+                }
                 Err(_) => {
                     failure_count += 1;
-                    continue;
-                }
-            };
-
-            let staged_path = PathBuf::from(&staged.staged_path);
-            let parent_dir = staged_path.parent().unwrap_or_else(|| Path::new("/tmp"));
-
-            let stem = staged_path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("file");
-            let orig_ext = staged_path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("");
-            let final_ext = pipeline.output_extension.as_deref().unwrap_or(orig_ext);
-            let suffix = &pipeline.default_suffix;
-
-            let output_name = if !suffix.is_empty() && !stem.ends_with(suffix) {
-                if final_ext.is_empty() {
-                    format!("{}{}", stem, suffix)
-                } else {
-                    format!("{}{}.{}", stem, suffix, final_ext)
-                }
-            } else if final_ext.is_empty() {
-                stem.to_string()
-            } else {
-                format!("{}.{}", stem, final_ext)
-            };
-
-            let proposed_output_path = parent_dir.join(&output_name);
-
-            if let Some(ref cb) = progress_callback {
-                cb(PipelineProgressEvent {
-                    job_id: job_id.clone(),
-                    preset_id: pipeline.id.clone(),
-                    current_index: idx + 1,
-                    total_items,
-                    current_filename: staged.display_name.clone(),
-                    stage_id: stage_id.clone(),
-                    status: "Running".to_string(),
-                    percent: if total_items > 0 {
-                        ((idx as f32) / (total_items as f32)) * 100.0
-                    } else {
-                        0.0
-                    },
-                    message: None,
-                });
-            }
-
-            // Build args
-            let mut cmd_args = Vec::new();
-            for arg in &pipeline.args {
-                let replaced = arg
-                    .replace("{input}", &staged_path.to_string_lossy())
-                    .replace("{output}", &proposed_output_path.to_string_lossy());
-                cmd_args.push(replaced);
-            }
-
-            // Landlock isolated execution
-            let exec_opts = CommandExecutionOptionsDto {
-                timeout_secs: Some(60),
-                max_memory_bytes: Some(512 * 1024 * 1024),
-                allowed_read_paths: vec![parent_dir.to_string_lossy().to_string()],
-                allowed_write_paths: vec![parent_dir.to_string_lossy().to_string()],
-                working_dir: Some(parent_dir.to_string_lossy().to_string()),
-            };
-
-            let start = Instant::now();
-            let exec_result = SandboxedExecutor::execute_with_cancellation(
-                &resolved_exec.to_string_lossy(),
-                &cmd_args,
-                &exec_opts,
-                Some(&cancel_flag),
-            );
-
-            let elapsed = start.elapsed().as_millis() as u64;
-
-            match exec_result {
-                Ok(res) if res.success => {
-                    success_count += 1;
-                    if proposed_output_path.exists() && output_name != staged.display_name {
-                        let _ = workspace_manager.update_staged_path(
-                            stage_id,
-                            &proposed_output_path,
-                            &output_name,
-                        );
-                    }
                     item_results.push(PipelineExecutionItemResultDto {
                         stage_id: stage_id.clone(),
-                        original_name: staged.display_name.clone(),
-                        output_name: output_name.clone(),
-                        success: true,
-                        error_message: None,
-                        execution_time_ms: elapsed,
+                        original_name: "Unknown".to_string(),
+                        output_name: String::new(),
+                        success: false,
+                        error_message: Some("Staged file not found in workspace".to_string()),
+                        execution_time_ms: 0,
                     });
+                }
+            }
+        }
+
+        let base_workspace = workspace_dir.unwrap_or_else(std::env::temp_dir);
+
+        // Prepare allowed_read_paths under Landlock (Task 4-2)
+        let mut allowed_reads = vec![base_workspace.to_string_lossy().to_string()];
+        for custom_path in &pipeline.allowed_read_paths {
+            let p = Path::new(custom_path);
+            if p.exists() {
+                allowed_reads.push(custom_path.clone());
+            }
+        }
+
+        match pipeline.input_mode {
+            ExecutionInputMode::PerFile => {
+                for (idx, (stage_id, staged)) in valid_staged.iter().enumerate() {
+                    if cancel_flag.load(Ordering::SeqCst) {
+                        is_cancelled = true;
+                        break;
+                    }
+
+                    let staged_path = PathBuf::from(&staged.staged_path);
+                    let parent_dir = staged_path.parent().unwrap_or(&base_workspace);
+
+                    let stem = staged_path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("file");
+                    let orig_ext = staged_path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("");
+                    let final_ext = pipeline.output_extension.as_deref().unwrap_or(orig_ext);
+                    let suffix = &pipeline.default_suffix;
+
+                    let output_name = if !suffix.is_empty() && !stem.ends_with(suffix) {
+                        if final_ext.is_empty() {
+                            format!("{}{}", stem, suffix)
+                        } else {
+                            format!("{}{}.{}", stem, suffix, final_ext)
+                        }
+                    } else if final_ext.is_empty() {
+                        stem.to_string()
+                    } else {
+                        format!("{}.{}", stem, final_ext)
+                    };
+
+                    let proposed_output_path = parent_dir.join(&output_name);
+
                     if let Some(ref cb) = progress_callback {
                         cb(PipelineProgressEvent {
                             job_id: job_id.clone(),
@@ -1826,42 +1939,275 @@ impl PipelineRunner {
                             total_items,
                             current_filename: staged.display_name.clone(),
                             stage_id: stage_id.clone(),
-                            status: "Completed".to_string(),
+                            status: "Running".to_string(),
                             percent: if total_items > 0 {
-                                (((idx + 1) as f32) / (total_items as f32)) * 100.0
+                                ((idx as f32) / (total_items as f32)) * 100.0
                             } else {
-                                100.0
+                                0.0
                             },
                             message: None,
                         });
                     }
+
+                    // Build args with typed placeholders (Task 4-1)
+                    let cmd_args = Self::expand_command_arguments(
+                        &pipeline.args,
+                        Some(&staged_path),
+                        Some(&proposed_output_path),
+                        &all_staged_paths,
+                        parent_dir,
+                    );
+
+                    let mut item_allowed_reads = allowed_reads.clone();
+                    let p_str = parent_dir.to_string_lossy().to_string();
+                    if !item_allowed_reads.contains(&p_str) {
+                        item_allowed_reads.push(p_str.clone());
+                    }
+
+                    let exec_opts = CommandExecutionOptionsDto {
+                        timeout_secs: Some(60),
+                        max_memory_bytes: Some(512 * 1024 * 1024),
+                        allowed_read_paths: item_allowed_reads,
+                        allowed_write_paths: vec![p_str.clone()],
+                        working_dir: Some(p_str),
+                        stdin_input: None,
+                    };
+
+                    let start = Instant::now();
+                    let exec_result = SandboxedExecutor::execute_with_cancellation(
+                        &resolved_exec.to_string_lossy(),
+                        &cmd_args,
+                        &exec_opts,
+                        Some(&cancel_flag),
+                    );
+
+                    let elapsed = start.elapsed().as_millis() as u64;
+
+                    match exec_result {
+                        Ok(res) if res.success => {
+                            success_count += 1;
+                            if proposed_output_path.exists() && output_name != staged.display_name {
+                                let _ = workspace_manager.update_staged_path(
+                                    stage_id,
+                                    &proposed_output_path,
+                                    &output_name,
+                                );
+                            }
+                            item_results.push(PipelineExecutionItemResultDto {
+                                stage_id: stage_id.clone(),
+                                original_name: staged.display_name.clone(),
+                                output_name: output_name.clone(),
+                                success: true,
+                                error_message: None,
+                                execution_time_ms: elapsed,
+                            });
+                            if let Some(ref cb) = progress_callback {
+                                cb(PipelineProgressEvent {
+                                    job_id: job_id.clone(),
+                                    preset_id: pipeline.id.clone(),
+                                    current_index: idx + 1,
+                                    total_items,
+                                    current_filename: staged.display_name.clone(),
+                                    stage_id: stage_id.clone(),
+                                    status: "Completed".to_string(),
+                                    percent: if total_items > 0 {
+                                        (((idx + 1) as f32) / (total_items as f32)) * 100.0
+                                    } else {
+                                        100.0
+                                    },
+                                    message: None,
+                                });
+                            }
+                        }
+                        Ok(res) => {
+                            failure_count += 1;
+                            item_results.push(PipelineExecutionItemResultDto {
+                                stage_id: stage_id.clone(),
+                                original_name: staged.display_name.clone(),
+                                output_name: staged.display_name.clone(),
+                                success: false,
+                                error_message: Some(res.stderr.trim().to_string()),
+                                execution_time_ms: elapsed,
+                            });
+                        }
+                        Err(err) => {
+                            failure_count += 1;
+                            item_results.push(PipelineExecutionItemResultDto {
+                                stage_id: stage_id.clone(),
+                                original_name: staged.display_name.clone(),
+                                output_name: staged.display_name.clone(),
+                                success: false,
+                                error_message: Some(err.message),
+                                execution_time_ms: elapsed,
+                            });
+                        }
+                    }
                 }
-                Ok(res) => {
-                    failure_count += 1;
-                    item_results.push(PipelineExecutionItemResultDto {
-                        stage_id: stage_id.clone(),
-                        original_name: staged.display_name.clone(),
-                        output_name: staged.display_name.clone(),
-                        success: false,
-                        error_message: Some(res.stderr.trim().to_string()),
-                        execution_time_ms: elapsed,
-                    });
-                }
-                Err(err) => {
-                    failure_count += 1;
-                    item_results.push(PipelineExecutionItemResultDto {
-                        stage_id: stage_id.clone(),
-                        original_name: staged.display_name.clone(),
-                        output_name: staged.display_name.clone(),
-                        success: false,
-                        error_message: Some(err.message),
-                        execution_time_ms: elapsed,
-                    });
+            }
+            ExecutionInputMode::BatchList | ExecutionInputMode::StandardInput => {
+                if !valid_staged.is_empty() && !cancel_flag.load(Ordering::SeqCst) {
+                    if let Some(ref cb) = progress_callback {
+                        cb(PipelineProgressEvent {
+                            job_id: job_id.clone(),
+                            preset_id: pipeline.id.clone(),
+                            current_index: 0,
+                            total_items,
+                            current_filename: "Batch execution".to_string(),
+                            stage_id: "batch".to_string(),
+                            status: "Running".to_string(),
+                            percent: 10.0,
+                            message: Some("Invoking batch/stdin process".to_string()),
+                        });
+                    }
+
+                    let cmd_args = Self::expand_command_arguments(
+                        &pipeline.args,
+                        None,
+                        None,
+                        &all_staged_paths,
+                        &base_workspace,
+                    );
+
+                    let stdin_content = if pipeline.input_mode == ExecutionInputMode::StandardInput {
+                        let lines = all_staged_paths
+                            .iter()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        Some(lines)
+                    } else {
+                        None
+                    };
+
+                    let ws_str = base_workspace.to_string_lossy().to_string();
+                    let exec_opts = CommandExecutionOptionsDto {
+                        timeout_secs: Some(180),
+                        max_memory_bytes: Some(1024 * 1024 * 1024),
+                        allowed_read_paths: allowed_reads.clone(),
+                        allowed_write_paths: vec![ws_str.clone()],
+                        working_dir: Some(ws_str),
+                        stdin_input: stdin_content,
+                    };
+
+                    let start = Instant::now();
+                    let exec_result = SandboxedExecutor::execute_with_cancellation(
+                        &resolved_exec.to_string_lossy(),
+                        &cmd_args,
+                        &exec_opts,
+                        Some(&cancel_flag),
+                    );
+                    let elapsed = start.elapsed().as_millis() as u64;
+
+                    match exec_result {
+                        Ok(res) if res.success => {
+                            for (stage_id, staged) in &valid_staged {
+                                success_count += 1;
+                                let staged_path = PathBuf::from(&staged.staged_path);
+                                let parent_dir = staged_path.parent().unwrap_or(&base_workspace);
+                                let stem = staged_path
+                                    .file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or("file");
+                                let orig_ext = staged_path
+                                    .extension()
+                                    .and_then(|e| e.to_str())
+                                    .unwrap_or("");
+                                let final_ext = pipeline.output_extension.as_deref().unwrap_or(orig_ext);
+                                let suffix = &pipeline.default_suffix;
+
+                                let output_name = if !suffix.is_empty() && !stem.ends_with(suffix) {
+                                    if final_ext.is_empty() {
+                                        format!("{}{}", stem, suffix)
+                                    } else {
+                                        format!("{}{}.{}", stem, suffix, final_ext)
+                                    }
+                                } else if final_ext.is_empty() {
+                                    stem.to_string()
+                                } else {
+                                    format!("{}.{}", stem, final_ext)
+                                };
+
+                                let proposed_output_path = parent_dir.join(&output_name);
+                                if proposed_output_path.exists() && output_name != staged.display_name {
+                                    let _ = workspace_manager.update_staged_path(
+                                        stage_id,
+                                        &proposed_output_path,
+                                        &output_name,
+                                    );
+                                }
+
+                                item_results.push(PipelineExecutionItemResultDto {
+                                    stage_id: stage_id.clone(),
+                                    original_name: staged.display_name.clone(),
+                                    output_name,
+                                    success: true,
+                                    error_message: None,
+                                    execution_time_ms: elapsed / (valid_staged.len() as u64).max(1),
+                                });
+                            }
+                        }
+                        Ok(res) => {
+                            for (stage_id, staged) in &valid_staged {
+                                failure_count += 1;
+                                item_results.push(PipelineExecutionItemResultDto {
+                                    stage_id: stage_id.clone(),
+                                    original_name: staged.display_name.clone(),
+                                    output_name: staged.display_name.clone(),
+                                    success: false,
+                                    error_message: Some(res.stderr.trim().to_string()),
+                                    execution_time_ms: elapsed / (valid_staged.len() as u64).max(1),
+                                });
+                            }
+                        }
+                        Err(err) => {
+                            for (stage_id, staged) in &valid_staged {
+                                failure_count += 1;
+                                item_results.push(PipelineExecutionItemResultDto {
+                                    stage_id: stage_id.clone(),
+                                    original_name: staged.display_name.clone(),
+                                    output_name: staged.display_name.clone(),
+                                    success: false,
+                                    error_message: Some(err.message.clone()),
+                                    execution_time_ms: elapsed / (valid_staged.len() as u64).max(1),
+                                });
+                            }
+                        }
+                    }
+
+                    if let Some(ref cb) = progress_callback {
+                        cb(PipelineProgressEvent {
+                            job_id: job_id.clone(),
+                            preset_id: pipeline.id.clone(),
+                            current_index: total_items,
+                            total_items,
+                            current_filename: "Batch completed".to_string(),
+                            stage_id: "batch".to_string(),
+                            status: "Completed".to_string(),
+                            percent: 100.0,
+                            message: None,
+                        });
+                    }
+                } else if cancel_flag.load(Ordering::SeqCst) {
+                    is_cancelled = true;
                 }
             }
         }
 
         cancel_mgr.unregister_job(&job_id);
+
+        // Native desktop notification upon custom pipeline completion (Task 2-3)
+        let notif_title = format!("Cuddle: {}", pipeline.name);
+        let notif_body = if failure_count == 0 {
+            format!("Pipeline executed successfully on {} items.", success_count)
+        } else {
+            format!("Completed with {} succeeded and {} failed.", success_count, failure_count)
+        };
+        let notif_level = if failure_count == 0 {
+            NotificationLevel::Success
+        } else {
+            NotificationLevel::Warning
+        };
+        let _ = notify_desktop(&notif_title, &notif_body, notif_level);
 
         Ok(PipelineExecutionResultDto {
             preset_id: pipeline.id.clone(),
@@ -2075,6 +2421,7 @@ impl PipelineRunner {
                     allowed_read_paths: vec![file_path.to_string_lossy().to_string()],
                     allowed_write_paths: vec![parent_dir.to_string_lossy().to_string()],
                     working_dir: Some(parent_dir.to_string_lossy().to_string()),
+                    stdin_input: None,
                 };
 
                 let res = SandboxedExecutor::execute_with_cancellation(
@@ -2127,6 +2474,7 @@ impl PipelineRunner {
                     allowed_read_paths: vec![file_path.to_string_lossy().to_string()],
                     allowed_write_paths: vec![parent_dir.to_string_lossy().to_string()],
                     working_dir: Some(parent_dir.to_string_lossy().to_string()),
+                    stdin_input: None,
                 };
 
                 let res = SandboxedExecutor::execute_with_cancellation(
@@ -2268,6 +2616,7 @@ mod tests {
                 allowed_read_paths: vec!["/bin".to_string(), "/usr".to_string()],
                 allowed_write_paths: vec![std::env::temp_dir().to_string_lossy().to_string()],
                 working_dir: None,
+                stdin_input: None,
             };
 
             let res = SandboxedExecutor::execute(
@@ -2297,6 +2646,7 @@ mod tests {
                 allowed_read_paths: vec!["/bin".to_string(), "/usr".to_string()],
                 allowed_write_paths: vec![std::env::temp_dir().to_string_lossy().to_string()],
                 working_dir: None,
+                stdin_input: None,
             };
 
             let res = SandboxedExecutor::execute(
@@ -2334,6 +2684,7 @@ mod tests {
                 allowed_read_paths: vec!["/bin".to_string(), "/usr".to_string()],
                 allowed_write_paths: vec![std::env::temp_dir().to_string_lossy().to_string()],
                 working_dir: None,
+                stdin_input: None,
             };
 
             let start = Instant::now();
@@ -2547,5 +2898,140 @@ mod tests {
 
         cancel_mgr.unregister_job(&job_id);
         assert!(!cancel_mgr.is_cancelled(&job_id));
+    }
+
+    #[test]
+    fn test_expand_command_arguments_typed_placeholders() {
+        let templates = vec![
+            "-i".to_string(),
+            "{input}".to_string(),
+            "-o".to_string(),
+            "{output}".to_string(),
+            "--workspace={WorkspaceDirectory}".to_string(),
+            "{InputList}".to_string(),
+        ];
+
+        let in_file = PathBuf::from("/workspace/in.png");
+        let out_file = PathBuf::from("/workspace/out.webp");
+        let all_files = vec![
+            PathBuf::from("/workspace/file 1.png"),
+            PathBuf::from("/workspace/file 2.png"),
+        ];
+        let ws_dir = PathBuf::from("/workspace");
+
+        let expanded = PipelineRunner::expand_command_arguments(
+            &templates,
+            Some(&in_file),
+            Some(&out_file),
+            &all_files,
+            &ws_dir,
+        );
+
+        assert_eq!(expanded[0], "-i");
+        assert_eq!(expanded[1], "/workspace/in.png");
+        assert_eq!(expanded[2], "-o");
+        assert_eq!(expanded[3], "/workspace/out.webp");
+        assert_eq!(expanded[4], "--workspace=/workspace");
+        // {InputList} is splatted into multiple arguments safely
+        assert_eq!(expanded[5], "/workspace/file 1.png");
+        assert_eq!(expanded[6], "/workspace/file 2.png");
+    }
+
+    #[test]
+    fn test_sandboxed_executor_stdin_input() {
+        let opts = CommandExecutionOptionsDto {
+            timeout_secs: Some(5),
+            max_memory_bytes: Some(64 * 1024 * 1024),
+            allowed_read_paths: Vec::new(),
+            allowed_write_paths: Vec::new(),
+            working_dir: None,
+            stdin_input: Some("cuddle safe stdin test stream\nline 2".to_string()),
+        };
+
+        // Use 'cat' to echo back stdin
+        let res = SandboxedExecutor::execute("cat", &[], &opts);
+        assert!(res.is_ok());
+        let outcome = res.unwrap();
+        assert!(outcome.success);
+        assert_eq!(outcome.stdout, "cuddle safe stdin test stream\nline 2");
+    }
+
+    #[test]
+    fn test_custom_pipeline_dry_run_with_modes_and_allowed_reads() {
+        let temp_dir = std::env::temp_dir().join(format!("cuddle_pipe_dry_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let ws_mgr = crate::workspace::WorkspaceManager::new();
+
+        // Create 2 test staged files
+        let f1 = temp_dir.join("sample1.txt");
+        let f2 = temp_dir.join("sample2.txt");
+        std::fs::write(&f1, "hello 1").unwrap();
+        std::fs::write(&f2, "hello 2").unwrap();
+
+        let item1 = ws_mgr.stage_file(&f1).unwrap();
+        let item2 = ws_mgr.stage_file(&f2).unwrap();
+        let stage_ids = vec![item1.stage_id.clone(), item2.stage_id.clone()];
+
+        // 1. PerFile pipeline
+        let per_file_def = crate::config::CustomPipelineDefDto {
+            id: "test-echo-perfile".to_string(),
+            name: "Echo PerFile".to_string(),
+            description: "Test per file".to_string(),
+            executable: "echo".to_string(),
+            args: vec!["{input}".to_string(), "to".to_string(), "{output}".to_string()],
+            supported_extensions: vec!["txt".to_string()],
+            output_extension: Some("bak".to_string()),
+            default_suffix: "_copy".to_string(),
+            allowed_read_paths: vec!["/etc".to_string()],
+            input_mode: ExecutionInputMode::PerFile,
+        };
+
+        let dry_per_file = PipelineRunner::dry_run_custom_pipeline(&per_file_def, &stage_ids, &ws_mgr).unwrap();
+        assert!(dry_per_file.can_proceed_to_execution);
+        assert_eq!(dry_per_file.items.len(), 2);
+        assert!(dry_per_file.items[0].expanded_command.iter().any(|arg| arg.contains(".bak")));
+
+        // 2. BatchList pipeline with {InputList}
+        let batch_def = crate::config::CustomPipelineDefDto {
+            id: "test-echo-batch".to_string(),
+            name: "Echo Batch".to_string(),
+            description: "Test batch".to_string(),
+            executable: "echo".to_string(),
+            args: vec!["--batch".to_string(), "{InputList}".to_string()],
+            supported_extensions: vec!["txt".to_string()],
+            output_extension: None,
+            default_suffix: "".to_string(),
+            allowed_read_paths: vec![],
+            input_mode: ExecutionInputMode::BatchList,
+        };
+
+        let dry_batch = PipelineRunner::dry_run_custom_pipeline(&batch_def, &stage_ids, &ws_mgr).unwrap();
+        assert!(dry_batch.can_proceed_to_execution);
+        assert_eq!(dry_batch.items.len(), 2);
+        assert!(dry_batch.items[0].expanded_command.contains(&"--batch".to_string()));
+        assert!(dry_batch.items[0].expanded_command.iter().any(|a| a.contains("sample1.txt")));
+        assert!(dry_batch.items[0].expanded_command.iter().any(|a| a.contains("sample2.txt")));
+
+        // 3. StandardInput pipeline
+        let stdin_def = crate::config::CustomPipelineDefDto {
+            id: "test-cat-stdin".to_string(),
+            name: "Cat Stdin".to_string(),
+            description: "Test stdin".to_string(),
+            executable: "cat".to_string(),
+            args: vec![],
+            supported_extensions: vec!["txt".to_string()],
+            output_extension: None,
+            default_suffix: "".to_string(),
+            allowed_read_paths: vec![],
+            input_mode: ExecutionInputMode::StandardInput,
+        };
+
+        let dry_stdin = PipelineRunner::dry_run_custom_pipeline(&stdin_def, &stage_ids, &ws_mgr).unwrap();
+        assert!(dry_stdin.can_proceed_to_execution);
+        assert!(dry_stdin.items[0].message.as_deref().unwrap().contains("[stdin stream input]"));
+
+        // Clean up
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

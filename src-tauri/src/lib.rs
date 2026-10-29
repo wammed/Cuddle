@@ -9,6 +9,7 @@ pub mod git;
 pub mod history;
 pub mod image_preview;
 pub mod models;
+pub mod notify;
 pub mod periodic_index;
 pub mod pipeline;
 pub mod policy;
@@ -968,6 +969,7 @@ pub fn run() {
             execute_pipeline_preset,
             validate_custom_pipeline_dry_run,
             execute_custom_pipeline,
+            notify::notify_user,
             git::get_git_status
         ])
         .run(tauri::generate_context!())
@@ -994,6 +996,7 @@ mod tests {
             .expect("Failed to export ReflectExecutionResultDto");
         ReflectAsCopyResultDto::export(&cfg).expect("Failed to export ReflectAsCopyResultDto");
         UndoHistoryResultDto::export(&cfg).expect("Failed to export UndoHistoryResultDto");
+        notify::NotificationLevel::export(&cfg).expect("Failed to export NotificationLevel");
     }
 
     #[test]

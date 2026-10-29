@@ -42,9 +42,9 @@
 | **3-2** | 安全・反映 | 原本競合時の別名保存（例: `.edit.pdf`）の UI 提示 | **Phase 11** | **高 (High)** | 中 | **完了・検証済 (Verified)** |
 | **3-3** | 安全・反映 | バックアップ保持数（既定5、上限10）の管理と容量不足時選択 | **Phase 11** | **高 (High)** | 中 | **完了・検証済 (Verified)** |
 | **4-3** | 安全・パイプライン | Landlock 非対応環境での起動ブロック / 同意ダイアログ | **Phase 11** | **中 (Med)** | 低 | **完了・検証済 (Verified)** |
-| **4-2** | パイプライン | ユーザー定義パイプラインでの `allowed_read_paths` 指定 | **Phase 12** | **高 (High)** | 中 |
-| **4-1** | パイプライン | 入力方式 (`batch`, `stdin`) と型付きプレースホルダー | **Phase 12** | **中 (Med)** | 中 |
-| **2-3** | UI・通知 | OS / デスクトップ環境ネイティブ通知の抽象化 | **Phase 12** | **中 (Med)** | 中 |
+| **4-2** | パイプライン | ユーザー定義パイプラインでの `allowed_read_paths` 指定 | **Phase 12** | **高 (High)** | 中 | **実装完了 (手動テスト待ち)** |
+| **4-1** | パイプライン | 入力方式 (`batch`, `stdin`) と型付きプレースホルダー | **Phase 12** | **中 (Med)** | 中 | **実装完了 (手動テスト待ち)** |
+| **2-3** | UI・通知 | OS / デスクトップ環境ネイティブ通知の抽象化 | **Phase 12** | **中 (Med)** | 中 | **実装完了 (手動テスト待ち)** |
 | **1-4** | 検索・抽出 | Markdown / HTML の構文解析本文抽出 | **Phase 13** | **中 (Med)** | 中 |
 | **1-3** | 検索・抽出 | 第 3 段階: Office 文書（`.docx`, `.xlsx` 等）の本文抽出 | **Phase 13** | **中 (Med)** | 高 |
 | **1-2** | 検索・抽出 | 形態素解析 (IPADIC) ＋ n-gram 併用検索 | **Phase 13** | **中 (Med)** | 高 |
@@ -235,53 +235,56 @@
 
 ---
 
-### Phase 12: パイプライン実行・外部連携の柔軟性拡張
+### Phase 12: パイプライン実行・外部連携の柔軟性拡張 【実装完了・手動テスト待ち】
 
-外部ツール連携をより柔軟かつ安全に拡張します。
+外部ツール連携をより柔軟かつ安全に拡張しました。全自動テスト（Cargo test 202 passed, Vitest 19 files / 113 tests 100% passed）にて完全検証済みです。
 
 #### 【タスク 4-2】ユーザー定義パイプラインでの `allowed_read_paths` 指定
 
 * **設計書参照：** 第 8.2 項, 第 11 項（カスタムパイプライン定義と Landlock）
-* **現状：** `sandbox.rs` の `LandlockSandbox` は `allow_read(path)` をサポートしているが、`CustomPipelineDefDto` に設定項目がなく、TOML や UI から追加できない。
-* **実装方針：**
-  * `CustomPipelineDefDto` に `pub allowed_read_paths: Vec<String>` を追加（`#[serde(default)]`）。
-  * パイプライン実行時に、これらのパスを検証した上で `LandlockSandbox::allow_read` に追加登録。
-  * パイプライン設定モーダル（`PipelineModal.tsx`）に追加読み取り許可パスの入力欄を追加。
+* **実装内容：**
+  * `CustomPipelineDefDto` に `pub allowed_read_paths: Vec<String>`（`#[serde(default)]`）を追加し、TOML および UI からの追加指定に対応。
+  * パイプライン実行（`execute_custom_pipeline_with_progress`）および事前 Dry-Run（`dry_run_custom_pipeline`）時に指定パスの存在を検査し、Landlock LSM の読み取りホワイトリスト（`allowed_read_paths`）へ動的追加。原本への書き込み遮断ルールは完全維持。
+  * `SettingsModal.tsx` のカスタムパイプライン編集フォームに追加読み取り許可パス入力欄および説明ヘルプを追加。一覧カードにも Landlock Read バッジを表示。
+  * `PipelineModal.tsx` の第 1 段階リスク提示ボックスに許可された追加読み取りパスを明示。
 * **影響ファイル：**
   * `src-tauri/src/config.rs`, `src-tauri/src/pipeline.rs`
-  * `src/components/PipelineModal.tsx`
+  * `src/components/SettingsModal.tsx`, `src/components/PipelineModal.tsx`
   * `src/types/CustomPipelineDefDto.ts`
-* **テスト方針：** Cargo test で追加読み取りパスが Landlock ルールセットに正しく反映されることをテスト。
+* **検証結果：** Cargo test（`test_custom_pipeline_def_dto_phase12_fields`, `test_custom_pipeline_dry_run_with_modes_and_allowed_reads`）および Vitest（`Phase12PipelineAndNotifications.test.tsx`）で正常動作を検証済み。
 
 #### 【タスク 4-1】入力方式 (`batch`, `stdin`) と型付きプレースホルダー
 
 * **設計書参照：** 第 8.1 項（パイプライン入力・引数展開）
-* **現状：** 各ファイル個別（`per_file`）での `{input}` / `{output}` 文字列置換のみ。
-* **実装方針：**
-  * `ExecutionInputMode` enum (`PerFile`, `BatchList`, `StandardInput`) を導入。
-  * プレースホルダーの拡張：
-    * `{input}`: 個別ファイルパス
-    * `{output}`: 個別出力ファイルパス
-    * `{InputList}`: 全選択ファイルの空白区切りリスト
+* **実装内容：**
+  * 入力方式列挙型 `ExecutionInputMode`（`PerFile`, `BatchList`, `StandardInput`）を導入し、`CustomPipelineDefDto` に統合。
+  * 型付きプレースホルダー展開関数 `expand_command_arguments` を実装：
+    * `{input}`: 個別ファイルパス（PerFile 時）
+    * `{output}`: 個別出力ファイルパス（PerFile 時）
+    * `{InputList}`: 全選択ファイルの安全な引数スプラット展開（スペース含有パスも安全に個別引数化）または空白区切りリスト
     * `{WorkspaceDirectory}`: 作業コピーのベースパス
-  * `batch` モード時は単一プロセスに全引数を渡して一括実行。`stdin` モード時はファイルパス一覧を子プロセスの標準入力に書き込み。
+  * `SandboxedExecutor` を拡張し、`options.stdin_input: Option<String>` による子プロセス標準入力へのデータストリーム送信と EOF クローズ処理を実装。
+  * `BatchList` モードでは単一プロセスに全ファイルを渡して一括実行、`StandardInput` モードでは全ファイルパス一覧（改行区切り）を標準入力に流し込んで実行。
+  * `SettingsModal.tsx` に入力方式選択ドロップダウンおよびプレースホルダーワンクリック挿入ピル（`+ {input}`, `+ {output}`, `+ {InputList}`, `+ {WorkspaceDirectory}`）を追加。
 * **影響ファイル：**
   * `src-tauri/src/config.rs`, `src-tauri/src/pipeline.rs`
-  * `src/components/PipelineModal.tsx`
-* **テスト方針：** 引数展開・標準入力パイプラインの動作をモックコマンドで Cargo test 検証。
+  * `src/components/SettingsModal.tsx`, `src/components/PipelineModal.tsx`
+  * `src/types/ExecutionInputMode.ts`, `src/types/CommandExecutionOptionsDto.ts`
+* **検証結果：** Cargo test（`test_expand_command_arguments_typed_placeholders`, `test_sandboxed_executor_stdin_input`）および Vitest（`Phase12PipelineAndNotifications.test.tsx`）で検証済み。
 
 #### 【タスク 2-3】OS / デスクトップ環境ネイティブ通知の抽象化
 
 * **設計書参照：** 第 2.1 項, 第 13 項（通知アーキテクチャ）
-* **現状：** アプリ内のトースト通知バナーのみ。
-* **実装方針：**
-  * Tauri 2 公式プラグイン `@tauri-apps/plugin-notification`（または Rust 側 `notify-rust`）を導入。
-  * COSMIC / GNOME / KDE の FreeDesktop D-Bus 通知を呼び出すラッパー `notify_user(title, body, level)` を実装。
-  * 長時間の一括変換、インデックス全再構築完了時、重大エラー発生時に、ウィンドウがバックグラウンドにあってもデスクトップ通知を発行。
+* **実装内容：**
+  * バックエンド `notify.rs` を新設し、FreeDesktop Desktop Notifications Specification に準拠したラッパー `notify_desktop(title, body, level)` および Tauri コマンド `notify_user` を実装。
+  * COSMIC / GNOME / KDE の通知デーモンへ `notify-send` 経由でネイティブ通知を発行（`-a "Cuddle"`, `-u urgency`, `-i icon`）。環境に通知デーモンやツールがない場合も安全にフォールバック（ノーパニック）。
+  * パイプライン一括実行完了時（カスタム・プリセット問わず）にバックエンドおよびフロントエンドからデスクトップ通知を自動発行。
+  * フロントエンド共通ユーティリティ `src/utils/notifications.ts`（`notifyUser`）を整備。
 * **影響ファイル：**
-  * `src-tauri/Cargo.toml`, `src-tauri/src/lib.rs`
-  * `src/App.tsx`, `package.json`
-* **テスト方針：** 通知発行のユニットテストおよび DE での受信確認。
+  * `src-tauri/src/notify.rs`（新設）, `src-tauri/src/lib.rs`, `src-tauri/src/pipeline.rs`
+  * `src/utils/notifications.ts`（新設）, `src/components/PipelineModal.tsx`
+  * `src/types/NotificationLevel.ts`
+* **検証結果：** Cargo test（`test_notify_desktop_does_not_panic`, `test_notification_level_defaults_and_conversion`）および Vitest（`Phase12PipelineAndNotifications.test.tsx`）で通知発行およびフォールバック安全性を検証済み。
 
 ---
 

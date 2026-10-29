@@ -49,6 +49,22 @@ impl Default for AppConfig {
     }
 }
 
+/// Execution input mode for pipeline tasks (Design Section 8.1, Task 4-1).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "../../src/types/")]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionInputMode {
+    PerFile,
+    BatchList,
+    StandardInput,
+}
+
+impl Default for ExecutionInputMode {
+    fn default() -> Self {
+        Self::PerFile
+    }
+}
+
 /// User-defined pipeline definition following Design Section 8.3 mandatory safe flow.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[ts(export, export_to = "../../src/types/")]
@@ -61,6 +77,12 @@ pub struct CustomPipelineDefDto {
     pub supported_extensions: Vec<String>,
     pub output_extension: Option<String>,
     pub default_suffix: String,
+    /// Additional read-only paths allowed under Landlock LSM (Task 4-2)
+    #[serde(default)]
+    pub allowed_read_paths: Vec<String>,
+    /// Input execution mode: per_file, batch_list, standard_input (Task 4-1)
+    #[serde(default)]
+    pub input_mode: ExecutionInputMode,
 }
 
 pub fn get_default_custom_pipeline_templates() -> Vec<CustomPipelineDefDto> {
@@ -80,6 +102,8 @@ pub fn get_default_custom_pipeline_templates() -> Vec<CustomPipelineDefDto> {
             supported_extensions: vec!["png".to_string(), "jpg".to_string(), "jpeg".to_string()],
             output_extension: Some("webp".to_string()),
             default_suffix: "_web".to_string(),
+            allowed_read_paths: Vec::new(),
+            input_mode: ExecutionInputMode::PerFile,
         },
         CustomPipelineDefDto {
             id: "custom-strip-metadata".to_string(),
@@ -100,6 +124,8 @@ pub fn get_default_custom_pipeline_templates() -> Vec<CustomPipelineDefDto> {
             ],
             output_extension: None,
             default_suffix: "_clean".to_string(),
+            allowed_read_paths: Vec::new(),
+            input_mode: ExecutionInputMode::PerFile,
         },
     ]
 }
@@ -372,6 +398,39 @@ enforce_landlock = false
     }
 
     #[test]
+    fn test_custom_pipeline_def_dto_phase12_fields() {
+        // Test default deserialization when fields are omitted in TOML
+        let toml_str = r#"
+id = "custom-test"
+name = "Test Pipeline"
+description = "Test Description"
+executable = "echo"
+args = ["{input}"]
+supported_extensions = ["txt"]
+default_suffix = "_tested"
+"#;
+        let def: CustomPipelineDefDto = toml::from_str(toml_str).unwrap();
+        assert_eq!(def.allowed_read_paths, Vec::<String>::new());
+        assert_eq!(def.input_mode, ExecutionInputMode::PerFile);
+
+        // Test explicit fields
+        let toml_explicit = r#"
+id = "custom-batch"
+name = "Batch Pipeline"
+description = "Batch Description"
+executable = "tar"
+args = ["-cf", "archive.tar", "{InputList}"]
+supported_extensions = ["*"]
+default_suffix = ""
+allowed_read_paths = ["/etc/hosts", "/opt/data"]
+input_mode = "batch_list"
+"#;
+        let def_explicit: CustomPipelineDefDto = toml::from_str(toml_explicit).unwrap();
+        assert_eq!(def_explicit.allowed_read_paths, vec!["/etc/hosts", "/opt/data"]);
+        assert_eq!(def_explicit.input_mode, ExecutionInputMode::BatchList);
+    }
+
+    #[test]
     fn test_export_typescript_bindings_config() {
         let _ = fs::create_dir_all("../src/types");
         let cfg = ts_rs::Config::default();
@@ -380,5 +439,6 @@ enforce_landlock = false
         let _ = WorkspaceSection::export(&cfg);
         let _ = SecuritySection::export(&cfg);
         let _ = CustomPipelineDefDto::export(&cfg);
+        let _ = ExecutionInputMode::export(&cfg);
     }
 }

@@ -30,6 +30,7 @@ import type { ThemeCategory, ThemePreset } from "../types/ThemePreset";
 import type { Density } from "../types/Density";
 import type { AppConfig } from "../types/AppConfig";
 import type { CustomPipelineDefDto } from "../types/CustomPipelineDefDto";
+import type { ExecutionInputMode } from "../types/ExecutionInputMode";
 import type { BackupArchiveInfoDto } from "../types/BackupArchiveInfoDto";
 import { formatBytes, formatTimestamp } from "../utils/format";
 import { applyDensity, getSavedDensity } from "../utils/density";
@@ -162,6 +163,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [formExts, setFormExts] = useState<string>("");
   const [formOutExt, setFormOutExt] = useState<string>("");
   const [formSuffix, setFormSuffix] = useState<string>("");
+  const [formAllowedReads, setFormAllowedReads] = useState<string>("");
+  const [formInputMode, setFormInputMode] = useState<ExecutionInputMode>("per_file");
 
   useEffect(() => {
     if (!isOpen) return;
@@ -229,6 +232,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setFormExts("png, jpg, jpeg");
     setFormOutExt("");
     setFormSuffix("_custom");
+    setFormAllowedReads("");
+    setFormInputMode("per_file");
     setIsFormOpen(true);
   };
 
@@ -242,6 +247,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setFormExts(pipe.supported_extensions.join(", "));
     setFormOutExt(pipe.output_extension || "");
     setFormSuffix(pipe.default_suffix || "");
+    setFormAllowedReads((pipe.allowed_read_paths || []).join(", "));
+    setFormInputMode(pipe.input_mode || "per_file");
     setIsFormOpen(true);
   };
 
@@ -255,6 +262,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setFormExts("png, jpg, jpeg");
       setFormOutExt("webp");
       setFormSuffix("_web");
+      setFormAllowedReads("");
+      setFormInputMode("per_file");
     } else {
       setFormId("custom-strip-metadata");
       setFormName(t("settings.preset_template_exif_name"));
@@ -264,6 +273,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setFormExts("jpg, jpeg, png, tiff, webp");
       setFormOutExt("");
       setFormSuffix("_clean");
+      setFormAllowedReads("");
+      setFormInputMode("per_file");
     }
     setIsFormOpen(true);
   };
@@ -284,6 +295,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       .map((e) => e.replace(/^\./, "").trim())
       .filter((e) => e.length > 0);
 
+    const readPathList = formAllowedReads
+      .split(/[,、\n\r]+/)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+
     const newDef: CustomPipelineDefDto = {
       id: formId.trim(),
       name: formName.trim(),
@@ -293,6 +309,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       supported_extensions: extList,
       output_extension: formOutExt.trim() ? formOutExt.replace(/^\./, "").trim() : null,
       default_suffix: formSuffix.trim() ? formSuffix.trim() : "_custom",
+      allowed_read_paths: readPathList,
+      input_mode: formInputMode,
     };
 
     let updatedList: CustomPipelineDefDto[];
@@ -1004,15 +1022,57 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       />
                     </div>
                     <div className="form-field-group">
-                      <label>{t("custom_pipelines.field_args")} *</label>
-                      <input
-                        type="text"
-                        className="form-text-input font-mono"
-                        placeholder="-q 80 {input} -o {output}"
-                        value={formArgs}
-                        onChange={(e) => setFormArgs(e.target.value)}
-                      />
+                      <label>{t("custom_pipelines.field_input_mode")} (Phase 12)</label>
+                      <select
+                        className="form-select font-mono"
+                        value={formInputMode}
+                        onChange={(e) => setFormInputMode(e.target.value as ExecutionInputMode)}
+                      >
+                        <option value="per_file">{t("custom_pipelines.mode_per_file")}</option>
+                        <option value="batch_list">{t("custom_pipelines.mode_batch_list")}</option>
+                        <option value="standard_input">{t("custom_pipelines.mode_standard_input")}</option>
+                      </select>
                     </div>
+                  </div>
+
+                  <div className="form-field-group">
+                    <div className="flex items-center justify-between mb-1">
+                      <label>{t("custom_pipelines.field_args")} *</label>
+                      <div className="placeholder-pill-tags flex gap-1">
+                        {["{input}", "{output}", "{InputList}", "{WorkspaceDirectory}"].map((ph) => (
+                          <button
+                            key={ph}
+                            type="button"
+                            className="text-xs px-1.5 py-0.5 rounded bg-white/5 hover:bg-teal-500/20 text-teal-300 font-mono border border-teal-500/30 transition-colors"
+                            onClick={() => setFormArgs((prev) => `${prev} ${ph}`.trim())}
+                            title={`Insert ${ph}`}
+                          >
+                            + {ph}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <input
+                      type="text"
+                      className="form-text-input font-mono"
+                      placeholder="-q 80 {input} -o {output} or {InputList}"
+                      value={formArgs}
+                      onChange={(e) => setFormArgs(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-field-group">
+                    <label>{t("custom_pipelines.field_allowed_reads")} (Phase 12)</label>
+                    <input
+                      type="text"
+                      className="form-text-input font-mono"
+                      placeholder="/usr/share/fonts, /opt/data, /etc/magic"
+                      value={formAllowedReads}
+                      onChange={(e) => setFormAllowedReads(e.target.value)}
+                    />
+                    <span className="form-helper-text text-xs text-white/40 mt-1 block">
+                      {t("custom_pipelines.helper_allowed_reads")}
+                    </span>
                   </div>
 
                   <div className="form-grid-3col">
@@ -1106,6 +1166,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                       <div className="pipe-details-row">
                         <div className="detail-item">
+                          <span className="label">Mode:</span>
+                          <span className="val font-mono uppercase text-xs px-1.5 py-0.5 rounded bg-teal-500/10 text-teal-300 border border-teal-500/20">
+                            {pipe.input_mode || "per_file"}
+                          </span>
+                        </div>
+                        <div className="detail-item">
                           <span className="label">Binary:</span>
                           <code className="val font-mono">{pipe.executable}</code>
                         </div>
@@ -1113,6 +1179,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           <span className="label">Args:</span>
                           <code className="val font-mono">{pipe.args.join(" ")}</code>
                         </div>
+                        {pipe.allowed_read_paths && pipe.allowed_read_paths.length > 0 && (
+                          <div className="detail-item">
+                            <span className="label">Landlock Read:</span>
+                            <span className="val font-mono text-xs text-teal-300">
+                              {pipe.allowed_read_paths.join(", ")}
+                            </span>
+                          </div>
+                        )}
                         <div className="detail-item">
                           <span className="label">Exts:</span>
                           <span className="val font-mono">

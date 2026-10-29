@@ -5,7 +5,7 @@
 </p>
 
 **Document Date:** 2026-10-29  
-**Status:** All Phases (Phase 1–11) fully implemented and approved via real-world manual testing. Conflict alternate save, retention prune, window close safety intercept, start dashboard resume switch, and non-Landlock warning modal verified (199 Cargo / 108 Vitest 100% passing; ready for Phase 12).  
+**Status:** All Phases (Phase 1–11) fully implemented and approved via real-world manual testing. Open-source distribution ready (MIT License / README / BUILD / CI Actions complete); Phase 12 (Pipeline External Integration Flexibility: allowed_read_paths, input modes batch/stdin, typed placeholders, FreeDesktop native notifications) implemented with automated tests passing (202 Cargo / 113 Vitest 100% pass; ready for manual testing verification).  
 **Target Audience:** Development, Architecture, and QA Teams; Next Working Session Maintainers  
 
 ---
@@ -280,12 +280,14 @@ All future development must strictly adhere to the following protocol:
 With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) fully implemented and verified via automated tests, the project transitions to Major Phase 7 (External Tool Integration & Pipeline Runner) **following real-hardware manual verification checklist confirmation and pre-phase decision gate consensus**.
 
 ### 7.1 Phase 7.1 Architecture & Design Decisions (External Command Execution Engine)
+
 * **Process Isolation & Landlock LSM / cgroups Confinement:**
   * Execute external media/document utilities (ImageMagick, FFmpeg, pandoc) isolated with read-write access restricted strictly to `workspace-temp/`.
   * Protective bounds on memory, CPU, and execution timeout (30 seconds).
   * Argument array execution completely devoid of shell string interpolation (`sh -c`).
 
 ### 7.2 Phase 7.2 Architecture & Design Decisions (30 Pipeline Presets & DAG Workflow)
+
 * **Agreed 30 Pipeline Presets Taxonomy:**
   * **Images & Visual Processing (1–8):**
     1. Web Distribution Optimization (Strip Exif $\rightarrow$ Resize to max 1920px $\rightarrow$ WebP Q80 $\rightarrow$ Append `_web`)
@@ -327,6 +329,7 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
   * Dynamic detection of required tools (`magick`, `ffmpeg`, `qpdf`, `pdfimages`, `exiftool`) in `$PATH`. Clean guidance and fallback for missing tools. Pure-Rust presets (14–20, 26–29) work instantly without external prerequisites.
 
 ### 7.3 Phase 7.3 (Real-time Progress UI & Cancellation Controls): Completed
+
 * **Streaming Asynchronous Feedback & UI Integration:**
   * Real-time file processing status tracking (pending, running, succeeded, failed) via progress indicators and percentage counters (Tauri event `pipeline-progress`).
   * Immediate SIGKILL process interruption and safe RollbackAll termination via `PipelineCancellationManager`.
@@ -337,10 +340,12 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
 ## 8. Phase 8 (UI/UX Polish, Virtual Scrolling, Layout Optimization & Cyber Theme): Completed
 
 ### 8.1 User Agreement & Decision Gate
+
 1. **Color Theme Selected:** `Midnight Teal / Cyber Dark` (Deep oceanic canvas `#060c11` / `#09141b` accented with cyber teal `#14b8a6` and neon mint `#2dd4bf`).
 2. **Action Bar Concealment Fix:** `Fixed Bottom Action Bar Layout` (Footer action buttons are permanently pinned at the bottom of all modals and dialogs with `flex-shrink: 0; margin-top: auto;` while the upper content/banner areas scroll independently, ensuring action buttons never disappear regardless of window size).
 
 ### 8.2 Implementation Details
+
 * **Fixed Bottom Action Bar Architecture:**
   * Standardized `.dialog-footer` and `.dialog-actions-bar` across all modals (`.reflect-confirm-dialog`, `.bulk-rename-modal`, `.exit-backup-dialog`, `.pipeline-modal-dialog`) with `flex-shrink: 0; margin-top: auto; position: relative; z-index: 10;`.
   * Enforced `flex: 1; min-height: 0; overflow-y: auto;` on modal body containers (`.dialog-body`, `.bulk-rename-body`, `.pipeline-config-scroll`), preventing layout overflow and ensuring action buttons remain visible even with tall error banners or preview tables.
@@ -446,20 +451,22 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
   * **Design Cohesion (Zero White Backgrounds):**
     * Dark velvet cyber background (`#06090e`, `rgba(0,0,0,0.4)`) with cyber teal (`#2dd4bf`) accents maintained.
 * **Verification & Testing:**
-    * 50 Vitest tests passing (100%, added `Typography.test.ts`), 139 Cargo unit tests passing (100%), TypeScript / Vite production build passing cleanly.
+  * 50 Vitest tests passing (100%, added `Typography.test.ts`), 139 Cargo unit tests passing (100%), TypeScript / Vite production build passing cleanly.
 
 ---
 
 ## 9. Phase 9 (Remaining Core Features & Source-Only Distribution): Completed
 
 ### 9.1 User Decisions (Decision Gate)
+
 1. **Distribution Policy:** For initial public release, avoid pre-built binary packages (deb, AppImage, Flatpak, etc.) to minimize licensing and compliance complexities. **Publish strictly as open source code accompanied by exhaustive build guides and prerequisite instructions (README / BUILD)**.
 2. **Editor-Integrated Rename (vidir style) Specifications:**
-   - **Interface:** Dual-mode support featuring both an embedded multi-line in-app editor and external editor spawning (`$VISUAL`, `$EDITOR`, VS Code, nano, gedit, etc.).
-   - **Format:** Clean tab-separated values format (`[item_id]<TAB>[Filename]`) adhering to Design 9.4.
-   - **Safety Guarantees:** Correlated strictly via `item_id`. Deleted lines are preserved as unchanged (NEVER interpreted as file deletion). Two-Phase atomic rename and rollback journal (UNDO) fully enforced.
+   * **Interface:** Dual-mode support featuring both an embedded multi-line in-app editor and external editor spawning (`$VISUAL`, `$EDITOR`, VS Code, nano, gedit, etc.).
+   * **Format:** Clean tab-separated values format (`[item_id]<TAB>[Filename]`) adhering to Design 9.4.
+   * **Safety Guarantees:** Correlated strictly via `item_id`. Deleted lines are preserved as unchanged (NEVER interpreted as file deletion). Two-Phase atomic rename and rollback journal (UNDO) fully enforced.
 
 ### 9.2 Implementation Details (Phase 9.1: vidir-Style Editor Integration): Completed
+
 * **Backend Engine (`src-tauri/src/batch.rs`, `src-tauri/src/lib.rs`):**
   * `generate_vidir_buffer`: Generates tab-separated text representation from target items with safety guidance headers.
   * `parse_vidir_buffer`: Parses user-edited text buffer, guarantees that omitted lines remain `OperationStatus::Unchanged`, and detects duplicate collisions (`ConflictDuplicate`), on-disk collisions (`ConflictExistsOnDisk`), and illegal paths (`InvalidFilename`).
@@ -478,6 +485,7 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
   * 51 Vitest unit tests passing (100%), 141 Cargo unit tests passing (100%), TypeScript / Vite production build passing cleanly.
 
 ### 9.3 Implementation Details (Phase 9.2: Batch Attribute Change chmod - Octal & Symbolic): Completed
+
 * **Backend Engine (`src-tauri/src/chmod.rs`, `src-tauri/src/lib.rs`):**
   * `parse_octal_mode`: Strictly parses 3-digit and 4-digit octal permission strings (e.g., `644`, `0755`, `4755`).
   * `parse_symbolic_mode`: Parses POSIX chmod compatible comma-separated clauses (`u+x`, `go-w`, `a+r`, `u=rwx,go=rx`) as well as shorthand forms (`+x`, `-w`).
@@ -500,7 +508,9 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
     * `FileBrowserPanel.tsx`: Added context menu action to trigger attribute change for individual/multiple files.
 * **Bilingual Synchronization (`ja/translation.json`, `en/translation.json`):**
   * Added all `chmod.*` keys with full English and Japanese parity.
+
 ### 9.4 Implementation Details (Phase 9.3: Batch File Timestamps & Workspace tar/tar.gz Export): Completed
+
 * **Backend Engine (`src-tauri/src/timestamp.rs`, `src-tauri/src/export_tar.rs`, `src-tauri/src/lib.rs`):**
   * **Batch Timestamp Change (`timestamp.rs`):**
     * High-precision file timestamp management via `filetime = "0.2"` and `kamadak-exif = "0.6"`.
@@ -546,6 +556,7 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
   * 65 Vitest unit tests passing (100%, added `TimestampModal.test.tsx` and `TarExportModal.test.tsx`), 167 Cargo unit tests passing (100%), TypeScript and Vite production builds passing cleanly.
 
 ### 9.6 Implementation Details (Phase 9.5: Original Reflection Modes & Selective Undo): Completed
+
 * **Original Reflection Modes (Design 5.2 Independent Explicit Operations):**
   * **2 Reflection Modes (`workspace::ReflectionMode`):**
     * **Mode A (`Overwrite`):** Creates a staging temp file (`.cuddle_reflect_<uuid>.tmp`) in the original file's parent directory, verifies copy integrity, and performs atomic replacement using POSIX `fs::rename(2)`.
@@ -577,6 +588,7 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
   * TypeScript type check and Vite production bundle passing cleanly.
 
 ### 9.7 Implementation Details (Phase 9.6: Desktop Launcher Automation & Multi-DE Installers/Uninstaller): Completed
+
 * **Multi-Desktop Environment (DE) Installation Scripts (`scripts/`):**
   * **CachyOS + COSMIC DE (Wayland) Dedicated Preset (`scripts/install-cosmic.sh`):**
     * Tailored for CachyOS / Arch Linux and the System76 COSMIC Desktop Environment (`cosmic-comp`, `cosmic-app-library`, `cosmic-launcher`).
@@ -598,6 +610,7 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
   * `README.ja.md` / `README.md`: Added one-liner installation commands to the Quick Start section.
 
 ### 9.8 Implementation Details (Full-text Search Index On-Demand UI & Section 7.3 Compliant systemd Periodic Timer): Completed
+
 * **Full-text Search Index On-Demand UI (`SearchPanel.tsx`, `App.css`, Panel Components):**
   * Added dedicated index management dropdown (`Database` icon) directly adjacent to the search input field.
   * **Real-time Statistics & Scope Indicators:**
@@ -661,6 +674,7 @@ With Major Phase 6 (Backups, Operation History, UNDO & Session Restoration) full
 Based on comprehensive cross-verification between the Master Design Specification ([`FileWorkbench-Design-ver0.9.en.md`](file:///home/susie/git/wammed/Cuddle/FileWorkbench-Design-ver0.9.en.md)) and the current codebase, the 18 identified items have been triaged and detailed in [`NEXT_IMPLEMENTATION_TASKS.en.md`](file:///home/susie/git/wammed/Cuddle/NEXT_IMPLEMENTATION_TASKS.en.md).
 
 ### Phase Structure & Recommended Implementation Flow
+
 1. **Phase 10: Quick UX & Interaction Wins & Ultra-Rich Visual Polish [Completed & Verified by User]**
    * [2-2] Pane Width & Layout Persistence across Sessions (`react-resizable-panels` / `localStorage`): **Done & Verified**
    * [2-1] Drag & Drop (D&D) between Browser & Workspace (D&D staging): **Done & Verified**
@@ -683,12 +697,19 @@ Based on comprehensive cross-verification between the Master Design Specificatio
      * Created `CriticalSecurityModal` blocking application use until consent is provided on unsupported kernels, with choice persistence.
    * [Window Close Safety Intercept & Header Exit Button]: **Done & Verified via Manual Testing**
      * Implemented `onCloseRequested` interception in Tauri 2 for Zero Data Loss and prominent Header exit button.
-3. **Phase 12: Pipeline Flexibility & External Tool Integrations [Scheduled Next Session]**
-   * [4-2] Custom `allowed_read_paths` in Pipeline Presets (Landlock integration)
-   * [4-1] Input Modes (`batch`, `stdin`) & Typed Placeholders (`{InputList}`, `{WorkspaceDirectory}`)
-   * [2-3] Desktop Environment Native Notification Abstraction (FreeDesktop D-Bus Notifications)
-   * [2-3] Desktop Environment Native Notification Abstraction (FreeDesktop D-Bus)
-4. **Phase 13: Search, Extraction & Indexing Evolution**
+3. **Phase 12: Pipeline Flexibility & External Tool Integrations [Implemented & Pending Manual Test]**
+   * [4-2] Custom `allowed_read_paths` in Pipeline Presets (Landlock integration): **Done & Verified**
+     * Added `allowed_read_paths: Vec<String>` to `CustomPipelineDefDto`. Dynamically registered to `LandlockSandbox::allow_read` during dry-run and execution.
+     * Added allowed read paths input and Landlock Read badges to `SettingsModal`, as well as Risk Specification display in `PipelineModal`.
+   * [4-1] Input Modes (`batch`, `stdin`) & Typed Placeholders (`{InputList}`, `{WorkspaceDirectory}`): **Done & Verified**
+     * Introduced `ExecutionInputMode` (`PerFile`, `BatchList`, `StandardInput`).
+     * Implemented typed placeholder expansion (`{input}`, `{output}`, `{InputList}` safe argument splatting, `{WorkspaceDirectory}`).
+     * Extended `SandboxedExecutor` with `stdin_input: Option<String>` for streaming file paths to child stdin with EOF closing.
+     * Added input mode select and quick-insert placeholder pills in `SettingsModal`.
+   * [2-3] Desktop Environment Native Notification Abstraction (FreeDesktop D-Bus): **Done & Verified**
+     * Added `notify.rs` module providing FreeDesktop notification dispatch via `notify-send` (`notify_desktop` & Tauri command `notify_user`).
+     * Automatically dispatches notifications upon preset and custom pipeline completion. Frontend `notifyUser` helper implemented.
+4. **Phase 13: Search, Extraction & Indexing Evolution [Scheduled Next Session]**
    * [1-4] Structured Markdown (`pulldown-cmark`) / HTML Text Extraction
    * [1-3] Tier 3: Office Document Extraction (`.docx`, `.xlsx`) via isolated workers
    * [1-2] Combined Morphological (IPADIC) + n-gram Search

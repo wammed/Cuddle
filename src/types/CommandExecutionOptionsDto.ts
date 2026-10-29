@@ -3,4 +3,4 @@
 /**
  * Options for sandboxed process execution.
  */
-export type CommandExecutionOptionsDto = { timeout_secs: bigint | null, max_memory_bytes: bigint | null, allowed_read_paths: Array<string>, allowed_write_paths: Array<string>, working_dir: string | null, };
+export type CommandExecutionOptionsDto = { timeout_secs: bigint | null, max_memory_bytes: bigint | null, allowed_read_paths: Array<string>, allowed_write_paths: Array<string>, working_dir: string | null, stdin_input: string | null, };

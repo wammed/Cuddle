@@ -31,6 +31,7 @@ import type { PipelineProgressEvent } from "../types/PipelineProgressEvent";
 import type { CustomPipelineDefDto } from "../types/CustomPipelineDefDto";
 import type { CustomPipelineDryRunResultDto } from "../types/CustomPipelineDryRunResultDto";
 import type { AppConfig } from "../types/AppConfig";
+import { notifyUser } from "../utils/notifications";
 
 interface PipelineModalProps {
   stagedFiles: StagedItemDto[];
@@ -289,6 +290,13 @@ export function PipelineModal({
       setExecutionResult(res);
       setSafetyStep("done");
       onExecuteSuccess();
+      notifyUser(
+        t("common.app_title") + ": " + currentCustomDef.name,
+        res.failure_count === 0
+          ? t("pipeline.completed_notification_success", { count: res.success_count })
+          : t("pipeline.completed_notification_partial", { success: res.success_count, fail: res.failure_count }),
+        res.failure_count === 0 ? "success" : "warning"
+      );
     } catch (err: unknown) {
       const msg = typeof err === "object" && err !== null && "message" in err
         ? String((err as { message: unknown }).message)
@@ -345,6 +353,13 @@ export function PipelineModal({
       });
       setExecutionResult(res);
       onExecuteSuccess();
+      notifyUser(
+        t("common.app_title") + ": " + t(selectedPreset.name_key),
+        res.failure_count === 0
+          ? t("pipeline.completed_notification_success", { count: res.success_count })
+          : t("pipeline.completed_notification_partial", { success: res.success_count, fail: res.failure_count }),
+        res.failure_count === 0 ? "success" : "warning"
+      );
     } catch (err: unknown) {
       const msg = typeof err === "object" && err !== null && "message" in err
         ? String((err as { message: unknown }).message)
@@ -561,6 +576,20 @@ export function PipelineModal({
                           {currentCustomDef.output_extension ? `.${currentCustomDef.output_extension}` : "(Keep Original)"}
                         </span>
                       </div>
+                      <div className="spec-row">
+                        <span className="spec-label">Input Mode:</span>
+                        <span className="spec-val uppercase text-teal-300 font-bold">
+                          {currentCustomDef.input_mode || "per_file"}
+                        </span>
+                      </div>
+                      {currentCustomDef.allowed_read_paths && currentCustomDef.allowed_read_paths.length > 0 && (
+                        <div className="spec-row">
+                          <span className="spec-label">Landlock Read:</span>
+                          <span className="spec-val text-teal-300 font-mono">
+                            {currentCustomDef.allowed_read_paths.join(", ")}
+                          </span>
+                        </div>
+                      )}
                       <div className="spec-row">
                         <span className="spec-label">Target Files:</span>
                         <span className="spec-val text-teal-400 font-bold">{stagedFiles.length} files</span>

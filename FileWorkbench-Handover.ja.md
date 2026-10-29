@@ -5,7 +5,7 @@
 </p>
 
 **文書作成日：** 2026-10-29  
-**ステータス：** 全フェーズ（Phase 1〜11）実装・実機手動テスト承認完了、ソース公開配布準備完了（MIT License / README / BUILD / CI Actions 整備完了）、原本競合別名保存・バックアップ世代管理（プルーニング）・終了時安全インターセプト・スタートページ再開スイッチ・Landlock 非対応警告モーダル検証完了 (199 Cargo / 108 Vitest 全件パス、次回 Phase 12 開始)  
+**ステータス：** 全フェーズ（Phase 1〜11）実装・実機手動テスト承認完了、ソース公開配布準備完了（MIT License / README / BUILD / CI Actions 整備完了）、Phase 12（パイプライン外部連携柔軟性拡張：allowed_read_paths、入力方式 batch/stdin、型付きプレースホルダー、FreeDesktop デスクトップ通知抽象化）実装・自動テスト合格完了（実機手動テスト実施中）  
 **対象：** 開発・設計・テスト担当者、次期作業セッション担当  
 
 ---
@@ -697,11 +697,19 @@
      * `CriticalSecurityModal` を新設。Landlock LSM 非対応またはカーネル制約時に全画面警告を表示し、同意または終了を強制。選択記憶トグルを実装。
    * 【終了時安全インターセプト & ヘッダー終了ボタン】: **実装完了・実機手動テスト承認済み**
      * ウィンドウ右上×ボタン押下時の `onCloseRequested` インターセプトによる Zero Data Loss 保証、およびヘッダー終了ボタンを実装。
-3. **Phase 12: パイプライン実行・外部連携の柔軟性拡張 【次回セッション着手予定】**
-   * 【4-2】ユーザー定義カスタムパイプラインでの `allowed_read_paths` 指定（Landlock 連携）
-   * 【4-1】入力方式（`batch`, `stdin`）と型付きプレースホルダー（`{InputList}`, `{WorkspaceDirectory}`）
-   * 【2-3】OS / デスクトップ環境ネイティブ通知の抽象化（FreeDesktop D-Bus 通知）
-4. **Phase 13: 検索・インデックス・本文抽出の高度化**
+3. **Phase 12: パイプライン実行・外部連携の柔軟性拡張 【実装完了・実機手動テスト待ち】**
+   * 【4-2】ユーザー定義カスタムパイプラインでの `allowed_read_paths` 指定（Landlock 連携）: **実装完了・検証済み**
+     * `CustomPipelineDefDto` に `allowed_read_paths: Vec<String>` を追加。パイプライン実行時および事前 Dry-Run 時に Landlock LSM の allow_read に動的登録。
+     * `SettingsModal` に設定欄・Landlock Read バッジ、`PipelineModal` のリスク説明に許可パスを表示。
+   * 【4-1】入力方式（`batch`, `stdin`）と型付きプレースホルダー（`{InputList}`, `{WorkspaceDirectory}`）: **実装完了・検証済み**
+     * `ExecutionInputMode`（`PerFile`, `BatchList`, `StandardInput`）を導入。
+     * `expand_command_arguments` による `{input}`, `{output}`, `{InputList}`（安全なスプラット展開）, `{WorkspaceDirectory}` のプレースホルダー置換。
+     * `SandboxedExecutor` での子プロセス `stdin` ストリーミング送信と EOF クローズ処理。
+     * `SettingsModal` に入力方式選択とワンクリック挿入ピルを追加。
+   * 【2-3】OS / デスクトップ環境ネイティブ通知の抽象化（FreeDesktop D-Bus 通知）: **実装完了・検証済み**
+     * `notify.rs` を新設し、`notify-send`（COSMIC / GNOME / KDE 準拠）による `notify_desktop` および Tauri コマンド `notify_user` を実装。
+     * パイプライン完了時にデスクトップ通知を自動発行。フロントエンド共通ヘルパー `notifyUser` を整備。
+4. **Phase 13: 検索・インデックス・本文抽出の高度化 【次回セッション着手予定】**
    * 【1-4】Markdown（`pulldown-cmark`）/ HTML の構文解析本文抽出
    * 【1-3】第 3 段階: Office 文書（`.docx`, `.xlsx` 等）の本文抽出（メモリ制限付き分離ワーカー）
    * 【1-2】形態素解析（IPADIC）＋ n-gram 併用ハイブリッド検索

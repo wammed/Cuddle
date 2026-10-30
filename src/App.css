@@ -8525,7 +8525,7 @@ button:active:not(:disabled),
 }
 
 /* ==========================================================================
-   Quick Config Editor Modal & Syntax Highlight Overlays
+   Workspace Editor Modal & Syntax Highlight Overlays
    ========================================================================== */
 .quick-editor-backdrop {
   z-index: 1100;

@@ -457,6 +457,101 @@ impl HistoryManager {
         Ok(())
     }
 
+    /// Checks if any of the given stage_ids already exist in the session_items table.
+    /// Returns the list of conflicting stage_ids (empty if none exist).
+    pub fn check_existing_stage_ids(&self, stage_ids: &[String]) -> Result<Vec<String>, String> {
+        if stage_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let conn = self.conn.lock().unwrap();
+        let mut conflicts = Vec::new();
+        let mut stmt = conn
+            .prepare("SELECT stage_id FROM session_items WHERE stage_id = ?1;")
+            .map_err(|e| format!("Failed to prepare conflict check statement: {}", e))?;
+
+        for id in stage_ids {
+            let exists = stmt
+                .exists(params![id])
+                .map_err(|e| format!("Failed to query stage_id {}: {}", id, e))?;
+            if exists {
+                conflicts.push(id.clone());
+            }
+        }
+
+        Ok(conflicts)
+    }
+
+    /// Inserts restored session items strictly using pure INSERT (NO ON-CONFLICT UPSERT).
+    /// Used exclusively during backup restoration to prevent overwriting active session records
+    /// or causing partial-update generation mismatches.
+    /// Fails immediately and rolls back the entire batch if any conflict occurs.
+    pub fn insert_restored_session_items_batch(
+        &self,
+        items: &[StagedItemDto],
+    ) -> Result<(), String> {
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction().map_err(|e| {
+            format!(
+                "Failed to begin transaction for restored session items: {}",
+                e
+            )
+        })?;
+
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT INTO session_items (
+                        stage_id, original_item_id, raw_base64, display_name,
+                        staged_raw_base64, staged_path, size, clone_method, status,
+                        staged_at_ms, canonical_path, inode, dev, orig_size, mtime_ms, sha256
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16);",
+                )
+                .map_err(|e| format!("Failed to prepare restore insert statement: {}", e))?;
+
+            for item in items {
+                let clone_method_str = match item.clone_method {
+                    CloneMethod::Reflink => "Reflink",
+                    CloneMethod::StandardCopy => "StandardCopy",
+                };
+                let status_str = match item.status {
+                    StageStatus::Staged => "Staged",
+                    StageStatus::Modified => "Modified",
+                    StageStatus::Reflected => "Reflected",
+                    StageStatus::Conflict => "Conflict",
+                };
+
+                stmt.execute(params![
+                    item.stage_id,
+                    item.original_item_id,
+                    item.raw_base64,
+                    item.display_name,
+                    item.staged_raw_base64,
+                    item.staged_path,
+                    item.size as i64,
+                    clone_method_str,
+                    status_str,
+                    item.staged_at_ms,
+                    item.original_snapshot.canonical_path,
+                    item.original_snapshot.inode as i64,
+                    item.original_snapshot.dev as i64,
+                    item.original_snapshot.size as i64,
+                    item.original_snapshot.mtime_ms,
+                    item.original_snapshot.sha256.as_deref().unwrap_or(""),
+                ])
+                .map_err(|e| format!("Failed to insert restored session item {} (conflict or integrity violation): {}", item.stage_id, e))?;
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| format!("Failed to commit restored session items: {}", e))?;
+        Ok(())
+    }
+
     /// Removes a staged item from the session table
     pub fn remove_session_item(&self, stage_id: &str) -> Result<(), String> {
         let conn = self.conn.lock().unwrap();

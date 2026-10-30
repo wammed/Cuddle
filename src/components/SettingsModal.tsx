@@ -1497,7 +1497,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       {t("settings.snippets_title") || "クイックスニペット管理・カスタマイズ"}
                     </h4>
                     <p className="text-xs text-muted">
-                      {t("settings.snippets_subtitle") || "簡易設定エディタで利用できる言語別スニペットを設定します。~/.config/Cuddle/config.toml に保存されます。"}
+                      {t("settings.snippets_subtitle") || "ワークスペース　エディタで利用できる言語別スニペットを設定します。~/.config/Cuddle/config.toml に保存されます。"}
                     </p>
                   </div>
                 </div>

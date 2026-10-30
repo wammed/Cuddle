@@ -543,7 +543,7 @@
     "tab_pipelines": "Custom Pipelines",
     "tab_snippets": "Snippets",
     "snippets_title": "Quick Snippets Management & Customization",
-    "snippets_subtitle": "Configure language-specific snippets for Quick Editor. Saved to ~/.config/Cuddle/config.toml.",
+    "snippets_subtitle": "Configure language-specific snippets for Workspace Editor. Saved to ~/.config/Cuddle/config.toml.",
     "tab_shortcuts": "Shortcuts",
     "theme_cat_cyber": "Cyber / Sci-Fi (8)",
     "theme_cat_neon": "Neon (8)",
@@ -885,7 +885,7 @@
     "test_modal_btn": "Test Unsupported Warning Modal"
   },
   "editor": {
-    "title": "Quick Config Editor",
+    "title": "Workspace Editor",
     "subtitle": "Originals are protected. Safely edit the workspace copy and review diffs before reflecting.",
     "snippets_label": "Config Snippets:",
     "snippet_path": "+ Add PATH",

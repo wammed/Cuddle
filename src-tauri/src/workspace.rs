@@ -70,6 +70,15 @@ pub enum WorkspaceError {
     StagingDirUnavailable,
     #[error("Insufficient disk space in staging destination")]
     InsufficientSpace,
+    #[error("Unstage rollback failed for stage '{stage_id}': {cause}")]
+    RollbackFailed {
+        stage_id: String,
+        path: PathBuf,
+        trash_path: PathBuf,
+        cause: String,
+    },
+    #[error("Atomic exchange unsupported: {0}")]
+    AtomicExchangeUnsupported(String),
 }
 
 impl WorkspaceError {
@@ -79,6 +88,8 @@ impl WorkspaceError {
             WorkspaceError::NotFound(_) => "ERR_STAGE_NOT_FOUND",
             WorkspaceError::StagingDirUnavailable => "ERR_STAGING_DIR_UNAVAILABLE",
             WorkspaceError::InsufficientSpace => "ERR_INSUFFICIENT_SPACE",
+            WorkspaceError::RollbackFailed { .. } => "ERR_UNSTAGE_ROLLBACK_FAILED",
+            WorkspaceError::AtomicExchangeUnsupported(_) => "ERR_ATOMIC_EXCHANGE_UNSUPPORTED",
             WorkspaceError::Io(_) => "ERR_IO",
             WorkspaceError::Model(_) => "ERR_INVALID_PATH",
             WorkspaceError::Diff(_) => "ERR_DIFF_FAILED",
@@ -330,7 +341,23 @@ impl WorkspaceManager {
             if let Err(e) = hist_mgr.remove_session_item(&staged.stage_id) {
                 // Rollback: restore quarantined file if DB removal fails
                 if let Some(ref trash) = temp_trash_path {
-                    let _ = fs::rename(trash, &path);
+                    if let Err(rb_err) = fs::rename(trash, &path) {
+                        eprintln!(
+                            "[CRITICAL] Failed to rollback unstage: unable to restore '{}' to '{}': {}",
+                            trash.display(),
+                            path.display(),
+                            rb_err
+                        );
+                        return Err(WorkspaceError::RollbackFailed {
+                            stage_id: staged.stage_id.clone(),
+                            path: path.clone(),
+                            trash_path: trash.clone(),
+                            cause: format!(
+                                "DB removal failed: {}. Rollback file restore also failed: {}. Quarantined staged file remains at {}",
+                                e, rb_err, trash.display()
+                            ),
+                        });
+                    }
                 }
                 return Err(WorkspaceError::Io(std::io::Error::other(format!(
                     "Failed to remove session item from SQLite: {}. Rolled back unstage operation.",
@@ -340,7 +367,13 @@ impl WorkspaceManager {
 
             // 3. Purge quarantined temporary file now that DB update is confirmed
             if let Some(ref trash) = temp_trash_path {
-                let _ = fs::remove_file(trash);
+                if let Err(rm_err) = fs::remove_file(trash) {
+                    eprintln!(
+                        "[WARN] Unstaged copy removed from DB but failed to delete trash file '{}': {}",
+                        trash.display(),
+                        rm_err
+                    );
+                }
             }
 
             let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
@@ -525,89 +558,111 @@ impl WorkspaceManager {
         // Atomically swap candidate into place and quarantine the original file in tmp_reflect_path.
         // Then verify the quarantined original file in isolation against the snapshot.
         let mut backup_origin_path: Option<PathBuf> = None;
+        let mut concurrent_write_path: Option<PathBuf> = None;
 
         let swap_result = atomic_exchange_files(&tmp_reflect_path, &orig_path);
-        if swap_result.is_ok() {
-            // Swap succeeded:
-            // `orig_path` now holds the newly reflected content.
-            // `tmp_reflect_path` now holds the exact pre-reflection original file.
-            // Verify the quarantined original file against snapshot in full isolation.
-            match OperationPolicy::verify_conflict_on_path(
-                &tmp_reflect_path,
-                &staged.original_snapshot,
-                true,
-            ) {
-                Ok(()) => {
-                    // Verification SUCCESS: Original file was strictly untouched up to the swap!
-                    if mode == ReflectionMode::BackupOrigin {
-                        let backup_target = generate_origin_backup_path(&orig_path);
-                        if let Err(e) = fs::rename(&tmp_reflect_path, &backup_target) {
-                            // If saving backup fails, swap original back to recover
-                            let _ = atomic_exchange_files(&tmp_reflect_path, &orig_path);
+        match swap_result {
+            Ok(()) => {
+                // Swap succeeded:
+                // `orig_path` now holds the newly reflected content.
+                // `tmp_reflect_path` now holds the exact pre-reflection original file.
+                // Verify the quarantined original file against snapshot in full isolation.
+                match OperationPolicy::verify_conflict_on_path(
+                    &tmp_reflect_path,
+                    &staged.original_snapshot,
+                    true,
+                ) {
+                    Ok(()) => {
+                        // Pre-swap verification SUCCESS: Original file was strictly untouched up to the swap!
+                        // Check for concurrent writes from external processes holding an open file descriptor:
+                        // In POSIX systems, an open FD continues pointing to the swapped inode at `tmp_reflect_path`.
+                        // Re-verifying right before removing ensures any unflushed or concurrent writes are detected.
+                        let concurrent_check = OperationPolicy::verify_conflict_on_path(
+                            &tmp_reflect_path,
+                            &staged.original_snapshot,
+                            true,
+                        );
+
+                        if concurrent_check.is_err() {
+                            // Concurrent external FD write detected!
+                            // CRITICAL DEFENSE: Never delete the quarantined file!
+                            // Safely preserve the external process's modified content in a timestamped backup.
+                            let lost_write_target = generate_lost_write_backup_path(&orig_path);
+                            if let Err(e) = fs::rename(&tmp_reflect_path, &lost_write_target) {
+                                eprintln!(
+                                    "[CRITICAL] Failed to preserve concurrent external write '{}': {}",
+                                    lost_write_target.display(),
+                                    e
+                                );
+                            } else {
+                                eprintln!(
+                                    "[SECURITY] Concurrent external FD write detected and preserved to '{}'",
+                                    lost_write_target.display()
+                                );
+                                concurrent_write_path = Some(lost_write_target);
+                            }
+                        } else if mode == ReflectionMode::BackupOrigin {
+                            let backup_target = generate_origin_backup_path(&orig_path);
+                            if let Err(e) = fs::rename(&tmp_reflect_path, &backup_target) {
+                                // If saving backup fails, swap original back to recover
+                                let _ = atomic_exchange_files(&tmp_reflect_path, &orig_path);
+                                let _ = fs::remove_file(&tmp_reflect_path);
+                                return Err(WorkspaceError::Io(e));
+                            }
+                            backup_origin_path = Some(backup_target);
+                        } else {
+                            // Mode A (Overwrite): Safely remove the quarantined old original
                             let _ = fs::remove_file(&tmp_reflect_path);
-                            return Err(WorkspaceError::Io(e));
                         }
-                        backup_origin_path = Some(backup_target);
-                    } else {
-                        // Mode A (Overwrite): Safely remove the quarantined old original
+                    }
+                    Err(conflict_err) => {
+                        // CONFLICT DETECTED!
+                        // An external modification occurred prior to the swap.
+                        // Rollback immediately: swap the original file back into place!
+                        let _ = atomic_exchange_files(&tmp_reflect_path, &orig_path);
                         let _ = fs::remove_file(&tmp_reflect_path);
+                        staged.status = StageStatus::Conflict;
+                        let hist_mgr = crate::history::get_history_manager();
+                        let _ = hist_mgr.save_session_item(staged);
+                        return Err(WorkspaceError::Policy(conflict_err));
                     }
                 }
-                Err(conflict_err) => {
-                    // CONFLICT DETECTED!
-                    // An external modification occurred prior to the swap.
-                    // Rollback immediately: swap the original file back into place!
-                    let _ = atomic_exchange_files(&tmp_reflect_path, &orig_path);
-                    let _ = fs::remove_file(&tmp_reflect_path);
-                    staged.status = StageStatus::Conflict;
-                    let hist_mgr = crate::history::get_history_manager();
-                    let _ = hist_mgr.save_session_item(staged);
-                    return Err(WorkspaceError::Policy(conflict_err));
-                }
             }
-        } else {
-            // Fallback for filesystems that do not support renameat2(RENAME_EXCHANGE):
-            // Open original file to acquire file descriptor and verify fstat
-            let orig_file = File::open(&orig_path).map_err(WorkspaceError::Io)?;
-            let orig_meta = orig_file.metadata().map_err(WorkspaceError::Io)?;
-
-            use std::os::unix::fs::MetadataExt;
-            if orig_meta.ino() != staged.original_snapshot.inode
-                || orig_meta.dev() != staged.original_snapshot.dev
-                || orig_meta.len() != staged.original_snapshot.size
-            {
+            Err(swap_err) => {
+                // Remove temporary staging candidate
                 let _ = fs::remove_file(&tmp_reflect_path);
-                staged.status = StageStatus::Conflict;
-                let hist_mgr = crate::history::get_history_manager();
-                let _ = hist_mgr.save_session_item(staged);
-                return Err(WorkspaceError::Policy(PolicyError::ConflictDetected(
-                    "Original file was modified concurrently (detected via fd fstat)".to_string(),
+
+                // Classify atomic_exchange_files error
+                let raw_err = swap_err.raw_os_error();
+                let is_unsupported_fs = match raw_err {
+                    #[cfg(target_os = "linux")]
+                    Some(code) => {
+                        code == libc::EINVAL
+                            || code == libc::ENOSYS
+                            || code == libc::EOPNOTSUPP
+                            || code == libc::EXDEV
+                    }
+                    #[cfg(target_os = "linux")]
+                    None => false,
+                    #[cfg(not(target_os = "linux"))]
+                    _ => true,
+                };
+
+                if !is_unsupported_fs {
+                    // Environmental or permission error (EACCES, EPERM, ENOENT, EROFS, etc.)
+                    // FAIL IMMEDIATELY. Never attempt insecure fallback.
+                    return Err(WorkspaceError::Io(swap_err));
+                }
+
+                // If filesystem does not support atomic RENAME_EXCHANGE,
+                // enforce FAIL-CLOSED safety: refuse non-atomic direct overwrite reflection
+                // to prevent TOCTOU race conditions and preserve original data.
+                return Err(WorkspaceError::AtomicExchangeUnsupported(format!(
+                    "Filesystem does not support atomic RENAME_EXCHANGE ({}). \
+                    Direct overwrite is blocked to protect original data from TOCTOU corruption. \
+                    Please use 'Save as Copy' (reflect_staged_item_as_copy) instead.",
+                    swap_err
                 )));
-            }
-
-            if let Err(e) = OperationPolicy::verify_conflict(&staged.original_snapshot, true) {
-                let _ = fs::remove_file(&tmp_reflect_path);
-                staged.status = StageStatus::Conflict;
-                let hist_mgr = crate::history::get_history_manager();
-                let _ = hist_mgr.save_session_item(staged);
-                return Err(WorkspaceError::Policy(e));
-            }
-
-            if mode == ReflectionMode::BackupOrigin {
-                let backup_target = generate_origin_backup_path(&orig_path);
-                if let Err(e) = fs::rename(&orig_path, &backup_target) {
-                    let _ = fs::remove_file(&tmp_reflect_path);
-                    return Err(WorkspaceError::Io(e));
-                }
-                backup_origin_path = Some(backup_target);
-            }
-
-            if let Err(e) = fs::rename(&tmp_reflect_path, &orig_path) {
-                let _ = fs::remove_file(&tmp_reflect_path);
-                if let Some(ref bkp) = backup_origin_path {
-                    let _ = fs::rename(bkp, &orig_path);
-                }
-                return Err(WorkspaceError::Io(e));
             }
         }
 
@@ -629,7 +684,7 @@ impl WorkspaceManager {
         staged.original_snapshot = new_snapshot;
         staged.status = StageStatus::Reflected;
 
-        let details = match &backup_origin_path {
+        let mut details = match &backup_origin_path {
             Some(bkp) => format!(
                 "Reflected with .origin backup: {} -> original: {}",
                 bkp.display(),
@@ -637,6 +692,13 @@ impl WorkspaceManager {
             ),
             None => format!("Reflected atomic replace to {}", orig_path.display()),
         };
+
+        if let Some(ref cw) = concurrent_write_path {
+            details.push_str(&format!(
+                " (Concurrent external FD writes preserved to {})",
+                cw.display()
+            ));
+        }
 
         let hist_mgr = crate::history::get_history_manager();
         hist_mgr
@@ -870,9 +932,37 @@ impl WorkspaceManager {
         for mut item in saved_items {
             let staged_path = Path::new(&item.staged_path);
             if !staged_path.exists() {
-                // Staged working copy was removed from disk, purge from session
-                let _ = hist_mgr.remove_session_item(&item.stage_id);
-                continue;
+                // Check if an interrupted unstage rollback or quarantined trash file exists
+                let mut recovered = false;
+                if let Some(parent) = staged_path.parent() {
+                    if let Ok(entries) = fs::read_dir(parent) {
+                        let filename_stem = staged_path
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy();
+                        for entry in entries.flatten() {
+                            let entry_name = entry.file_name().to_string_lossy().to_string();
+                            if entry_name.contains("unstage_trash_")
+                                && entry_name.starts_with(&*filename_stem)
+                                && fs::rename(entry.path(), staged_path).is_ok()
+                            {
+                                eprintln!(
+                                    "[RECOVERY] Successfully restored staged file '{}' from uncompleted unstage trash '{}'",
+                                    staged_path.display(),
+                                    entry.path().display()
+                                );
+                                recovered = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if !recovered && !staged_path.exists() {
+                    // Staged working copy was removed from disk, purge from session
+                    let _ = hist_mgr.remove_session_item(&item.stage_id);
+                    continue;
+                }
             }
 
             // Verify original file and detect conflict
@@ -982,6 +1072,56 @@ pub fn generate_origin_backup_path(orig_path: &Path) -> PathBuf {
         counter += 1;
     }
     candidate
+}
+
+/// Generates a timestamped backup path for files that received concurrent external writes
+/// from an open file descriptor during or after reflection.
+/// e.g. report.pdf -> report_20261025_201530.concurrent_write.pdf
+pub fn generate_lost_write_backup_path(orig_path: &Path) -> PathBuf {
+    let parent = orig_path.parent().unwrap_or_else(|| Path::new("."));
+    let stem = orig_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file");
+    let ext = orig_path.extension().and_then(|s| s.to_str());
+    let now = chrono::Local::now();
+    let timestamp = now.format("%Y%m%d_%H%M%S").to_string();
+
+    let backup_filename = if let Some(e) = ext {
+        format!("{}_{}.concurrent_write.{}", stem, timestamp, e)
+    } else {
+        format!("{}_{}.concurrent_write", stem, timestamp)
+    };
+
+    let mut candidate = parent.join(backup_filename);
+    let mut counter = 1;
+    while candidate.exists() {
+        let unique_name = if let Some(e) = ext {
+            format!("{}_{}_{}.concurrent_write.{}", stem, timestamp, counter, e)
+        } else {
+            format!("{}_{}_{}.concurrent_write", stem, timestamp, counter)
+        };
+        candidate = parent.join(unique_name);
+        counter += 1;
+    }
+    candidate
+}
+
+/// Cleans up stale unstage trash and temporary files from the staging directory.
+pub fn cleanup_stale_staging_artifacts() {
+    let global_staging = get_global_staging_directory();
+    if !global_staging.exists() {
+        return;
+    }
+
+    if let Ok(entries) = fs::read_dir(&global_staging) {
+        for entry in entries.flatten() {
+            let fname = entry.file_name().to_string_lossy().to_string();
+            if fname.contains("unstage_trash_") || fname.starts_with(".tmp_") {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+    }
 }
 
 /// Generates an alternate non-destructive copy path with a custom or default suffix (e.g. .edit).
@@ -1512,6 +1652,54 @@ mod tests {
         let fetched_staged = mgr.get_staged(&staged.stage_id).unwrap();
         assert_eq!(fetched_staged.status, StageStatus::Conflict);
 
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_workspace_reflect_concurrent_open_fd_write_protection() {
+        use std::io::Write;
+
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_open_fd_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("open_fd_doc.txt");
+        fs::write(&orig_file, b"Original FD file content V1").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+
+        // Mutate staged working copy
+        fs::write(&staged.staged_path, b"Staged reflected content V2").unwrap();
+
+        // Simulate external process holding an open write file descriptor
+        let mut external_fd = fs::OpenOptions::new()
+            .write(true)
+            .open(&orig_file)
+            .expect("External process opens file");
+
+        // External process writes via its open FD
+        external_fd
+            .write_all(b"Concurrent external write through open FD")
+            .unwrap();
+        external_fd.flush().unwrap();
+
+        // Attempt reflection:
+        // Must detect modification and block reflection with Conflict!
+        let reflect_res = mgr.reflect_staged_file(&staged.stage_id);
+        assert!(
+            reflect_res.is_err(),
+            "Reflection must detect conflict when external FD modified original inode"
+        );
+
+        // Original file must retain the external process modification intact without data loss
+        let orig_bytes = fs::read(&orig_file).unwrap();
+        assert!(
+            orig_bytes.starts_with(b"Concurrent external write through open FD"),
+            "Original file must keep external FD writes safe and intact"
+        );
+
+        drop(external_fd);
         let _ = fs::remove_dir_all(&test_dir);
     }
 

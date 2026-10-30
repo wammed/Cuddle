@@ -543,7 +543,7 @@
     "tab_pipelines": "カスタムパイプライン",
     "tab_snippets": "スニペット",
     "snippets_title": "クイックスニペット管理・カスタマイズ",
-    "snippets_subtitle": "簡易設定エディタで利用できる言語別スニペットを設定します。config.toml に保存されます。",
+    "snippets_subtitle": "ワークスペース　エディタで利用できる言語別スニペットを設定します。config.toml に保存されます。",
     "tab_shortcuts": "ショートカット",
     "theme_cat_cyber": "Cyber / SF (8)",
     "theme_cat_neon": "Neon (8)",
@@ -885,7 +885,7 @@
     "test_modal_btn": "非対応警告ダイアログをテスト表示"
   },
   "editor": {
-    "title": "簡易設定エディタ",
+    "title": "ワークスペース　エディタ",
     "subtitle": "原本は保護されています。安全な作業コピーを直接編集し、保存後にDiffで変更点を確認できます。",
     "snippets_label": "設定スニペット:",
     "snippet_path": "+ PATH 追加",

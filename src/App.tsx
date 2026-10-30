@@ -751,7 +751,7 @@ export function App() {
         return;
       }
 
-      // Ctrl+E: Open Quick Config Editor (for selected staged file)
+      // Ctrl+E: Open Workspace Editor (for selected staged file)
       if (key === "e") {
         if (selectedItem) {
           const found = stagedItemsRef.current.find(
@@ -1359,7 +1359,7 @@ export function App() {
         />
       )}
 
-      {/* Quick Config Editor Modal */}
+      {/* Workspace Editor Modal */}
       {editorModalOpen && editingStagedItem && (
         <QuickEditorModal
           isOpen={editorModalOpen}

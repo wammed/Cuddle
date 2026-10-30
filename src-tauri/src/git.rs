@@ -205,7 +205,8 @@ fn map_status_label(code: char) -> &'static str {
 /// Supports both NUL-separated (-z) streams and newline-separated fallback.
 /// Note: Preserves leading and trailing whitespace in file paths.
 pub fn parse_porcelain_v2(output: &str, status: &mut GitStatusDto) {
-    let records: Vec<&str> = if output.contains('\0') {
+    let is_nul_separated = output.contains('\0');
+    let records: Vec<&str> = if is_nul_separated {
         output.split('\0').collect()
     } else {
         output.lines().collect()
@@ -213,8 +214,13 @@ pub fn parse_porcelain_v2(output: &str, status: &mut GitStatusDto) {
 
     let mut it = records.into_iter().peekable();
     while let Some(raw_record) = it.next() {
-        // Strip trailing CR (\r) for Windows line endings without trimming path whitespace
-        let line = raw_record.trim_end_matches('\r');
+        // Strip trailing CR (\r) ONLY for newline-separated fallback to handle Windows line endings.
+        // For NUL-separated (-z) streams, trailing \r in filenames is legitimate and must NOT be stripped!
+        let line = if is_nul_separated {
+            raw_record
+        } else {
+            raw_record.trim_end_matches('\r')
+        };
         if line.is_empty() {
             continue;
         }
@@ -270,7 +276,11 @@ pub fn parse_porcelain_v2(output: &str, status: &mut GitStatusDto) {
                 let (path, orig_path) = if let Some((p, o)) = path_field.split_once('\t') {
                     (p.to_string(), Some(o.to_string()))
                 } else if let Some(orig) = it.next() {
-                    let clean_orig = orig.trim_end_matches('\r').to_string();
+                    let clean_orig = if is_nul_separated {
+                        orig.to_string()
+                    } else {
+                        orig.trim_end_matches('\r').to_string()
+                    };
                     (path_field.to_string(), Some(clean_orig))
                 } else {
                     (path_field.to_string(), None)
@@ -392,6 +402,10 @@ u UU N... 100644 100644 100644 100644 5555 6666 7777 conflict.txt
         // Test paths with leading and trailing spaces
         output.push_str("1 .M N... 100644 100644 100644 5555 6666   spaced filename.txt  \0");
         output.push_str("2 R. N... 100644 100644 100644 7777 8888 R100  new leading space.txt \0 old trailing space.txt \0");
+        // Test paths with trailing carriage return (\r) preserved in -z mode
+        output.push_str("1 M. N... 100644 100644 100644 9999 0000 file_with_trailing_cr.txt\r\0");
+        output
+            .push_str("2 R. N... 100644 100644 100644 aaaa bbbb R100 new_cr.txt\r\0old_cr.txt\r\0");
 
         let mut status = GitStatusDto::default();
         parse_porcelain_v2(&output, &mut status);
@@ -400,7 +414,7 @@ u UU N... 100644 100644 100644 100644 5555 6666 7777 conflict.txt
         assert_eq!(status.ahead, 1);
         assert_eq!(status.behind, 0);
 
-        assert_eq!(status.staged_files.len(), 3);
+        assert_eq!(status.staged_files.len(), 5);
         assert_eq!(status.staged_files[0].path, "資料/重要な 仕様書 2026.docx");
         assert_eq!(status.staged_files[0].status_label, "Modified");
 
@@ -417,6 +431,14 @@ u UU N... 100644 100644 100644 100644 5555 6666 7777 conflict.txt
         assert_eq!(
             status.staged_files[2].original_path.as_deref(),
             Some(" old trailing space.txt ")
+        );
+
+        // Verify trailing CR preservation in -z mode
+        assert_eq!(status.staged_files[3].path, "file_with_trailing_cr.txt\r");
+        assert_eq!(status.staged_files[4].path, "new_cr.txt\r");
+        assert_eq!(
+            status.staged_files[4].original_path.as_deref(),
+            Some("old_cr.txt\r")
         );
 
         assert_eq!(status.unstaged_files.len(), 1);

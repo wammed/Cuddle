@@ -69,7 +69,7 @@ describe("QuickEditorModal Component", () => {
     );
 
     // Check title and file name
-    expect(screen.getByText("簡易設定エディタ")).toBeDefined();
+    expect(screen.getByText(/ワークスペース\s+エディタ/)).toBeDefined();
     expect(screen.getByText(".bashrc")).toBeDefined();
     expect(screen.getByText(/shell/i)).toBeDefined();
 

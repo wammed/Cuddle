@@ -694,6 +694,22 @@ pub fn restore_workspace_backup(
         planned_restorations.push((src_temp_path, dest_path, item.clone()));
     }
 
+    // Pre-flight check: verify none of the restored stage_ids already exist in SQLite session table
+    let hist_mgr = crate::history::get_history_manager();
+    let stage_ids_to_check: Vec<String> = planned_restorations
+        .iter()
+        .map(|(_, _, item)| item.stage_id.clone())
+        .collect();
+    let existing_conflicts = hist_mgr.check_existing_stage_ids(&stage_ids_to_check)?;
+    if !existing_conflicts.is_empty() {
+        cleanup_temp(&temp_restore_dir);
+        return Err(format!(
+            "Restore rejected: {} stage_id(s) already exist in active database (e.g. '{}'). Refusing to overwrite existing records.",
+            existing_conflicts.len(),
+            existing_conflicts[0]
+        ));
+    }
+
     // Atomic Move Phase: move extracted files from temp_restore_dir to destination
     let mut committed_paths: Vec<PathBuf> = Vec::new();
     for (src, dest, _) in &planned_restorations {
@@ -737,9 +753,8 @@ pub fn restore_workspace_backup(
         restored_items.push(item);
     }
 
-    // Persist all restored session items atomically in SQLite transaction
-    let hist_mgr = crate::history::get_history_manager();
-    if let Err(e) = hist_mgr.save_session_items_batch(&restored_items) {
+    // Persist all restored session items atomically in SQLite transaction using pure INSERT (fail-closed on conflict)
+    if let Err(e) = hist_mgr.insert_restored_session_items_batch(&restored_items) {
         // Rollback all committed physical files on SQLite transaction failure
         for p in &committed_paths {
             let _ = fs::remove_file(p);
@@ -1164,6 +1179,125 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Duplicate stage_id"));
 
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_restore_rejects_existing_db_stage_id_conflict() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("cuddle_conflict_test_{}", Uuid::new_v4()));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let conflict_stage_id = Uuid::new_v4().to_string();
+        let existing_item = StagedItemDto {
+            stage_id: conflict_stage_id.clone(),
+            original_item_id: "orig-existing".to_string(),
+            raw_base64: "dGVzdF9leGlzdA==".to_string(),
+            display_name: "active_existing.txt".to_string(),
+            staged_raw_base64: "dGVzdF9leGlzdA==".to_string(),
+            staged_path: "/tmp/active_existing".to_string(),
+            size: 42,
+            clone_method: CloneMethod::StandardCopy,
+            status: StageStatus::Staged,
+            staged_at_ms: 12345,
+            original_snapshot: OriginalSnapshotDto {
+                item_id: "orig-existing".to_string(),
+                raw_base64: "dGVzdF9leGlzdA==".to_string(),
+                display_name: "active_existing.txt".to_string(),
+                canonical_path: "/tmp/active_existing.txt".to_string(),
+                inode: 100,
+                dev: 100,
+                size: 42,
+                mtime_ms: 12345,
+                sha256: Some("active_sha".to_string()),
+            },
+        };
+
+        // Insert into database as active session item
+        let hist_mgr = crate::history::get_history_manager();
+        hist_mgr
+            .save_session_item(&existing_item)
+            .expect("Must succeed inserting active session item");
+
+        // Now prepare backup archive that contains the same stage_id
+        let backup_item = StagedItemDto {
+            stage_id: conflict_stage_id.clone(),
+            original_item_id: "orig-backup".to_string(),
+            raw_base64: "dGVzdF9iYWNrdXA=".to_string(),
+            display_name: "backup_modified.txt".to_string(),
+            staged_raw_base64: "dGVzdF9iYWNrdXA=".to_string(),
+            staged_path: "/tmp/backup_staged".to_string(),
+            size: 99,
+            clone_method: CloneMethod::StandardCopy,
+            status: StageStatus::Staged,
+            staged_at_ms: 99999,
+            original_snapshot: OriginalSnapshotDto {
+                item_id: "orig-backup".to_string(),
+                raw_base64: "dGVzdF9iYWNrdXA=".to_string(),
+                display_name: "backup_modified.txt".to_string(),
+                canonical_path: "/tmp/backup_modified.txt".to_string(),
+                inode: 200,
+                dev: 200,
+                size: 99,
+                mtime_ms: 99999,
+                sha256: Some("backup_sha".to_string()),
+            },
+        };
+
+        let archive_target = temp_dir.join("conflict_backup.tar.gz");
+        let file = File::create(&archive_target).unwrap();
+        let enc = GzEncoder::new(file, Compression::default());
+        let mut builder = Builder::new(enc);
+
+        let manifest_bytes = serde_json::to_vec_pretty(&[backup_item]).unwrap();
+        let mut header = Header::new_gnu();
+        header.set_size(manifest_bytes.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, "manifest.json", &manifest_bytes[..])
+            .unwrap();
+
+        // Also add dummy payload
+        let payload_content = b"fake payload";
+        let mut p_header = Header::new_gnu();
+        p_header.set_size(payload_content.len() as u64);
+        p_header.set_mode(0o644);
+        p_header.set_cksum();
+        builder
+            .append_data(
+                &mut p_header,
+                format!("files/{}", conflict_stage_id),
+                &payload_content[..],
+            )
+            .unwrap();
+
+        builder.into_inner().unwrap().finish().unwrap();
+
+        // Restoration must fail pre-flight check before touching disk or updating SQLite!
+        let result = restore_workspace_backup(Some(archive_target.to_string_lossy().to_string()));
+        assert!(
+            result.is_err(),
+            "Restoration must fail when stage_id conflicts with DB"
+        );
+        let err_msg = result.unwrap_err();
+        assert!(
+            err_msg.contains("already exist in active database"),
+            "Error must specify active database conflict: {}",
+            err_msg
+        );
+
+        // Verify active item in SQLite was NOT overwritten or corrupted
+        let loaded_items = hist_mgr.load_all_session_items().unwrap();
+        let original_preserved = loaded_items
+            .into_iter()
+            .find(|i| i.stage_id == conflict_stage_id)
+            .expect("Original record must still exist");
+        assert_eq!(original_preserved.display_name, "active_existing.txt");
+        assert_eq!(original_preserved.size, 42);
+
+        // Cleanup
+        let _ = hist_mgr.remove_session_item(&conflict_stage_id);
         let _ = fs::remove_dir_all(&temp_dir);
     }
 

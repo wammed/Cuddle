@@ -36,3 +36,8 @@ recovery/
 *.njsproj
 *.sln
 *.sw?
+
+# Documents / Drafts
+FileWorkbench*
+NEXT*
+

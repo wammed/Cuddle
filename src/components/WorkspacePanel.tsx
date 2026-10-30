@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Briefcase, ShieldCheck, Trash2, Sparkles, RotateCcw, Archive, Workflow, FileCode, Clock, FolderArchive, ArrowDownToLine } from "lucide-react";
+import { Briefcase, ShieldCheck, Trash2, Sparkles, RotateCcw, Archive, Workflow, FileCode, Clock, FolderArchive, ArrowDownToLine, FileEdit } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
 import type { StagedItemDto } from "../types/StagedItemDto";
@@ -23,6 +23,7 @@ interface WorkspacePanelProps {
   onOpenBackup?: () => void;
   onOpenPipeline?: () => void;
   onOpenPreview?: (item: FileItem) => void;
+  onOpenEditor?: (item: FileItem) => void;
   density?: Density;
 }
 
@@ -43,6 +44,7 @@ export function WorkspacePanel({
   onOpenBackup,
   onOpenPipeline,
   onOpenPreview,
+  onOpenEditor,
   density = "normal",
 }: WorkspacePanelProps) {
   const { t } = useTranslation();
@@ -194,6 +196,21 @@ export function WorkspacePanel({
               </button>
             )}
 
+            {onOpenEditor && selectedId && (
+              <button
+                type="button"
+                className="panel-header-btn-primary"
+                onClick={() => {
+                  const target = stagedFiles.find((f) => f.item_id === selectedId);
+                  if (target) onOpenEditor(target);
+                }}
+                title={t("editor.edit_tooltip")}
+              >
+                <FileEdit size={13} />
+                <span>{t("editor.edit_btn")}</span>
+              </button>
+            )}
+
             {onOpenBulkRename && (
               <button
                 type="button"
@@ -287,6 +304,7 @@ export function WorkspacePanel({
           onSelect={onSelect}
           onUnstage={handleUnstage}
           onOpenPreview={onOpenPreview}
+          onOpenEditor={onOpenEditor}
           onOpenChmod={(item) => onOpenChmod ? onOpenChmod([item]) : undefined}
           onOpenTimestamp={(item) => onOpenTimestamp ? onOpenTimestamp([item]) : undefined}
           cloneMethodMap={cloneMethodMap}

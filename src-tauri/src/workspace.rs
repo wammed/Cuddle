@@ -6,6 +6,7 @@ use crate::policy::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, File};
+use std::io::Read;
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -559,8 +560,8 @@ impl WorkspaceManager {
         let orig_path = decode_path_from_base64(&staged.raw_base64)?;
         let staged_path = decode_path_from_base64(&staged.staged_raw_base64)?;
 
-        // 1. Policy Validation: Forbidden Zone (Outside $HOME, mount boundary, external storage)
-        OperationPolicy::validate_reflection(&orig_path)?;
+        // 1. Policy Validation: Validate target parent directory for non-destructive copy
+        OperationPolicy::validate_alternate_copy(&orig_path)?;
 
         let orig_parent = orig_path
             .parent()
@@ -621,6 +622,117 @@ impl WorkspaceManager {
     /// Generates alternate copy preview path (Task 3-2)
     pub fn get_alternate_copy_preview(&self, orig_path: &Path, suffix: Option<&str>) -> PathBuf {
         generate_alternate_copy_path(orig_path, suffix)
+    }
+
+    /// Reads the text content of a staged working copy (Max 2 MiB, UTF-8 text only).
+    pub fn read_staged_text(&self, stage_id: &str) -> Result<String, WorkspaceError> {
+        let map = self.staged_items.lock().unwrap();
+        let staged = map
+            .get(stage_id)
+            .ok_or_else(|| WorkspaceError::NotFound(stage_id.to_string()))?;
+
+        let staged_path = decode_path_from_base64(&staged.staged_raw_base64)?;
+        if !staged_path.exists() {
+            return Err(WorkspaceError::NotFound(
+                staged_path.to_string_lossy().to_string(),
+            ));
+        }
+
+        let metadata = fs::metadata(&staged_path).map_err(WorkspaceError::Io)?;
+        const MAX_TEXT_SIZE: u64 = 2 * 1024 * 1024; // 2 MiB limit for configuration text
+        if metadata.len() > MAX_TEXT_SIZE {
+            return Err(WorkspaceError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "File size ({} bytes) exceeds the maximum editable size of 2 MiB",
+                    metadata.len()
+                ),
+            )));
+        }
+
+        let mut file = fs::File::open(&staged_path).map_err(WorkspaceError::Io)?;
+        let mut buffer = Vec::with_capacity(metadata.len() as usize);
+        file.read_to_end(&mut buffer).map_err(WorkspaceError::Io)?;
+
+        // Quick binary detection: check first 8 KiB for NUL bytes
+        let sample_len = buffer.len().min(8192);
+        if buffer[..sample_len].contains(&0) {
+            return Err(WorkspaceError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Binary file cannot be edited in quick text editor",
+            )));
+        }
+
+        String::from_utf8(buffer).map_err(|e| {
+            WorkspaceError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("File is not valid UTF-8 text: {}", e),
+            ))
+        })
+    }
+
+    /// Writes text content to a staged working copy atomically, updating session status to Modified.
+    pub fn write_staged_text(
+        &self,
+        stage_id: &str,
+        content: &str,
+    ) -> Result<StagedItemDto, WorkspaceError> {
+        let mut map = self.staged_items.lock().unwrap();
+        let staged = map
+            .get_mut(stage_id)
+            .ok_or_else(|| WorkspaceError::NotFound(stage_id.to_string()))?;
+
+        let staged_path = decode_path_from_base64(&staged.staged_raw_base64)?;
+        let parent = staged_path
+            .parent()
+            .ok_or(WorkspaceError::StagingDirUnavailable)?;
+
+        // 1. Atomic write via temporary file
+        let tmp_name = format!(".cuddle_edit_{}.tmp", Uuid::new_v4());
+        let tmp_path = parent.join(tmp_name);
+
+        {
+            let mut tmp_file = fs::File::create(&tmp_path).map_err(WorkspaceError::Io)?;
+            std::io::Write::write_all(&mut tmp_file, content.as_bytes())
+                .map_err(WorkspaceError::Io)?;
+            tmp_file.sync_all().map_err(WorkspaceError::Io)?;
+        }
+
+        if let Err(e) = fs::rename(&tmp_path, &staged_path) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(WorkspaceError::Io(e));
+        }
+
+        // 2. Refresh metadata
+        let metadata = fs::metadata(&staged_path).map_err(WorkspaceError::Io)?;
+        staged.size = metadata.len();
+        staged.status = StageStatus::Modified;
+
+        let details = format!(
+            "Edited staged copy '{}' ({} bytes)",
+            staged.display_name, staged.size
+        );
+
+        // 3. Persist to SQLite session & history
+        let hist_mgr = crate::history::get_history_manager();
+        hist_mgr
+            .save_session_item(staged)
+            .map_err(|e| WorkspaceError::Io(std::io::Error::other(e)))?;
+        hist_mgr
+            .record_operation(&crate::history::NewHistoryEntry {
+                operation_id: Uuid::new_v4().to_string(),
+                operation_type: "EditStaged".to_string(),
+                display_name: staged.display_name.clone(),
+                original_path: Some(staged.original_snapshot.canonical_path.clone()),
+                staged_path: Some(staged.staged_path.clone()),
+                inode: None,
+                status: "Success".to_string(),
+                can_undo: false,
+                details: Some(details),
+            })
+            .map_err(|e| WorkspaceError::Io(std::io::Error::other(e)))?;
+
+        Ok(staged.clone())
     }
 
     /// Lists all currently active staged items.
@@ -1113,6 +1225,44 @@ mod tests {
     }
 
     #[test]
+    fn test_reflect_staged_item_as_copy_outside_home_directory() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("cuddle_outside_home_test_{}", Uuid::new_v4()));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let orig_file = temp_dir.join("contract.txt");
+        fs::write(&orig_file, b"Initial Contract Version").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+
+        // Mutate staged working copy
+        fs::write(&staged.staged_path, b"Edited Contract Staged Version").unwrap();
+
+        // Standard reflection must fail because /tmp is outside home (ForbiddenZone)
+        let reflect_err = mgr.reflect_staged_file(&staged.stage_id);
+        assert!(reflect_err.is_err());
+
+        // But alternate copy must SUCCEED as a non-destructive safe export!
+        let (saved_item, copy_path) = mgr
+            .reflect_staged_item_as_copy(&staged.stage_id, Some("edit".to_string()))
+            .expect("Alternate copy save must succeed even for files outside home directory");
+
+        assert_eq!(saved_item.status, StageStatus::Reflected);
+        assert!(copy_path.exists());
+        assert_eq!(copy_path, temp_dir.join("contract.edit.txt"));
+        assert_eq!(
+            fs::read(&copy_path).unwrap(),
+            b"Edited Contract Staged Version"
+        );
+
+        // Verify original file is untouched
+        assert_eq!(fs::read(&orig_file).unwrap(), b"Initial Contract Version");
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
     fn test_unstage_removes_physical_file_and_session() {
         let home = dirs::home_dir().expect("Home must exist");
         let test_dir = home.join(format!(".cuddle_test_unstage_{}", Uuid::new_v4()));
@@ -1139,6 +1289,72 @@ mod tests {
         // Original file must remain untouched
         assert!(orig_file.exists());
         assert_eq!(fs::read(&orig_file).unwrap(), b"Unstage content");
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_read_and_write_staged_text() {
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_editor_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join(".bashrc");
+        fs::write(
+            &orig_file,
+            b"# Initial bashrc\nexport PATH=\"$HOME/bin:$PATH\"\n",
+        )
+        .unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        assert_eq!(staged.status, StageStatus::Staged);
+
+        // Read initial text
+        let content = mgr.read_staged_text(&staged.stage_id).unwrap();
+        assert_eq!(
+            content,
+            "# Initial bashrc\nexport PATH=\"$HOME/bin:$PATH\"\n"
+        );
+
+        // Write edited text
+        let updated_content =
+            "# Initial bashrc\nexport PATH=\"$HOME/bin:$PATH\"\nalias ll='ls -la'\n";
+        let updated_staged = mgr
+            .write_staged_text(&staged.stage_id, updated_content)
+            .unwrap();
+
+        assert_eq!(updated_staged.status, StageStatus::Modified);
+        assert_eq!(updated_staged.size, updated_content.len() as u64);
+
+        // Read again and verify persistence
+        let read_back = mgr.read_staged_text(&staged.stage_id).unwrap();
+        assert_eq!(read_back, updated_content);
+
+        // Original file must be completely untouched
+        assert_eq!(
+            fs::read(&orig_file).unwrap(),
+            b"# Initial bashrc\nexport PATH=\"$HOME/bin:$PATH\"\n"
+        );
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_read_staged_text_rejects_binary() {
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_bin_editor_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("binary.dat");
+        fs::write(&orig_file, &[0x7f, b'E', b'L', b'F', 0x00, 0x01, 0x02]).unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+
+        let result = mgr.read_staged_text(&staged.stage_id);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Binary file"));
 
         let _ = fs::remove_dir_all(&test_dir);
     }

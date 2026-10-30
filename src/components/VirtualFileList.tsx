@@ -14,6 +14,7 @@ import {
   Copy,
   FileCode,
   Clock,
+  FileEdit,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
@@ -26,6 +27,7 @@ interface VirtualFileListProps {
   onStage?: (item: FileItem) => void;
   onUnstage?: (item: FileItem) => void;
   onOpenPreview?: (item: FileItem) => void;
+  onOpenEditor?: (item: FileItem) => void;
   onOpenChmod?: (item: FileItem) => void;
   onOpenTimestamp?: (item: FileItem) => void;
   cloneMethodMap?: Record<string, "Reflink" | "StandardCopy">;
@@ -43,6 +45,7 @@ export function VirtualFileList({
   onStage,
   onUnstage,
   onOpenPreview,
+  onOpenEditor,
   onOpenChmod,
   onOpenTimestamp,
   cloneMethodMap,
@@ -101,6 +104,14 @@ export function VirtualFileList({
         label: t("context_menu.open_preview"),
         icon: <Eye size={14} className="text-teal-400" />,
         onClick: () => onOpenPreview(item),
+      });
+    }
+
+    if (isWorkspace && !item.is_dir && onOpenEditor) {
+      menuItems.push({
+        label: t("editor.edit_workspace_copy"),
+        icon: <FileEdit size={14} className="text-teal-400" />,
+        onClick: () => onOpenEditor(item),
       });
     }
 
@@ -284,6 +295,20 @@ export function VirtualFileList({
                     title={t("context_menu.open_preview")}
                   >
                     <Eye size={density === "compact" ? 11 : density === "spacious" ? 14 : 13} />
+                  </button>
+                )}
+
+                {isWorkspace && onOpenEditor && !item.is_dir && (
+                  <button
+                    type="button"
+                    className="row-action-btn editor-action-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenEditor(item);
+                    }}
+                    title={t("editor.edit_tooltip")}
+                  >
+                    <FileEdit size={density === "compact" ? 11 : density === "spacious" ? 14 : 13} className="text-teal-400" />
                   </button>
                 )}
 

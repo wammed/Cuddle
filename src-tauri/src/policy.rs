@@ -242,6 +242,28 @@ impl OperationPolicy {
         Ok(())
     }
 
+    /// Validates whether an alternate non-destructive copy can be saved.
+    /// Unlike original reflection, alternate copy does NOT modify or replace the original file,
+    /// so it is permitted even for files outside $HOME (e.g. in /tmp or user-writable locations),
+    /// provided the parent directory exists and is accessible.
+    pub fn validate_alternate_copy<P: AsRef<Path>>(path: P) -> Result<(), PolicyError> {
+        let p = path.as_ref();
+        let parent = p
+            .parent()
+            .ok_or_else(|| PolicyError::NotFound(p.to_string_lossy().to_string()))?;
+
+        if !parent.exists() {
+            return Err(PolicyError::NotFound(parent.to_string_lossy().to_string()));
+        }
+
+        // Verify root directory is not targeted directly
+        if parent == Path::new("/") {
+            return Err(PolicyError::ForbiddenZone);
+        }
+
+        Ok(())
+    }
+
     /// Evaluates policy and returns a structured PolicyCheckResultDto.
     pub fn check_policy<P: AsRef<Path>>(path: P, for_reflection: bool) -> PolicyCheckResultDto {
         let p = path.as_ref();

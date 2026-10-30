@@ -880,5 +880,32 @@
     "btn_proceed": "I Understand the Risks & Unlock",
     "remember_choice": "Remember my choice on this machine",
     "test_modal_btn": "Test Unsupported Warning Modal"
+  },
+  "editor": {
+    "title": "Quick Config Editor",
+    "subtitle": "Originals are protected. Safely edit the workspace copy and review diffs before reflecting.",
+    "snippets_label": "Config Snippets:",
+    "snippet_path": "+ Add PATH",
+    "snippet_alias": "+ Add alias",
+    "snippet_env": "+ export ENV",
+    "snippet_comment": "# Toggle Comment",
+    "saving": "Saving workspace copy...",
+    "saved": "Saved workspace copy",
+    "save_btn": "Save to Workspace (Ctrl+S)",
+    "close_btn": "Close",
+    "unsaved_confirm": "You have unsaved changes. Discard and close?",
+    "original_path": "Original:",
+    "staged_path": "Workspace Copy:",
+    "cursor_pos": "Ln {{line}}, Col {{col}}",
+    "lines_count": "{{count}} lines",
+    "bytes_count": "{{bytes}}",
+    "modified_badge": "Unsaved changes",
+    "edit_btn": "Edit",
+    "edit_tooltip": "Edit workspace copy with Quick Editor",
+    "edit_workspace_copy": "Edit Workspace Copy",
+    "loading": "Loading workspace copy...",
+    "load_error": "Failed to load workspace copy",
+    "save_error": "Failed to save workspace copy",
+    "read_only_hint": "* Edits here will NOT alter the original file directly. Review diffs and apply 'Reflect to Original' when ready."
   }
 }

@@ -28,6 +28,7 @@ import {
   Search,
   Filter,
   Copy,
+  FileEdit,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
@@ -66,6 +67,7 @@ interface BottomTabPanelProps {
   activeTab?: BottomTabId;
   onTabChange?: (tab: BottomTabId) => void;
   onTriggerPreview?: (item: FileItem) => void;
+  onOpenEditorStaged?: (item: StagedItemDto) => void;
 }
 
 export function BottomTabPanel({
@@ -87,6 +89,7 @@ export function BottomTabPanel({
   activeTab: controlledActiveTab,
   onTabChange,
   onTriggerPreview,
+  onOpenEditorStaged,
 }: BottomTabPanelProps) {
   const { t } = useTranslation();
   const [internalActiveTab, setInternalActiveTab] = useState<BottomTabId>("preview");
@@ -836,6 +839,18 @@ export function BottomTabPanel({
                   </div>
 
                   <div className="diff-header-right">
+                    {onOpenEditorStaged && matchedStaged && !diffResult?.is_binary && (
+                      <button
+                        type="button"
+                        className="diff-edit-btn"
+                        onClick={() => onOpenEditorStaged(matchedStaged)}
+                        title={t("editor.edit_tooltip")}
+                        disabled={isDiffLoading || isReflecting}
+                      >
+                        <FileEdit size={12} />
+                        <span>{t("editor.edit_btn")}</span>
+                      </button>
+                    )}
                     {diffResult?.has_changes && (
                       <button
                         type="button"

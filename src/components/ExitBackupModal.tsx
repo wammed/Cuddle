@@ -241,49 +241,56 @@ export function ExitBackupModal({
           )}
         </div>
 
-        <div className="dialog-footer">
-          <button
-            type="button"
-            className="dialog-btn secondary mr-auto"
-            onClick={onClose}
-            disabled={isArchiving}
-          >
-            {t("backup.cancel_btn")}
-          </button>
-
-          <button
-            type="button"
-            className="dialog-btn secondary text-rose-400"
-            onClick={onDiscard}
-            disabled={isArchiving}
-            title={t("backup.discard_btn")}
-          >
-            <Trash2 size={13} />
-            <span>{t("backup.discard_btn")}</span>
-          </button>
-
-          {onBackupAndContinue && (
+        <div className="dialog-footer exit-backup-footer-stacked">
+          {/* Row 1: Continue working without exiting */}
+          <div className="exit-backup-footer-row">
             <button
               type="button"
-              className="dialog-btn backup-continue-btn"
-              onClick={() => handleExecuteBackup(false)}
+              className="dialog-btn secondary"
+              onClick={onClose}
               disabled={isArchiving}
-              title={t("backup.backup_and_continue_btn")}
+            >
+              <X size={13} />
+              <span>{t("backup.cancel_btn")}</span>
+            </button>
+
+            {onBackupAndContinue && (
+              <button
+                type="button"
+                className="dialog-btn backup-continue-btn"
+                onClick={() => handleExecuteBackup(false)}
+                disabled={isArchiving}
+                title={t("backup.backup_and_continue_btn")}
+              >
+                <Archive size={14} />
+                <span>{isArchiving ? t("backup.archiving") : t("backup.backup_and_continue_btn")}</span>
+              </button>
+            )}
+          </div>
+
+          {/* Row 2: Exit application actions */}
+          <div className="exit-backup-footer-row exit-actions">
+            <button
+              type="button"
+              className="dialog-btn discard-action-btn"
+              onClick={onDiscard}
+              disabled={isArchiving}
+              title={t("backup.discard_btn")}
+            >
+              <Trash2 size={14} />
+              <span>{t("backup.discard_btn")}</span>
+            </button>
+
+            <button
+              type="button"
+              className="dialog-btn primary backup-action-btn"
+              onClick={() => handleExecuteBackup(true)}
+              disabled={isArchiving}
             >
               <Archive size={14} />
-              <span>{isArchiving ? t("backup.archiving") : t("backup.backup_and_continue_btn")}</span>
+              <span>{isArchiving ? t("backup.archiving") : t("backup.backup_btn")}</span>
             </button>
-          )}
-
-          <button
-            type="button"
-            className="dialog-btn primary backup-action-btn"
-            onClick={() => handleExecuteBackup(true)}
-            disabled={isArchiving}
-          >
-            <Archive size={14} />
-            <span>{isArchiving ? t("backup.archiving") : t("backup.backup_btn")}</span>
-          </button>
+          </div>
         </div>
       </div>
     </div>

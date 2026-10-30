@@ -18,6 +18,31 @@ export type SupportedLanguage =
   | "plaintext";
 
 export function detectLanguage(filename: string): SupportedLanguage {
+  const lower = filename.toLowerCase();
+
+  // Special config dotfiles & filenames (Shell / Config)
+  if (
+    lower === ".bashrc" ||
+    lower === ".bash_profile" ||
+    lower === ".bash_logout" ||
+    lower === ".bash_aliases" ||
+    lower === ".zshrc" ||
+    lower === ".zprofile" ||
+    lower === ".zshenv" ||
+    lower === ".zlogin" ||
+    lower === ".profile" ||
+    lower === ".env" ||
+    lower.startsWith(".env.") ||
+    lower === "dockerfile" ||
+    lower === "makefile"
+  ) {
+    return "shell";
+  }
+
+  if (lower === ".gitconfig" || lower === ".editorconfig") {
+    return "toml";
+  }
+
   const ext = filename.split(".").pop()?.toLowerCase() || "";
   switch (ext) {
     case "md":
@@ -43,6 +68,9 @@ export function detectLanguage(filename: string): SupportedLanguage {
     case "json":
       return "json";
     case "toml":
+    case "ini":
+    case "conf":
+    case "cfg":
       return "toml";
     case "yaml":
     case "yml":

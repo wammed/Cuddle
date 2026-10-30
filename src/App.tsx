@@ -38,6 +38,7 @@ import { ExitBackupModal } from "./components/ExitBackupModal";
 import { PipelineModal } from "./components/PipelineModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { CriticalSecurityModal } from "./components/CriticalSecurityModal";
+import { QuickEditorModal } from "./components/QuickEditorModal";
 import { StartPage } from "./components/StartPage";
 import { applyTheme, getSavedThemeId } from "./utils/themePresets";
 import type { Density } from "./types/Density";
@@ -77,6 +78,8 @@ export function App() {
   const [tarExportOpen, setTarExportOpen] = useState(false);
   const [exitBackupOpen, setExitBackupOpen] = useState(false);
   const [pipelineModalOpen, setPipelineModalOpen] = useState(false);
+  const [editorModalOpen, setEditorModalOpen] = useState(false);
+  const [editingStagedItem, setEditingStagedItem] = useState<StagedItemDto | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [currentView, setCurrentView] = useState<"start" | "workbench">("workbench");
   const [canUndo, setCanUndo] = useState(false);
@@ -637,6 +640,53 @@ export function App() {
     }
   };
 
+  const refreshWorkspaceSession = useCallback(async () => {
+    try {
+      const items = await invoke<StagedItemDto[]>("restore_workspace_session");
+      if (items) {
+        setStagedItems(items);
+        const files: FileItem[] = items.map((s) => ({
+          item_id: s.stage_id,
+          raw_base64: s.staged_raw_base64,
+          display_name: s.display_name,
+          parent_raw_base64: null,
+          is_dir: false,
+          is_symlink: false,
+          size: BigInt(s.size),
+          mtime_ms: BigInt(s.staged_at_ms),
+          readonly: false,
+          inode: BigInt(s.original_snapshot.inode),
+          dev: BigInt(s.original_snapshot.dev),
+        }));
+        setStagedFiles(files);
+      }
+    } catch (err) {
+      console.error("Failed to refresh workspace session:", err);
+    }
+  }, []);
+
+  const handleOpenEditor = useCallback((target: FileItem | StagedItemDto) => {
+    if ("stage_id" in target) {
+      setEditingStagedItem(target);
+      setEditorModalOpen(true);
+      return;
+    }
+    const found = stagedItemsRef.current.find(
+      (s) => s.stage_id === target.item_id || s.raw_base64 === target.raw_base64 || s.staged_raw_base64 === target.raw_base64
+    );
+    if (found) {
+      setEditingStagedItem(found);
+      setEditorModalOpen(true);
+    }
+  }, []);
+
+  const handleEditorSaveSuccess = useCallback(async (stageId: string) => {
+    await refreshWorkspaceSession();
+    setBottomTab("diff");
+    showToast(`💾 ${t("editor.saved")}`);
+    addLog(`Quick Editor: Updated working copy for stage ${stageId}`);
+  }, [refreshWorkspaceSession, t]);
+
   // Initialize theme from saved preferences (Phase 8.2)
   useEffect(() => {
     const saved = getSavedThemeId();
@@ -699,6 +749,23 @@ export function App() {
           setPipelineModalOpen(true);
         }
         return;
+      }
+
+      // Ctrl+E: Open Quick Config Editor (for selected staged file)
+      if (key === "e") {
+        if (selectedItem) {
+          const found = stagedItemsRef.current.find(
+            (s) =>
+              s.stage_id === selectedItem.item_id ||
+              s.raw_base64 === selectedItem.raw_base64 ||
+              s.staged_raw_base64 === selectedItem.raw_base64
+          );
+          if (found) {
+            e.preventDefault();
+            handleOpenEditor(found);
+            return;
+          }
+        }
       }
 
       // Ctrl+Z: Undo last bulk rename (if available and not inside input/textarea)
@@ -1159,6 +1226,7 @@ export function App() {
                       onUndo={handleUndoBatch}
                       onOpenBackup={() => setExitBackupOpen(true)}
                       onOpenPreview={handleOpenPreview}
+                      onOpenEditor={handleOpenEditor}
                       density={density}
                     />
                   </Panel>
@@ -1188,6 +1256,7 @@ export function App() {
                       activeTab={bottomTab}
                       onTabChange={setBottomTab}
                       onTriggerPreview={handleOpenPreview}
+                      onOpenEditorStaged={handleOpenEditor}
                     />
                   </Panel>
                 </>
@@ -1287,6 +1356,19 @@ export function App() {
           stagedFiles={stagedItems}
           onClose={() => setPipelineModalOpen(false)}
           onExecuteSuccess={handlePipelineSuccess}
+        />
+      )}
+
+      {/* Quick Config Editor Modal */}
+      {editorModalOpen && editingStagedItem && (
+        <QuickEditorModal
+          isOpen={editorModalOpen}
+          stagedItem={editingStagedItem}
+          onClose={() => {
+            setEditorModalOpen(false);
+            setEditingStagedItem(null);
+          }}
+          onSaveSuccess={handleEditorSaveSuccess}
         />
       )}
 

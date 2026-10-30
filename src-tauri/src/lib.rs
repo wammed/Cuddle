@@ -386,6 +386,22 @@ fn get_alternate_copy_preview(path: String, suffix: Option<String>) -> Result<St
 }
 
 #[tauri::command]
+fn read_staged_file_text(stage_id: String) -> Result<String, String> {
+    let mgr = workspace::get_workspace_manager();
+    mgr.read_staged_text(&stage_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_staged_file_text(
+    stage_id: String,
+    content: String,
+) -> Result<workspace::StagedItemDto, String> {
+    let mgr = workspace::get_workspace_manager();
+    mgr.write_staged_text(&stage_id, &content)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn undo_history_operation(operation_id: String) -> Result<UndoHistoryResultDto, String> {
     let hist_mgr = history::get_history_manager();
     let op = hist_mgr
@@ -952,6 +968,8 @@ pub fn run() {
             reset_staged_file,
             reflect_staged_file,
             reflect_staged_file_as_copy,
+            read_staged_file_text,
+            write_staged_file_text,
             get_alternate_copy_preview,
             get_origin_backup_preview,
             generate_bulk_rename_plan,

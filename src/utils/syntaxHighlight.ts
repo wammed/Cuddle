@@ -15,6 +15,7 @@ export type SupportedLanguage =
   | "shell"
   | "css"
   | "sql"
+  | "lua"
   | "plaintext";
 
 export function detectLanguage(filename: string): SupportedLanguage {
@@ -85,6 +86,8 @@ export function detectLanguage(filename: string): SupportedLanguage {
       return "css";
     case "sql":
       return "sql";
+    case "lua":
+      return "lua";
     default:
       return "plaintext";
   }
@@ -145,6 +148,11 @@ const KEYWORDS: Record<SupportedLanguage, Set<string>> = {
   json: new Set(["true", "false", "null"]),
   toml: new Set(["true", "false"]),
   yaml: new Set(["true", "false", "null", "yes", "no"]),
+  lua: new Set([
+    "and", "break", "do", "else", "elseif", "end", "false", "for", "function",
+    "goto", "if", "in", "local", "nil", "not", "or", "repeat", "return", "then",
+    "true", "until", "while",
+  ]),
   html: new Set(),
   markdown: new Set(),
   plaintext: new Set(),
@@ -167,7 +175,7 @@ export function highlightCode(code: string, lang: SupportedLanguage): string {
         if (
           (lang !== "python" && lang !== "shell" && line.slice(i, i + 2) === "//") ||
           ((lang === "python" || lang === "shell" || lang === "yaml" || lang === "toml") && line[i] === "#") ||
-          (lang === "sql" && line.slice(i, i + 2) === "--")
+          ((lang === "sql" || lang === "lua") && line.slice(i, i + 2) === "--")
         ) {
           highlighted += `<span class="syn-comment">${escapeHtml(line.slice(i))}</span>`;
           break;

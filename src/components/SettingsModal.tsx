@@ -31,6 +31,7 @@ import type { Density } from "../types/Density";
 import type { AppConfig } from "../types/AppConfig";
 import type { ConfirmationLevel } from "../types/ConfirmationLevel";
 import type { CustomPipelineDefDto } from "../types/CustomPipelineDefDto";
+import type { EditorSnippetDto } from "../types/EditorSnippetDto";
 import type { ExecutionInputMode } from "../types/ExecutionInputMode";
 import type { BackupArchiveInfoDto } from "../types/BackupArchiveInfoDto";
 import { formatBytes, formatTimestamp } from "../utils/format";
@@ -45,6 +46,8 @@ import {
   resetTypographySettings,
 } from "../utils/typography";
 import { SupportedLanguage } from "../i18n";
+import { SnippetManagerView } from "./SnippetManagerView";
+import { DEFAULT_EDITOR_SNIPPETS } from "../utils/snippets";
 
 const getTomlTemplateCode = (lang: SupportedLanguage) => {
   if (lang === "ja") {
@@ -107,6 +110,18 @@ output_extension = "tar.gz"
 default_suffix = ""
 allowed_read_paths = []
 input_mode = "batch_list"
+
+# ==============================================================================
+# [[snippets]] - クイックスニペット設定 (エディタ用)
+# 形式: "bash", "fish", "zsh", "jsonc", "toml", "yaml", "lua", "plaintext"
+# ==============================================================================
+
+[[snippets]]
+id = "bash-path"
+language = "bash"
+label = "+ PATH 追加"
+snippet = 'export PATH="$HOME/.local/bin:$PATH"'
+description = "~/.local/bin を PATH に追加"
 `;
   }
   return `# ==============================================================================
@@ -168,6 +183,18 @@ output_extension = "tar.gz"
 default_suffix = ""
 allowed_read_paths = []
 input_mode = "batch_list"
+
+# ==============================================================================
+# [[snippets]] - Quick Editor Snippets
+# Languages: "bash", "fish", "zsh", "jsonc", "toml", "yaml", "lua", "plaintext"
+# ==============================================================================
+
+[[snippets]]
+id = "bash-path"
+language = "bash"
+label = "+ Add PATH"
+snippet = 'export PATH="$HOME/.local/bin:$PATH"'
+description = "Add ~/.local/bin to PATH"
 `;
 };
 
@@ -197,15 +224,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onOpenSecurityWarningTest,
 }) => {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<"appearance" | "general" | "workspace" | "pipelines" | "shortcuts">("appearance");
+  const [activeTab, setActiveTab] = useState<"appearance" | "general" | "workspace" | "pipelines" | "snippets" | "shortcuts">("appearance");
   const [selectedCategory, setSelectedCategory] = useState<"all" | ThemeCategory>("all");
   const [currentThemeId, setCurrentThemeId] = useState<string>(() => getSavedThemeId());
   const [currentDensity, setCurrentDensity] = useState<Density>(() => density || getSavedDensity());
   const [typography, setTypography] = useState<TypographySettings>(() => getSavedTypographySettings());
 
-  // AppConfig & Custom Pipelines State
+  // AppConfig, Custom Pipelines & Snippets State
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const [customPipelines, setCustomPipelines] = useState<CustomPipelineDefDto[]>([]);
+  const [snippets, setSnippets] = useState<EditorSnippetDto[]>([]);
   const [copiedTemplate, setCopiedTemplate] = useState<boolean>(false);
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -256,9 +284,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         if (cfg.security?.confirmation_level) {
           setConfirmationLevel(cfg.security.confirmation_level);
         }
+        if (cfg.snippets && Array.isArray(cfg.snippets) && cfg.snippets.length > 0) {
+          setSnippets(cfg.snippets);
+        } else {
+          setSnippets(DEFAULT_EDITOR_SNIPPETS);
+        }
       })
       .catch((err) => console.error("Failed to load app config:", err));
   }, [isOpen]);
+
+  const handleUpdateSnippets = async (newSnippets: EditorSnippetDto[]) => {
+    setSnippets(newSnippets);
+    if (!appConfig) return;
+    const updated: AppConfig = {
+      ...appConfig,
+      snippets: newSnippets,
+    };
+    try {
+      await invoke("save_app_config", { config: updated });
+      setAppConfig(updated);
+    } catch (err) {
+      console.error("Failed to save snippets to app config:", err);
+      throw err;
+    }
+  };
 
   const handleSelectConfirmationLevel = async (level: ConfirmationLevel) => {
     setConfirmationLevel(level);
@@ -598,6 +647,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           >
             <Workflow size={14} />
             <span>{t("settings.tab_pipelines")}</span>
+          </button>
+          <button
+            type="button"
+            className={`settings-tab-btn ${activeTab === "snippets" ? "active" : ""}`}
+            onClick={() => setActiveTab("snippets")}
+          >
+            <Terminal size={14} />
+            <span>{t("settings.tab_snippets") || "スニペット"}</span>
           </button>
           <button
             type="button"
@@ -1389,6 +1446,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           )}
 
+          {/* TAB: Snippets */}
+          {activeTab === "snippets" && (
+            <div className="settings-section-content">
+              <div className="settings-card-header mb-3">
+                <div className="flex items-center gap-2">
+                  <Terminal size={18} className="text-teal-400" />
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-100">
+                      {t("settings.snippets_title") || "クイックスニペット管理・カスタマイズ"}
+                    </h4>
+                    <p className="text-xs text-muted">
+                      {t("settings.snippets_subtitle") || "簡易設定エディタで利用できる言語別スニペットを設定します。~/.config/Cuddle/config.toml に保存されます。"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <SnippetManagerView
+                snippets={snippets}
+                onUpdateSnippets={handleUpdateSnippets}
+              />
+            </div>
+          )}
+
           {/* TAB 5: Shortcuts */}
           {activeTab === "shortcuts" && (
             <div className="settings-section-content">
@@ -1412,6 +1493,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <tr>
                       <td><kbd className="font-mono">Ctrl + P</kbd> / <kbd className="font-mono">Cmd + P</kbd></td>
                       <td>{t("settings.shortcut_pipeline")}</td>
+                    </tr>
+                    <tr>
+                      <td><kbd className="font-mono">Ctrl + E</kbd> / <kbd className="font-mono">Cmd + E</kbd></td>
+                      <td>{t("editor.edit_tooltip")}</td>
+                    </tr>
+                    <tr>
+                      <td><kbd className="font-mono">Ctrl + S</kbd> / <kbd className="font-mono">Cmd + S</kbd></td>
+                      <td>{t("editor.save_btn")}</td>
                     </tr>
                     <tr>
                       <td><kbd className="font-mono">Ctrl + Z</kbd> / <kbd className="font-mono">Cmd + Z</kbd></td>

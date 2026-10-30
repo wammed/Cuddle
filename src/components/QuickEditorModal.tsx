@@ -12,10 +12,22 @@ import {
   ShieldCheck,
   Loader2,
   FolderOpen,
+  Settings2,
 } from "lucide-react";
 import type { StagedItemDto } from "../types/StagedItemDto";
+import type { EditorSnippetDto } from "../types/EditorSnippetDto";
 import { detectLanguage, highlightCode } from "../utils/syntaxHighlight";
 import { formatBytes } from "../utils/format";
+import {
+  DEFAULT_EDITOR_SNIPPETS,
+  SnippetLanguageKey,
+  detectInitialSnippetLanguage,
+  loadSnippets,
+  saveSnippets,
+  getAvailableSnippetLanguages,
+  getCommentPrefixForLanguage,
+} from "../utils/snippets";
+import { SnippetManagerModal } from "./SnippetManagerModal";
 
 export interface QuickEditorModalProps {
   isOpen: boolean;
@@ -41,6 +53,11 @@ export function QuickEditorModal({
   const [cursorPos, setCursorPos] = useState<{ line: number; col: number }>({ line: 1, col: 1 });
   const [showUnsavedPrompt, setShowUnsavedPrompt] = useState<boolean>(false);
 
+  // Snippets & Language Selector
+  const [snippets, setSnippets] = useState<EditorSnippetDto[]>(DEFAULT_EDITOR_SNIPPETS);
+  const [selectedSnippetLang, setSelectedSnippetLang] = useState<SnippetLanguageKey>("bash");
+  const [showSnippetManager, setShowSnippetManager] = useState<boolean>(false);
+
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const highlightLayerRef = useRef<HTMLPreElement | null>(null);
   const gutterRef = useRef<HTMLDivElement | null>(null);
@@ -51,6 +68,23 @@ export function QuickEditorModal({
     if (!stagedItem) return "plaintext";
     return detectLanguage(stagedItem.display_name);
   }, [stagedItem]);
+
+  const currentSnippets = useMemo(() => {
+    return snippets.filter((s) => s.language === selectedSnippetLang);
+  }, [snippets, selectedSnippetLang]);
+
+  const availableLanguages = useMemo(() => {
+    return getAvailableSnippetLanguages(snippets);
+  }, [snippets]);
+
+  // Load configured snippets
+  useEffect(() => {
+    loadSnippets().then((loaded) => {
+      if (loaded && loaded.length > 0) {
+        setSnippets(loaded);
+      }
+    });
+  }, []);
 
   // Load content when modal opens with a valid stagedItem
   useEffect(() => {
@@ -69,6 +103,9 @@ export function QuickEditorModal({
     setError(null);
     setSaveSuccessMsg(null);
     setShowUnsavedPrompt(false);
+
+    // Set initial selectable snippet language
+    setSelectedSnippetLang(detectInitialSnippetLanguage(stagedItem.display_name));
 
     invoke<string>("read_staged_file_text", { stageId: stagedItem.stage_id })
       .then((data) => {
@@ -189,7 +226,7 @@ export function QuickEditorModal({
     }, 0);
   }, [updateCursorPosition]);
 
-  // Toggle comments (#) on current line or selection
+  // Toggle comments on current line or selection (# or -- or //)
   const toggleComment = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -204,17 +241,22 @@ export function QuickEditorModal({
     const targetChunk = fullText.substring(lineStart, lineEnd);
     const targetLines = targetChunk.split("\n");
 
-    const allCommented = targetLines.every((l) => l.trimStart().startsWith("#"));
+    const { prefix, check, regex } = getCommentPrefixForLanguage(selectedSnippetLang);
+
+    const allCommented = targetLines.every((l) =>
+      l.trimStart().startsWith(check)
+    );
     const modifiedLines = targetLines.map((l) => {
       if (allCommented) {
-        return l.replace(/^(\s*)#\s?/, "$1");
+        return l.replace(regex, "$1");
       } else {
-        return l.replace(/^(\s*)/, "$1# ");
+        return l.replace(/^(\s*)/, `$1${prefix}`);
       }
     });
 
     const newChunk = modifiedLines.join("\n");
-    const newContent = fullText.substring(0, lineStart) + newChunk + fullText.substring(lineEnd);
+    const newContent =
+      fullText.substring(0, lineStart) + newChunk + fullText.substring(lineEnd);
     setContent(newContent);
 
     setTimeout(() => {
@@ -222,7 +264,7 @@ export function QuickEditorModal({
       el.setSelectionRange(lineStart, lineStart + newChunk.length);
       updateCursorPosition();
     }, 0);
-  }, [updateCursorPosition]);
+  }, [selectedSnippetLang, updateCursorPosition]);
 
   // Keyboard shortcut handler
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -342,42 +384,58 @@ export function QuickEditorModal({
         {/* Snippets / Quick Toolbar */}
         <div className="quick-editor-toolbar">
           <div className="snippets-group">
-            <span className="snippets-label">
-              <Terminal size={13} />
-              {t("editor.snippets_label")}
-            </span>
-            <button
-              type="button"
-              className="snippet-chip-btn"
-              onClick={() => insertSnippet('export PATH="$HOME/.local/bin:$PATH"')}
-              title='export PATH="$HOME/.local/bin:$PATH"'
-            >
-              {t("editor.snippet_path")}
-            </button>
-            <button
-              type="button"
-              className="snippet-chip-btn"
-              onClick={() => insertSnippet("alias ll='ls -la'")}
-              title="alias ll='ls -la'"
-            >
-              {t("editor.snippet_alias")}
-            </button>
-            <button
-              type="button"
-              className="snippet-chip-btn"
-              onClick={() => insertSnippet('export MY_VAR="value"')}
-              title='export MY_VAR="value"'
-            >
-              {t("editor.snippet_env")}
-            </button>
+            {/* Language Selector Dropdown */}
+            <div className="snippet-lang-select-wrap">
+              <Terminal size={13} className="text-teal-400 shrink-0" />
+              <select
+                className="snippet-lang-select font-mono text-xs"
+                value={selectedSnippetLang}
+                onChange={(e) =>
+                  setSelectedSnippetLang(e.target.value as SnippetLanguageKey)
+                }
+                title={t("snippets.lang_select_title") || "スニペット形式を選択"}
+              >
+                {availableLanguages.map((lang) => (
+                  <option key={lang.key} value={lang.key}>
+                    {lang.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Dynamic Snippet Chips for selected language */}
+            {currentSnippets.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className="snippet-chip-btn"
+                onClick={() => insertSnippet(s.snippet)}
+                title={s.description || s.snippet}
+              >
+                {s.label}
+              </button>
+            ))}
+
+            {/* Comment Toggle */}
             <button
               type="button"
               className="snippet-chip-btn"
               onClick={toggleComment}
-              title="Toggle '#' comments (Ctrl+/)"
+              title="コメント切替 (Ctrl+/)"
             >
               <Code2 size={12} />
               {t("editor.snippet_comment")}
+            </button>
+
+            {/* Open Snippet Manager Modal */}
+            <button
+              type="button"
+              className="snippet-manage-btn"
+              onClick={() => setShowSnippetManager(true)}
+              title={t("snippets.manage_tooltip") || "スニペットを追加・編集・カスタマイズ"}
+            >
+              <Settings2 size={12} />
+              <span>{t("snippets.manage_btn") || "カスタマイズ"}</span>
             </button>
           </div>
 
@@ -518,6 +576,24 @@ export function QuickEditorModal({
               </div>
             </div>
           </div>
+        )}
+
+        {/* Snippet Manager Modal */}
+        {showSnippetManager && (
+          <SnippetManagerModal
+            isOpen={showSnippetManager}
+            initialLanguage={selectedSnippetLang}
+            onClose={() => setShowSnippetManager(false)}
+            snippets={snippets}
+            onUpdateSnippets={async (newSnippets) => {
+              setSnippets(newSnippets);
+              await saveSnippets(newSnippets);
+            }}
+            onSnippetSelect={(s) => {
+              insertSnippet(s.snippet);
+              setShowSnippetManager(false);
+            }}
+          />
         )}
       </div>
     </div>

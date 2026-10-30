@@ -36,6 +36,8 @@ pub struct AppConfig {
     pub security: SecuritySection,
     #[serde(default = "get_default_custom_pipeline_templates")]
     pub custom_pipelines: Vec<CustomPipelineDefDto>,
+    #[serde(default = "get_default_editor_snippets")]
+    pub snippets: Vec<EditorSnippetDto>,
 }
 
 impl Default for AppConfig {
@@ -45,6 +47,7 @@ impl Default for AppConfig {
             workspace: WorkspaceSection::default(),
             security: SecuritySection::default(),
             custom_pipelines: get_default_custom_pipeline_templates(),
+            snippets: get_default_editor_snippets(),
         }
     }
 }
@@ -122,6 +125,334 @@ pub fn get_default_custom_pipeline_templates() -> Vec<CustomPipelineDefDto> {
             allowed_read_paths: Vec::new(),
             input_mode: ExecutionInputMode::PerFile,
         },
+    ]
+}
+
+/// User-customizable quick editor snippet definition.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export, export_to = "../../src/types/")]
+pub struct EditorSnippetDto {
+    pub id: String,
+    pub language: String,
+    pub label: String,
+    pub snippet: String,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+fn make_snippet(
+    id: &str,
+    language: &str,
+    label: &str,
+    snippet: &str,
+    desc: &str,
+) -> EditorSnippetDto {
+    EditorSnippetDto {
+        id: id.to_string(),
+        language: language.to_string(),
+        label: label.to_string(),
+        snippet: snippet.to_string(),
+        description: Some(desc.to_string()),
+    }
+}
+
+pub fn get_default_editor_snippets() -> Vec<EditorSnippetDto> {
+    vec![
+        // --- Bash (5 presets) ---
+        make_snippet(
+            "bash-path",
+            "bash",
+            "+ PATH 追加",
+            "export PATH=\"$HOME/.local/bin:$PATH\"",
+            "~/.local/bin を PATH に追加",
+        ),
+        make_snippet(
+            "bash-alias",
+            "bash",
+            "+ alias 定義",
+            "alias ll='ls -la --color=auto'",
+            "詳細ファイルリストのエイリアス",
+        ),
+        make_snippet(
+            "bash-env",
+            "bash",
+            "+ export 環境変数",
+            "export EDITOR=\"nvim\"",
+            "デフォルトエディタ等の環境変数を設定",
+        ),
+        make_snippet(
+            "bash-mkcd",
+            "bash",
+            "+ mkcd 関数",
+            "mkcd() {\n  mkdir -p \"$1\" && cd \"$1\"\n}",
+            "ディレクトリを作成して即座に移動する関数",
+        ),
+        make_snippet(
+            "bash-ps1",
+            "bash",
+            "+ カラーPS1 プロンプト",
+            "export PS1=\"\\[\\e[32m\\]\\u@\\h\\[\\e[0m\\]:\\[\\e[34m\\]\\w\\[\\e[0m\\]\\$ \"",
+            "ユーザー名と作業ディレクトリを色分け表示",
+        ),
+
+        // --- Fish (5 presets) ---
+        make_snippet(
+            "fish-path",
+            "fish",
+            "+ fish_add_path",
+            "fish_add_path $HOME/.local/bin",
+            "Fish の安全な PATH 追加コマンド",
+        ),
+        make_snippet(
+            "fish-alias",
+            "fish",
+            "+ alias 定義",
+            "alias ll 'ls -la'",
+            "Fish エイリアス構文",
+        ),
+        make_snippet(
+            "fish-env",
+            "fish",
+            "+ set -gx 環境変数",
+            "set -gx EDITOR nvim",
+            "グローバルエクスポート環境変数",
+        ),
+        make_snippet(
+            "fish-abbr",
+            "fish",
+            "+ abbr 略称展開",
+            "abbr -a gco git checkout",
+            "入力時に自動展開される略称コマンド",
+        ),
+        make_snippet(
+            "fish-function",
+            "fish",
+            "+ mkcd 関数",
+            "function mkcd --description 'ディレクトリ作成と移動'\n  mkdir -p $argv[1]; and cd $argv[1]\nend",
+            "Fish 構文でのディレクトリ作成＆移動関数",
+        ),
+
+        // --- Zsh (5 presets) ---
+        make_snippet(
+            "zsh-path",
+            "zsh",
+            "+ path 配列追加",
+            "path=(\"$HOME/.local/bin\" $path); export PATH",
+            "Zsh 固有の path 配列による PATH 設定",
+        ),
+        make_snippet(
+            "zsh-alias",
+            "zsh",
+            "+ alias 定義",
+            "alias ll='ls -la'",
+            "Zsh エイリアス定義",
+        ),
+        make_snippet(
+            "zsh-autosuggest",
+            "zsh",
+            "+ 補完提案ハイライト",
+            "export ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=60'",
+            "zsh-autosuggestions のテキスト配色指定",
+        ),
+        make_snippet(
+            "zsh-history",
+            "zsh",
+            "+ 履歴共有設定",
+            "HISTSIZE=10000\nSAVEHIST=10000\nsetopt SHARE_HISTORY",
+            "セッション間でコマンド履歴をリアルタイム共有",
+        ),
+        make_snippet(
+            "zsh-mkcd",
+            "zsh",
+            "+ mkcd 関数",
+            "mkcd() {\n  mkdir -p \"$1\" && cd \"$1\"\n}",
+            "ディレクトリ作成＆移動関数",
+        ),
+
+        // --- JSONC (5 presets) ---
+        make_snippet(
+            "jsonc-config",
+            "jsonc",
+            "+ 設定オブジェクト",
+            "{\n  // アプリケーション設定\n  \"version\": \"1.0.0\",\n  \"enabled\": true\n}",
+            "コメント付き基本設定スキーマ",
+        ),
+        make_snippet(
+            "jsonc-keybinding",
+            "jsonc",
+            "+ キーバインド定義",
+            "{\n  \"key\": \"ctrl+shift+p\",\n  \"command\": \"workbench.action.showCommands\"\n}",
+            "VS Code / Cuddle 形式のショートカット定義",
+        ),
+        make_snippet(
+            "jsonc-tsconfig",
+            "jsonc",
+            "+ tsconfig オプション",
+            "\"compilerOptions\": {\n  \"target\": \"ES2022\",\n  \"module\": \"ESNext\",\n  \"strict\": true\n}",
+            "TypeScript strict コンパイラ設定",
+        ),
+        make_snippet(
+            "jsonc-task",
+            "jsonc",
+            "+ タスク定義",
+            "{\n  \"label\": \"build\",\n  \"type\": \"shell\",\n  \"command\": \"pnpm build\"\n}",
+            "自動化タスク定義",
+        ),
+        make_snippet(
+            "jsonc-env",
+            "jsonc",
+            "+ env オブジェクト",
+            "\"env\": {\n  \"NODE_ENV\": \"development\",\n  \"PORT\": 3000\n}",
+            "環境変数ブロック",
+        ),
+
+        // --- TOML (5 presets) ---
+        make_snippet(
+            "toml-package",
+            "toml",
+            "+ [package] セクション",
+            "[package]\nname = \"my-project\"\nversion = \"0.1.0\"\nedition = \"2021\"",
+            "Cargo / プロジェクト基本メタデータ",
+        ),
+        make_snippet(
+            "toml-dependencies",
+            "toml",
+            "+ [dependencies] 定義",
+            "[dependencies]\nserde = { version = \"1.0\", features = [\"derive\"] }\ntokio = { version = \"1.0\", features = [\"full\"] }",
+            "クレート依存関係",
+        ),
+        make_snippet(
+            "toml-settings",
+            "toml",
+            "+ [settings] 設定群",
+            "[settings]\nenabled = true\ntimeout_seconds = 30\nlog_level = \"info\"",
+            "汎用アプリケーション設定セクション",
+        ),
+        make_snippet(
+            "toml-profile",
+            "toml",
+            "+ [profile.release] 最適化",
+            "[profile.release]\nopt-level = 3\nlto = true\ncodegen-units = 1",
+            "リリースビルド最適化設定",
+        ),
+        make_snippet(
+            "toml-table-array",
+            "toml",
+            "+ [[servers]] テーブル配列",
+            "[[servers]]\nhost = \"127.0.0.1\"\nport = 8080",
+            "リスト形式のテーブル配列設定",
+        ),
+
+        // --- YAML (5 presets) ---
+        make_snippet(
+            "yaml-service",
+            "yaml",
+            "+ compose サービス",
+            "services:\n  app:\n    image: alpine:latest\n    restart: unless-stopped\n    volumes:\n      - ./:/workspace",
+            "Docker Compose 基本サービス定義",
+        ),
+        make_snippet(
+            "yaml-action",
+            "yaml",
+            "+ GitHub Actions ステップ",
+            "- name: Setup Node.js\n  uses: actions/setup-node@v4\n  with:\n    node-version: 20",
+            "CI ワークフロー設定ステップ",
+        ),
+        make_snippet(
+            "yaml-configmap",
+            "yaml",
+            "+ ConfigMap 定義",
+            "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app-config\ndata:\n  APP_ENV: production",
+            "Kubernetes ConfigMap マニフェスト",
+        ),
+        make_snippet(
+            "yaml-env",
+            "yaml",
+            "+ environment 変数群",
+            "environment:\n  NODE_ENV: production\n  PORT: 8080\n  DEBUG: \"false\"",
+            "環境変数リスト",
+        ),
+        make_snippet(
+            "yaml-matrix",
+            "yaml",
+            "+ matrix マトリクスビルド",
+            "matrix:\n  os: [ubuntu-latest, macos-latest]\n  node: [18, 20]",
+            "複数環境テスト用のマトリクス定義",
+        ),
+
+        // --- Lua (5 presets) ---
+        make_snippet(
+            "lua-keymap",
+            "lua",
+            "+ vim.keymap.set",
+            "vim.keymap.set('n', '<leader>ff', '<cmd>Telescope find_files<cr>', { desc = 'Find files' })",
+            "Neovim キーマップ設定",
+        ),
+        make_snippet(
+            "lua-opt",
+            "lua",
+            "+ vim.opt 基本設定",
+            "vim.opt.number = true\nvim.opt.relativenumber = true\nvim.opt.shiftwidth = 2\nvim.opt.expandtab = true",
+            "行番号とインデント幅設定",
+        ),
+        make_snippet(
+            "lua-fn",
+            "lua",
+            "+ local function 定義",
+            "local function greet(name)\n  return \"Hello, \" .. (name or \"world\")\nend",
+            "関数定義テンプレート",
+        ),
+        make_snippet(
+            "lua-lazy",
+            "lua",
+            "+ lazy.nvim プラグイン",
+            "return {\n  \"nvim-treesitter/nvim-treesitter\",\n  build = \":TSUpdate\",\n  config = function()\n    require(\"nvim-treesitter.configs\").setup({ highlight = { enable = true } })\n  end,\n}",
+            "Lazy プラグインマネージャ定義",
+        ),
+        make_snippet(
+            "lua-module",
+            "lua",
+            "+ モジュールテーブル (M)",
+            "local M = {}\nM.setup = function(opts)\n  M.config = vim.tbl_deep_extend(\"force\", { enabled = true }, opts or {})\nend\nreturn M",
+            "標準的な Neovim Lua モジュール構造",
+        ),
+
+        // --- Plain Text (5 presets) ---
+        make_snippet(
+            "txt-todo",
+            "plaintext",
+            "+ [ ] TODO 項目",
+            "- [ ] TODO: ",
+            "未完了チェックボックスタスク",
+        ),
+        make_snippet(
+            "txt-done",
+            "plaintext",
+            "+ [x] 完了項目",
+            "- [x] DONE: ",
+            "完了済みチェックボックスタスク",
+        ),
+        make_snippet(
+            "txt-header",
+            "plaintext",
+            "+ セクション区切り線",
+            "# ------------------------------------------------------------------------------\n# ",
+            "長文メモ用のアスキー境界ヘッダー",
+        ),
+        make_snippet(
+            "txt-timestamp",
+            "plaintext",
+            "+ 日付スタンプ",
+            "[=== YYYY-MM-DD HH:MM ===]",
+            "作業ログの記録ヘッダー",
+        ),
+        make_snippet(
+            "txt-license",
+            "plaintext",
+            "+ 著作権ライセンス表記",
+            "Copyright (c) 2026. All rights reserved.",
+            "ソースコードや文書の権利表記",
+        ),
     ]
 }
 
@@ -465,5 +796,29 @@ input_mode = "batch_list"
         let _ = ConfirmationLevel::export(&cfg);
         let _ = CustomPipelineDefDto::export(&cfg);
         let _ = ExecutionInputMode::export(&cfg);
+        let _ = EditorSnippetDto::export(&cfg);
+    }
+
+    #[test]
+    fn test_editor_snippets_default_and_roundtrip() {
+        let defaults = get_default_editor_snippets();
+        // 8 languages * 5 presets each = 40 presets
+        assert_eq!(defaults.len(), 40);
+
+        let languages = ["bash", "fish", "zsh", "jsonc", "toml", "yaml", "lua", "plaintext"];
+        for lang in &languages {
+            let count = defaults.iter().filter(|s| s.language == *lang).count();
+            assert_eq!(count, 5, "Language {} should have exactly 5 presets", lang);
+        }
+
+        // Test TOML round-trip
+        let cfg = AppConfig::default();
+        let serialized = toml::to_string(&cfg).expect("Serialization failed");
+        assert!(serialized.contains("[[snippets]]"));
+        assert!(serialized.contains("bash-path"));
+        assert!(serialized.contains("lua-keymap"));
+
+        let deserialized: AppConfig = toml::from_str(&serialized).expect("Deserialization failed");
+        assert_eq!(deserialized.snippets.len(), 40);
     }
 }

@@ -65,6 +65,7 @@ describe("Phase 12: Pipeline Flexibility & Desktop Notifications", () => {
           input_mode: "batch_list",
         },
       ],
+      snippets: [],
     };
 
     it("renders custom pipeline card with Mode badge and Landlock Read paths", async () => {

@@ -28,6 +28,7 @@ describe("Phase 14: Settings & config.toml Alignment (Task 3-1, 5-1)", () => {
       confirmation_level: "standard",
     },
     custom_pipelines: [],
+    snippets: [],
   };
 
   beforeEach(async () => {

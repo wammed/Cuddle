@@ -4735,28 +4735,30 @@ body {
 }
 
 .settings-tab-bar {
-  display: flex;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
   padding: 8px 16px;
   background: var(--bg-surface-input);
   border-bottom: 1px solid var(--border-subtle);
-  overflow-x: auto;
   flex-shrink: 0;
 }
 
 .settings-tab-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 6px 14px;
+  padding: 7px 10px;
   font-size: 12px;
   border-radius: var(--radius-xs);
   color: var(--text-secondary);
-  background: transparent;
-  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   cursor: pointer;
   transition: all var(--transition-fast);
   white-space: nowrap;
+  text-align: center;
 }
 
 .settings-tab-btn:hover {
@@ -9134,7 +9136,7 @@ button:active:not(:disabled),
 
 .snippet-form-grid {
   display: grid;
-  grid-template-columns: 180px 1fr;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
   gap: 12px;
   margin-bottom: 8px;
 }
@@ -9143,9 +9145,14 @@ button:active:not(:disabled),
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
 }
 
 .snippet-input {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   background: rgba(0, 0, 0, 0.45);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--radius-xs);
@@ -9153,6 +9160,16 @@ button:active:not(:disabled),
   color: #f8fafc;
   outline: none;
   transition: border-color var(--transition-fast);
+}
+
+select.snippet-input,
+.snippet-input select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  cursor: pointer;
+  text-overflow: ellipsis;
 }
 
 .snippet-input:focus {

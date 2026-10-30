@@ -355,9 +355,9 @@ export function SnippetManagerView({
                 {t("snippets.field_lang") || "言語 / 形式"}
               </label>
               {!isCustomLangInput ? (
-                <div className="flex gap-1.5 items-center">
+                <div className="flex gap-1.5 items-center w-full min-w-0">
                   <select
-                    className="snippet-input font-mono text-xs flex-1"
+                    className="snippet-input font-mono text-xs flex-1 min-w-0"
                     value={formData.language}
                     onChange={(e) => {
                       if (e.target.value === "__custom__") {
@@ -382,10 +382,10 @@ export function SnippetManagerView({
                   </select>
                 </div>
               ) : (
-                <div className="flex gap-1.5 items-center">
+                <div className="flex gap-1.5 items-center w-full min-w-0">
                   <input
                     type="text"
-                    className="snippet-input font-mono text-xs flex-1"
+                    className="snippet-input font-mono text-xs flex-1 min-w-0"
                     placeholder="例: python, rust, nix"
                     value={customLangText}
                     onChange={(e) => setCustomLangText(e.target.value)}
@@ -413,7 +413,7 @@ export function SnippetManagerView({
               </label>
               <input
                 type="text"
-                className="snippet-input font-mono text-xs"
+                className="snippet-input font-mono text-xs w-full min-w-0"
                 value={formData.label}
                 onChange={(e) =>
                   setFormData({ ...formData, label: e.target.value })

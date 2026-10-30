@@ -114,6 +114,7 @@ input_mode = "batch_list"
 # ==============================================================================
 # [[snippets]] - クイックスニペット設定 (エディタ用)
 # 形式: "bash", "fish", "zsh", "jsonc", "toml", "yaml", "lua", "plaintext"
+# (上記以外の任意のカスタム言語・形式キーも自由に指定可能です)
 # ==============================================================================
 
 [[snippets]]
@@ -122,6 +123,25 @@ language = "bash"
 label = "+ PATH 追加"
 snippet = 'export PATH="$HOME/.local/bin:$PATH"'
 description = "~/.local/bin を PATH に追加"
+
+[[snippets]]
+id = "jsonc-config"
+language = "jsonc"
+label = "+ 設定雛形"
+snippet = '{\\n  "version": "1.0.0",\\n  "enabled": true\\n}'
+description = "JSONC 設定オブジェクトの基本テンプレート"
+
+# ==============================================================================
+# [shortcuts] - キーボードショートカット設定 / リファレンス
+# Cuddle の主要キーバインド一覧
+# ==============================================================================
+# search      = "Ctrl+F"    # 全文検索・ファイル名検索パネルを開く
+# bulk_rename = "Ctrl+R"    # 高度な一括リネームモーダルを開く
+# pipeline    = "Ctrl+P"    # パイプライン実行モーダルを開く
+# quick_edit  = "Ctrl+E"    # 選択した作業コピーを簡易エディタで開く
+# save_edit   = "Ctrl+S"    # 簡易エディタの変更内容を保存
+# undo        = "Ctrl+Z"    # 直前の操作を取り消し (Undo 履歴)
+# cancel      = "Escape"    # モーダルを閉じる / 選択解除
 `;
   }
   return `# ==============================================================================
@@ -187,6 +207,7 @@ input_mode = "batch_list"
 # ==============================================================================
 # [[snippets]] - Quick Editor Snippets
 # Languages: "bash", "fish", "zsh", "jsonc", "toml", "yaml", "lua", "plaintext"
+# (Any custom language key is also supported)
 # ==============================================================================
 
 [[snippets]]
@@ -195,6 +216,25 @@ language = "bash"
 label = "+ Add PATH"
 snippet = 'export PATH="$HOME/.local/bin:$PATH"'
 description = "Add ~/.local/bin to PATH"
+
+[[snippets]]
+id = "jsonc-config"
+language = "jsonc"
+label = "+ Config Template"
+snippet = '{\\n  "version": "1.0.0",\\n  "enabled": true\\n}'
+description = "Basic JSONC configuration schema template"
+
+# ==============================================================================
+# [shortcuts] - Keyboard Shortcuts Configuration / Reference
+# Standard keybindings throughout Cuddle desktop workspace
+# ==============================================================================
+# search      = "Ctrl+F"    # Open Fulltext & Filename Search panel
+# bulk_rename = "Ctrl+R"    # Open Advanced Bulk Rename modal
+# pipeline    = "Ctrl+P"    # Open Pipeline Execution modal
+# quick_edit  = "Ctrl+E"    # Open Quick Text Editor for staged copy
+# save_edit   = "Ctrl+S"    # Save Quick Text Editor changes
+# undo        = "Ctrl+Z"    # Undo last filesystem operation
+# cancel      = "Escape"    # Close active modal / deselect
 `;
 };
 

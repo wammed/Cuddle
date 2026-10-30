@@ -805,7 +805,16 @@ input_mode = "batch_list"
         // 8 languages * 5 presets each = 40 presets
         assert_eq!(defaults.len(), 40);
 
-        let languages = ["bash", "fish", "zsh", "jsonc", "toml", "yaml", "lua", "plaintext"];
+        let languages = [
+            "bash",
+            "fish",
+            "zsh",
+            "jsonc",
+            "toml",
+            "yaml",
+            "lua",
+            "plaintext",
+        ];
         for lang in &languages {
             let count = defaults.iter().filter(|s| s.language == *lang).count();
             assert_eq!(count, 5, "Language {} should have exactly 5 presets", lang);

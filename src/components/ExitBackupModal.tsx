@@ -13,6 +13,7 @@ interface ExitBackupModalProps {
   onClose: () => void;
   onDiscard: () => void;
   onBackupSuccess: (result: BackupResultDto) => void;
+  onBackupAndContinue?: (result: BackupResultDto) => void;
 }
 
 export function ExitBackupModal({
@@ -21,6 +22,7 @@ export function ExitBackupModal({
   onClose,
   onDiscard,
   onBackupSuccess,
+  onBackupAndContinue,
 }: ExitBackupModalProps) {
   const { t } = useTranslation();
   const [destPath, setDestPath] = useState<string>("");
@@ -68,7 +70,7 @@ export function ExitBackupModal({
 
   if (!isOpen) return null;
 
-  const handleExecuteBackup = async () => {
+  const handleExecuteBackup = async (shouldExit: boolean = true) => {
     try {
       setIsArchiving(true);
       setError(null);
@@ -76,7 +78,13 @@ export function ExitBackupModal({
         destinationPath: destPath.trim() ? destPath.trim() : null,
         autoPruneLimit: autoPrune ? retentionLimit : 999,
       });
-      onBackupSuccess(res);
+      if (shouldExit) {
+        onBackupSuccess(res);
+      } else if (onBackupAndContinue) {
+        onBackupAndContinue(res);
+      } else {
+        onBackupSuccess(res);
+      }
       onClose();
     } catch (err) {
       console.error("Backup failed:", err);
@@ -236,7 +244,7 @@ export function ExitBackupModal({
         <div className="dialog-footer">
           <button
             type="button"
-            className="dialog-btn secondary"
+            className="dialog-btn secondary mr-auto"
             onClick={onClose}
             disabled={isArchiving}
           >
@@ -254,10 +262,23 @@ export function ExitBackupModal({
             <span>{t("backup.discard_btn")}</span>
           </button>
 
+          {onBackupAndContinue && (
+            <button
+              type="button"
+              className="dialog-btn backup-continue-btn"
+              onClick={() => handleExecuteBackup(false)}
+              disabled={isArchiving}
+              title={t("backup.backup_and_continue_btn")}
+            >
+              <Archive size={14} />
+              <span>{isArchiving ? t("backup.archiving") : t("backup.backup_and_continue_btn")}</span>
+            </button>
+          )}
+
           <button
             type="button"
             className="dialog-btn primary backup-action-btn"
-            onClick={handleExecuteBackup}
+            onClick={() => handleExecuteBackup(true)}
             disabled={isArchiving}
           >
             <Archive size={14} />

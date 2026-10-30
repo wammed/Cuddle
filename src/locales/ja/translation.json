@@ -369,6 +369,7 @@
     "dest_hint": "※ 入力欄を編集して任意の保存先パスを指定できます（ディレクトリは自動作成されます）",
     "reset_path": "デフォルトパスに戻す",
     "backup_btn": "アーカイブ保存して終了",
+    "backup_and_continue_btn": "バックアップして作業を継続",
     "discard_btn": "作業コピーを破棄して終了",
     "cancel_btn": "作業を継続する",
     "archiving": "アーカイブ作成中 (tar.gz)...",

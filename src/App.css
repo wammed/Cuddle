@@ -3916,7 +3916,7 @@ body {
 /* Phase 6.3 Exit & Backup Modal */
 .exit-backup-dialog {
   width: 90%;
-  max-width: 520px;
+  max-width: 620px;
   max-height: 90vh;
   background: rgba(9, 20, 27, 0.98);
   border: 1px solid rgba(45, 212, 191, 0.35);
@@ -4079,6 +4079,32 @@ body {
 }
 
 .backup-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.backup-continue-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(13, 148, 136, 0.25);
+  color: #2dd4bf;
+  border: 1px solid rgba(45, 212, 191, 0.45);
+  border-radius: var(--radius-xs);
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--trans-fast);
+}
+
+.backup-continue-btn:hover:not(:disabled) {
+  background: rgba(13, 148, 136, 0.45);
+  border-color: #5eead4;
+  color: #f0fdfa;
+}
+
+.backup-continue-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

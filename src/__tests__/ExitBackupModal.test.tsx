@@ -217,6 +217,42 @@ describe("ExitBackupModal (Phase 6.3)", () => {
     });
   });
 
+  it("calls onBackupAndContinue and onClose when backup and continue button is clicked", async () => {
+    const onBackupSuccess = vi.fn();
+    const onBackupAndContinue = vi.fn();
+    const onClose = vi.fn();
+
+    render(
+      <ExitBackupModal
+        isOpen={true}
+        stagedCount={3}
+        onClose={onClose}
+        onDiscard={vi.fn()}
+        onBackupSuccess={onBackupSuccess}
+        onBackupAndContinue={onBackupAndContinue}
+      />
+    );
+
+    await screen.findByLabelText("保存先アーカイブパス (tar.gz)");
+
+    const backupContinueBtn = screen.getByRole("button", { name: "バックアップして作業を継続" });
+    await act(async () => {
+      fireEvent.click(backupContinueBtn);
+    });
+
+    await waitFor(() => {
+      expect(onBackupAndContinue).toHaveBeenCalledTimes(1);
+      expect(onBackupAndContinue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          archive_path: mockDefaultPath,
+          file_count: 5,
+        })
+      );
+      expect(onBackupSuccess).not.toHaveBeenCalled();
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("renders correctly in English", async () => {
     await act(async () => {
       await changeLanguage("en");
@@ -229,6 +265,7 @@ describe("ExitBackupModal (Phase 6.3)", () => {
         onClose={vi.fn()}
         onDiscard={vi.fn()}
         onBackupSuccess={vi.fn()}
+        onBackupAndContinue={vi.fn()}
       />
     );
 
@@ -237,6 +274,7 @@ describe("ExitBackupModal (Phase 6.3)", () => {
     expect(screen.getByText("Session Exit Backup & Safety Check")).toBeDefined();
     expect(screen.getByText(/4 staged file\(s\) exist in workspace-temp/)).toBeDefined();
     expect(screen.getByRole("button", { name: "Archive Backup & Exit" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Backup & Continue Working" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Continue Working" })).toBeDefined();
   });
 });

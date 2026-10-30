@@ -788,6 +788,22 @@ export function App() {
     }
   };
 
+  const handleBackupAndContinue = useCallback(
+    async (result: BackupResultDto) => {
+      const successMsg = t("backup.backup_success", {
+        path: result.archive_path,
+        count: result.file_count,
+        size: formatBytes(Number(result.total_bytes)),
+      });
+      addHistory(`Created tar.gz workspace backup at "${result.archive_path}" (${result.file_count} files)`);
+      addLog(`Workspace backup completed successfully: ${result.archive_path}`);
+      showToast(successMsg);
+      await loadHistory();
+      setExitBackupOpen(false);
+    },
+    [addHistory, addLog, loadHistory, showToast, t]
+  );
+
   const handleDiscardAndExit = async () => {
     await handleClearWorkspace();
     setExitBackupOpen(false);
@@ -1262,6 +1278,7 @@ export function App() {
         onClose={() => setExitBackupOpen(false)}
         onDiscard={handleDiscardAndExit}
         onBackupSuccess={handleBackupSuccess}
+        onBackupAndContinue={handleBackupAndContinue}
       />
 
       {/* Pipeline Workflow Modal (Phase 7.2) */}

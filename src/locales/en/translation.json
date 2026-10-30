@@ -369,6 +369,7 @@
     "dest_hint": "* You can edit the path to specify any custom location (parent directories created automatically)",
     "reset_path": "Reset to Default Path",
     "backup_btn": "Archive Backup & Exit",
+    "backup_and_continue_btn": "Backup & Continue Working",
     "discard_btn": "Discard Working Copies & Exit",
     "cancel_btn": "Continue Working",
     "archiving": "Creating tar.gz Archive...",

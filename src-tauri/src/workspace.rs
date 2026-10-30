@@ -230,18 +230,22 @@ impl WorkspaceManager {
 
         // 7. Record operation in SQLite persistent history & save session
         let hist_mgr = crate::history::get_history_manager();
-        let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
-            operation_id: stage_id,
-            operation_type: "Stage".to_string(),
-            display_name: item.display_name.clone(),
-            original_path: Some(canonical_src.to_string_lossy().to_string()),
-            staged_path: Some(staged_dto.staged_path.clone()),
-            inode: Some(staged_dto.original_snapshot.inode as i64),
-            status: "Success".to_string(),
-            can_undo: true,
-            details: Some(format!("Cloned via {:?}", staged_dto.clone_method)),
-        });
-        let _ = hist_mgr.save_session_item(&staged_dto);
+        hist_mgr
+            .record_operation(&crate::history::NewHistoryEntry {
+                operation_id: stage_id,
+                operation_type: "Stage".to_string(),
+                display_name: item.display_name.clone(),
+                original_path: Some(canonical_src.to_string_lossy().to_string()),
+                staged_path: Some(staged_dto.staged_path.clone()),
+                inode: Some(staged_dto.original_snapshot.inode as i64),
+                status: "Success".to_string(),
+                can_undo: true,
+                details: Some(format!("Cloned via {:?}", staged_dto.clone_method)),
+            })
+            .map_err(|e| WorkspaceError::Io(std::io::Error::other(e)))?;
+        hist_mgr
+            .save_session_item(&staged_dto)
+            .map_err(|e| WorkspaceError::Io(std::io::Error::other(e)))?;
 
         Ok(staged_dto)
     }
@@ -249,10 +253,10 @@ impl WorkspaceManager {
     /// Unstages a file: securely deletes the staged copy (ORIGINAL IS NEVER TOUCHED).
     pub fn unstage_file(&self, stage_id: &str) -> Result<(), WorkspaceError> {
         let mut map = self.staged_items.lock().unwrap();
-        let target_staged = if let Some(staged) = map.remove(stage_id) {
-            Some(staged)
+        let target_key = if map.contains_key(stage_id) {
+            Some(stage_id.to_string())
         } else {
-            let found_key = map.iter().find_map(|(k, v)| {
+            map.iter().find_map(|(k, v)| {
                 if v.original_item_id == stage_id
                     || v.raw_base64 == stage_id
                     || v.staged_raw_base64 == stage_id
@@ -262,18 +266,27 @@ impl WorkspaceManager {
                 } else {
                     None
                 }
-            });
-            found_key.and_then(|k| map.remove(&k))
+            })
         };
 
-        if let Some(staged) = target_staged {
+        if let Some(key) = target_key {
+            let staged = map
+                .get(&key)
+                .cloned()
+                .ok_or_else(|| WorkspaceError::NotFound(key.clone()))?;
             let path = decode_path_from_base64(&staged.staged_raw_base64)?;
+
+            // 1. Delete physical staged file first (differentiate nonexistent vs I/O permission error)
             if path.exists() {
-                let _ = fs::remove_file(path);
+                fs::remove_file(&path).map_err(WorkspaceError::Io)?;
             }
 
+            // 2. Remove from persistent SQLite session table
             let hist_mgr = crate::history::get_history_manager();
-            let _ = hist_mgr.remove_session_item(&staged.stage_id);
+            hist_mgr
+                .remove_session_item(&staged.stage_id)
+                .map_err(|e| WorkspaceError::Io(std::io::Error::other(e)))?;
+
             let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
                 operation_id: uuid::Uuid::new_v4().to_string(),
                 operation_type: "Unstage".to_string(),
@@ -283,9 +296,11 @@ impl WorkspaceManager {
                 inode: Some(staged.original_snapshot.inode as i64),
                 status: "Success".to_string(),
                 can_undo: false,
-                details: None,
+                details: Some("Unstaged and safely removed working copy".to_string()),
             });
 
+            // 3. Remove from memory state only after disk and DB operations succeed
+            map.remove(&key);
             return Ok(());
         }
 
@@ -365,7 +380,9 @@ impl WorkspaceManager {
         staged.status = StageStatus::Staged;
 
         let hist_mgr = crate::history::get_history_manager();
-        let _ = hist_mgr.save_session_item(staged);
+        hist_mgr
+            .save_session_item(staged)
+            .map_err(|e| WorkspaceError::Io(std::io::Error::other(e)))?;
         let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
             operation_id: uuid::Uuid::new_v4().to_string(),
             operation_type: "Reset".to_string(),
@@ -426,7 +443,7 @@ impl WorkspaceManager {
         // 1. Policy Validation: Forbidden Zone (Outside $HOME, mount boundary, external storage)
         OperationPolicy::validate_reflection(&orig_path)?;
 
-        // 2. TOCTOU Race & External Conflict Verification
+        // 2. Initial TOCTOU Race & External Conflict Verification
         if let Err(e) = OperationPolicy::verify_conflict(&staged.original_snapshot, true) {
             staged.status = StageStatus::Conflict;
             let hist_mgr = crate::history::get_history_manager();
@@ -446,6 +463,16 @@ impl WorkspaceManager {
         if let Err(e) = fs::copy(&staged_path, &tmp_reflect_path) {
             let _ = fs::remove_file(&tmp_reflect_path);
             return Err(WorkspaceError::Io(e));
+        }
+
+        // --- TOCTOU Prevention: Re-verify original file immediately before modifying/renaming ---
+        // Verifies that no external process touched the original while we were preparing the copy
+        if let Err(e) = OperationPolicy::verify_conflict(&staged.original_snapshot, true) {
+            let _ = fs::remove_file(&tmp_reflect_path);
+            staged.status = StageStatus::Conflict;
+            let hist_mgr = crate::history::get_history_manager();
+            let _ = hist_mgr.save_session_item(staged);
+            return Err(WorkspaceError::Policy(e));
         }
 
         // Mode B: Rename original to timestamped .origin backup
@@ -470,7 +497,18 @@ impl WorkspaceManager {
         }
 
         // 4. Update snapshot and status
-        let updated_item = FileItem::from_path(&orig_path)?;
+        let updated_item = match FileItem::from_path(&orig_path) {
+            Ok(item) => item,
+            Err(e) => {
+                // If taking snapshot fails, rollback Mode B if possible
+                if let Some(ref bkp) = backup_origin_path {
+                    let _ = fs::rename(&orig_path, &tmp_reflect_path);
+                    let _ = fs::rename(bkp, &orig_path);
+                    let _ = fs::remove_file(&tmp_reflect_path);
+                }
+                return Err(WorkspaceError::Model(e));
+            }
+        };
         let new_snapshot = OperationPolicy::create_snapshot(&updated_item, true)?;
 
         staged.original_snapshot = new_snapshot;
@@ -486,18 +524,22 @@ impl WorkspaceManager {
         };
 
         let hist_mgr = crate::history::get_history_manager();
-        let _ = hist_mgr.save_session_item(staged);
-        let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
-            operation_id: uuid::Uuid::new_v4().to_string(),
-            operation_type: "Reflect".to_string(),
-            display_name: staged.display_name.clone(),
-            original_path: Some(staged.original_snapshot.canonical_path.clone()),
-            staged_path: Some(staged.staged_path.clone()),
-            inode: Some(updated_item.inode as i64),
-            status: "Success".to_string(),
-            can_undo: false,
-            details: Some(details),
-        });
+        hist_mgr
+            .save_session_item(staged)
+            .map_err(|e| WorkspaceError::Io(std::io::Error::other(e)))?;
+        hist_mgr
+            .record_operation(&crate::history::NewHistoryEntry {
+                operation_id: uuid::Uuid::new_v4().to_string(),
+                operation_type: "Reflect".to_string(),
+                display_name: staged.display_name.clone(),
+                original_path: Some(staged.original_snapshot.canonical_path.clone()),
+                staged_path: Some(staged.staged_path.clone()),
+                inode: Some(updated_item.inode as i64),
+                status: "Success".to_string(),
+                can_undo: false,
+                details: Some(details),
+            })
+            .map_err(|e| WorkspaceError::Io(std::io::Error::other(e)))?;
 
         Ok((staged.clone(), backup_origin_path))
     }
@@ -552,18 +594,22 @@ impl WorkspaceManager {
         );
 
         let hist_mgr = crate::history::get_history_manager();
-        let _ = hist_mgr.save_session_item(staged);
-        let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
-            operation_id: uuid::Uuid::new_v4().to_string(),
-            operation_type: "ReflectAsCopy".to_string(),
-            display_name: staged.display_name.clone(),
-            original_path: Some(staged.original_snapshot.canonical_path.clone()),
-            staged_path: Some(target_copy_path.to_string_lossy().to_string()),
-            inode: None,
-            status: "Success".to_string(),
-            can_undo: false,
-            details: Some(details),
-        });
+        hist_mgr
+            .save_session_item(staged)
+            .map_err(|e| WorkspaceError::Io(std::io::Error::other(e)))?;
+        hist_mgr
+            .record_operation(&crate::history::NewHistoryEntry {
+                operation_id: uuid::Uuid::new_v4().to_string(),
+                operation_type: "ReflectAsCopy".to_string(),
+                display_name: staged.display_name.clone(),
+                original_path: Some(staged.original_snapshot.canonical_path.clone()),
+                staged_path: Some(target_copy_path.to_string_lossy().to_string()),
+                inode: None,
+                status: "Success".to_string(),
+                can_undo: false,
+                details: Some(details),
+            })
+            .map_err(|e| WorkspaceError::Io(std::io::Error::other(e)))?;
 
         Ok((staged.clone(), target_copy_path))
     }
@@ -608,12 +654,25 @@ impl WorkspaceManager {
             if !orig_path.exists() {
                 item.status = StageStatus::Conflict;
                 let _ = hist_mgr.save_session_item(&item);
-            } else if let Err(PolicyError::ConflictDetected(_)) =
-                OperationPolicy::verify_conflict(&item.original_snapshot, true)
-            {
-                // External modification detected! Mark as Conflict per user decision
-                item.status = StageStatus::Conflict;
-                let _ = hist_mgr.save_session_item(&item);
+            } else {
+                match OperationPolicy::verify_conflict(&item.original_snapshot, true) {
+                    Ok(_) => {}
+                    Err(PolicyError::ConflictDetected(_)) => {
+                        // External modification detected! Mark as Conflict per user decision
+                        item.status = StageStatus::Conflict;
+                        let _ = hist_mgr.save_session_item(&item);
+                    }
+                    Err(e) => {
+                        // Permission denied or IO error: do not assume Clean! Mark as Conflict for safety
+                        eprintln!(
+                            "Warning: Error verifying conflict during session restore for '{}': {}",
+                            orig_path.display(),
+                            e
+                        );
+                        item.status = StageStatus::Conflict;
+                        let _ = hist_mgr.save_session_item(&item);
+                    }
+                }
             }
 
             map.insert(item.stage_id.clone(), item.clone());
@@ -1050,6 +1109,37 @@ mod tests {
 
         assert_eq!(copy_path_2, test_dir.join("document.edit.1.pdf"));
         assert_eq!(fs::read(&copy_path_2).unwrap(), b"Second Edit Deliverable");
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_unstage_removes_physical_file_and_session() {
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_unstage_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("to_unstage.txt");
+        fs::write(&orig_file, b"Unstage content").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        let staged_copy_path = PathBuf::from(&staged.staged_path);
+        assert!(staged_copy_path.exists());
+
+        // Unstage file
+        mgr.unstage_file(&staged.stage_id)
+            .expect("Unstage should succeed");
+
+        // Staged physical file must be deleted from disk
+        assert!(!staged_copy_path.exists());
+
+        // Must be removed from active memory
+        assert!(mgr.get_staged(&staged.stage_id).is_err());
+
+        // Original file must remain untouched
+        assert!(orig_file.exists());
+        assert_eq!(fs::read(&orig_file).unwrap(), b"Unstage content");
 
         let _ = fs::remove_dir_all(&test_dir);
     }

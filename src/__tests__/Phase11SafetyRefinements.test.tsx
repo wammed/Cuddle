@@ -258,6 +258,7 @@ describe("Phase 11: Safety, Conflict Resolution & Recovery Refinements", () => {
         />
       );
 
+      await screen.findByDisplayValue("/home/susie/.local/share/Cuddle/backups/backup_20261029_090000.tar.gz");
       const backupBtn = await screen.findByText("アーカイブ保存して終了");
       fireEvent.click(backupBtn);
 

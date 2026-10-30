@@ -190,8 +190,8 @@ mod tests {
         let orig = temp_dir.join("bin1.dat");
         let staged = temp_dir.join("bin2.dat");
 
-        fs::write(&orig, &[0x00, 0x01, 0x02, 0x03]).unwrap();
-        fs::write(&staged, &[0x00, 0x01, 0x02, 0x99]).unwrap();
+        fs::write(&orig, [0x00, 0x01, 0x02, 0x03]).unwrap();
+        fs::write(&staged, [0x00, 0x01, 0x02, 0x99]).unwrap();
 
         let diff = compute_file_diff("test-stage", &orig, &staged).unwrap();
 

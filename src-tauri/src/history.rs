@@ -547,10 +547,8 @@ impl HistoryManager {
             .map_err(|e| format!("Failed to query repair items: {}", e))?;
 
         let mut items = Vec::new();
-        for r in rows {
-            if let Ok(item) = r {
-                items.push(item);
-            }
+        for item in rows.flatten() {
+            items.push(item);
         }
         Ok(items)
     }

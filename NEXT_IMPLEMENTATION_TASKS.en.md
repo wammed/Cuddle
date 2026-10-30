@@ -385,7 +385,7 @@ Evaluated robustness, scale, and performance characteristics, eliminated over-en
 
 * **Architecture & Strategy:**
   * Re-evaluated the speculative 4-table model (`batches`, `batch_operations`, `recovery_checkpoints`, `batch_artifacts`).
-  * Endorsed existing SQLite WAL `session_items`, `operation_history`, `index_repair_queue`, and `BatchJournalManager` (two-phase parking, atomic rollbacks, selective undo) as superior in reliability and simplicity with zero data loss on unexpected exits.
+  * Endorsed existing SQLite WAL `session_items`, `operation_history`, `index_repair_queue`, and `BatchJournalManager` (two-phase parking, atomic rollbacks, selective undo) as superior in reliability and simplicity, demonstrating robust data protection and recovery within the tested fault-injection and unexpected exit scenarios.
   * Formally solidified current schema as the master architectural specification.
 
 #### [Task 5-1] Alignment between Settings Menu & config.toml: **Done & Verified**

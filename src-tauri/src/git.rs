@@ -94,6 +94,7 @@ pub fn get_git_status(path_base64: String) -> Result<GitStatusDto, AppErrorDto> 
     if !dir.exists() {
         return Ok(GitStatusDto {
             error_message: Some(format!("Directory does not exist: {}", dir.display())),
+            is_clean: false,
             ..Default::default()
         });
     }
@@ -109,11 +110,16 @@ pub fn get_git_status(path_base64: String) -> Result<GitStatusDto, AppErrorDto> 
         Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_string(),
         Ok(_) => {
             // Not a git repository
-            return Ok(GitStatusDto::default());
+            return Ok(GitStatusDto {
+                is_repo: false,
+                is_clean: false,
+                ..Default::default()
+            });
         }
         Err(err) => {
             return Ok(GitStatusDto {
                 error_message: Some(format!("Failed to invoke git: {err}")),
+                is_clean: false,
                 ..Default::default()
             });
         }
@@ -125,20 +131,29 @@ pub fn get_git_status(path_base64: String) -> Result<GitStatusDto, AppErrorDto> 
         ..GitStatusDto::default()
     };
 
-    // 2. Query git status using porcelain v2 with branch information
+    // 2. Query git status using porcelain v2 with branch information and NUL termination (-z)
     let status_output = Command::new("git")
         .arg("-C")
         .arg(&repo_root)
-        .args(["status", "--porcelain=v2", "--branch"])
+        .args(["status", "--porcelain=v2", "-z", "--branch"])
         .output();
 
-    if let Ok(out) = status_output {
-        if out.status.success() {
-            let output_str = String::from_utf8_lossy(&out.stdout);
-            parse_porcelain_v2(&output_str, &mut status_dto);
-        } else {
-            status_dto.error_message =
-                Some(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    match status_output {
+        Ok(out) => {
+            if out.status.success() {
+                let output_str = String::from_utf8_lossy(&out.stdout);
+                parse_porcelain_v2(&output_str, &mut status_dto);
+            } else {
+                let stderr_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                status_dto.error_message = Some(if stderr_msg.is_empty() {
+                    format!("git status failed with exit code {:?}", out.status.code())
+                } else {
+                    stderr_msg
+                });
+            }
+        }
+        Err(err) => {
+            status_dto.error_message = Some(format!("Failed to invoke git status: {err}"));
         }
     }
 
@@ -162,7 +177,9 @@ pub fn get_git_status(path_base64: String) -> Result<GitStatusDto, AppErrorDto> 
         }
     }
 
-    status_dto.is_clean = status_dto.staged_files.is_empty()
+    // is_clean is ONLY true if there were no errors AND all change lists are empty
+    status_dto.is_clean = status_dto.error_message.is_none()
+        && status_dto.staged_files.is_empty()
         && status_dto.unstaged_files.is_empty()
         && status_dto.untracked_files.is_empty()
         && status_dto.conflict_files.is_empty();
@@ -184,9 +201,22 @@ fn map_status_label(code: char) -> &'static str {
     }
 }
 
-/// Parse `git status --porcelain=v2 --branch` output
+/// Parse `git status --porcelain=v2 -z --branch` output.
+/// Supports both NUL-separated (-z) streams and newline-separated fallback.
 pub fn parse_porcelain_v2(output: &str, status: &mut GitStatusDto) {
-    for line in output.lines() {
+    let records: Vec<&str> = if output.contains('\0') {
+        output.split('\0').collect()
+    } else {
+        output.lines().collect()
+    };
+
+    let mut it = records.into_iter().peekable();
+    while let Some(raw_record) = it.next() {
+        let line = raw_record.trim_end_matches('\r').trim();
+        if line.is_empty() {
+            continue;
+        }
+
         if line.starts_with("# branch.head ") {
             let branch = line.trim_start_matches("# branch.head ").trim();
             status.branch = Some(branch.to_string());
@@ -204,10 +234,10 @@ pub fn parse_porcelain_v2(output: &str, status: &mut GitStatusDto) {
             }
         } else if line.starts_with("1 ") {
             // Ordinary change entry: 1 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <path>
-            let tokens: Vec<&str> = line.split_whitespace().collect();
-            if tokens.len() >= 9 {
-                let xy = tokens[1];
-                let path = tokens[8..].join(" ");
+            let parts: Vec<&str> = line.splitn(9, ' ').collect();
+            if parts.len() == 9 {
+                let xy = parts[1];
+                let path = parts[8].to_string();
                 let x_staged = xy.chars().next().unwrap_or('.');
                 let y_unstaged = xy.chars().nth(1).unwrap_or('.');
 
@@ -229,16 +259,21 @@ pub fn parse_porcelain_v2(output: &str, status: &mut GitStatusDto) {
                 }
             }
         } else if line.starts_with("2 ") {
-            // Renamed/copied entry: 2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <Xscore> <path><sep><origPath>
-            let tokens: Vec<&str> = line.split_whitespace().collect();
-            if tokens.len() >= 10 {
-                let xy = tokens[1];
-                let rest = tokens[9..].join(" ");
+            // Renamed/copied entry:
+            // 2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <Xscore> <path>
+            // With -z, next entry is <origPath>. With tab, path\torigPath
+            let parts: Vec<&str> = line.splitn(10, ' ').collect();
+            if parts.len() == 10 {
+                let xy = parts[1];
+                let rest = parts[9];
                 let (path, orig_path) = if let Some((p, o)) = rest.split_once('\t') {
                     (p.to_string(), Some(o.to_string()))
+                } else if let Some(orig) = it.next() {
+                    (rest.to_string(), Some(orig.to_string()))
                 } else {
-                    (rest, None)
+                    (rest.to_string(), None)
                 };
+
                 let x_staged = xy.chars().next().unwrap_or('.');
                 let y_unstaged = xy.chars().nth(1).unwrap_or('.');
 
@@ -261,9 +296,9 @@ pub fn parse_porcelain_v2(output: &str, status: &mut GitStatusDto) {
             }
         } else if line.starts_with("u ") {
             // Unmerged / conflict entry: u <XY> ... <path>
-            let tokens: Vec<&str> = line.split_whitespace().collect();
-            if tokens.len() >= 11 {
-                let path = tokens[10..].join(" ");
+            let parts: Vec<&str> = line.splitn(11, ' ').collect();
+            if parts.len() == 11 {
+                let path = parts[10].to_string();
                 status.conflict_files.push(GitFileItemDto {
                     path,
                     status_code: "U".to_string(),
@@ -274,7 +309,7 @@ pub fn parse_porcelain_v2(output: &str, status: &mut GitStatusDto) {
         } else if let Some(path) = line.strip_prefix("? ") {
             // Untracked entry: ? <path>
             status.untracked_files.push(GitFileItemDto {
-                path: path.trim().to_string(),
+                path: path.to_string(),
                 status_code: "?".to_string(),
                 status_label: "Untracked".to_string(),
                 original_path: None,
@@ -336,6 +371,50 @@ u UU N... 100644 100644 100644 100644 5555 6666 7777 conflict.txt
 
         assert_eq!(status.conflict_files.len(), 1);
         assert_eq!(status.conflict_files[0].path, "conflict.txt");
+    }
+
+    #[test]
+    fn test_parse_porcelain_v2_with_nul_separation_and_rename_with_spaces_and_japanese() {
+        // Construct simulated `git status --porcelain=v2 -z --branch` output
+        let mut output = String::new();
+        output.push_str("# branch.head main\0");
+        output.push_str("# branch.upstream origin/main\0");
+        output.push_str("# branch.ab +1 -0\0");
+        // Ordinary change with spaces and Japanese filename
+        output.push_str("1 M. N... 100644 100644 100644 1111 2222 資料/重要な 仕様書 2026.docx\0");
+        // Renamed file with spaces: 2 <XY> ... <new_path>\0<old_path>\0
+        output.push_str("2 R. N... 100644 100644 100644 3333 4444 R100 新しい ドキュメント.pdf\0古い ドキュメント.pdf\0");
+        // Untracked with tab/space
+        output.push_str("? memo draft.txt\0");
+
+        let mut status = GitStatusDto::default();
+        parse_porcelain_v2(&output, &mut status);
+
+        assert_eq!(status.branch.as_deref(), Some("main"));
+        assert_eq!(status.ahead, 1);
+        assert_eq!(status.behind, 0);
+
+        assert_eq!(status.staged_files.len(), 2);
+        assert_eq!(status.staged_files[0].path, "資料/重要な 仕様書 2026.docx");
+        assert_eq!(status.staged_files[0].status_label, "Modified");
+
+        // Verify rename target and original path
+        assert_eq!(status.staged_files[1].path, "新しい ドキュメント.pdf");
+        assert_eq!(
+            status.staged_files[1].original_path.as_deref(),
+            Some("古い ドキュメント.pdf")
+        );
+        assert_eq!(status.staged_files[1].status_label, "Renamed");
+
+        assert_eq!(status.untracked_files.len(), 1);
+        assert_eq!(status.untracked_files[0].path, "memo draft.txt");
+    }
+
+    #[test]
+    fn test_git_status_invalid_path_not_reported_as_clean() {
+        let res = get_git_status("/path/that/does/not/exist/ever_12345".to_string()).unwrap();
+        assert!(!res.is_clean, "Invalid directory must NOT be clean");
+        assert!(res.error_message.is_some());
     }
 
     #[test]

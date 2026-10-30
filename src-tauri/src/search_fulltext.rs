@@ -206,9 +206,54 @@ impl CuddleFulltextEngine {
         }
     }
 
+    /// Safely rotates existing incompatible index into a backup directory before recreating fresh index.
+    /// Rolls back the backup if index creation fails.
+    fn backup_and_recreate(path: &Path, schema: Schema) -> Result<Index, FulltextError> {
+        let parent = path.parent().unwrap_or(path);
+        let backup_dir = parent.join(format!(
+            ".index_backup_{}_{}",
+            chrono::Local::now().format("%Y%m%d_%H%M%S"),
+            uuid::Uuid::new_v4()
+        ));
+
+        let has_backup = if path.exists() {
+            match std::fs::rename(path, &backup_dir) {
+                Ok(_) => true,
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Failed to rotate stale index dir {}: {}",
+                        path.display(),
+                        e
+                    );
+                    Self::clean_index_dir(path);
+                    false
+                }
+            }
+        } else {
+            false
+        };
+
+        std::fs::create_dir_all(path)?;
+        match Index::create_in_dir(path, schema) {
+            Ok(idx) => {
+                if has_backup {
+                    let _ = std::fs::remove_dir_all(&backup_dir);
+                }
+                Ok(idx)
+            }
+            Err(e) => {
+                if has_backup {
+                    let _ = std::fs::remove_dir_all(path);
+                    let _ = std::fs::rename(&backup_dir, path);
+                }
+                Err(FulltextError::Tantivy(e))
+            }
+        }
+    }
+
     /// Opens or creates a persistent on-disk full-text index in the given path.
     /// If an existing index schema does not match (e.g. across version upgrades),
-    /// the stale index is automatically re-initialized with the current schema.
+    /// the stale index is safely backed up and re-initialized with the current schema.
     pub fn new_in_dir(path: &Path) -> Result<Self, FulltextError> {
         if !path.exists() {
             std::fs::create_dir_all(path)?;
@@ -220,19 +265,17 @@ impl CuddleFulltextEngine {
             Ok(idx) => idx,
             Err(TantivyError::SchemaError(err_msg)) => {
                 eprintln!(
-                    "[Fulltext] Tantivy schema mismatch ({}), auto-recreating index at {:?}",
+                    "[Fulltext] Tantivy schema mismatch ({}), safely backing up and recreating index at {:?}",
                     err_msg, path
                 );
-                Self::clean_index_dir(path);
-                Index::create_in_dir(path, schema)?
+                Self::backup_and_recreate(path, schema)?
             }
             Err(TantivyError::IncompatibleIndex(incompat)) => {
                 eprintln!(
-                    "[Fulltext] Tantivy incompatible index ({:?}), auto-recreating index at {:?}",
+                    "[Fulltext] Tantivy incompatible index ({:?}), safely backing up and recreating index at {:?}",
                     incompat, path
                 );
-                Self::clean_index_dir(path);
-                Index::create_in_dir(path, schema)?
+                Self::backup_and_recreate(path, schema)?
             }
             Err(e) => return Err(FulltextError::Tantivy(e)),
         };

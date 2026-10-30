@@ -386,7 +386,7 @@
 * **設計書参照：** 第 9.3 項, 第 10.1 項
 * **評価・決定内容：**
   * 当初の 4 テーブル案（`batches`, `batch_operations`, `recovery_checkpoints`, `batch_artifacts`）を再評価。
-  * 現行の SQLite WAL `session_items`（未反映追跡）、`operation_history`（個別取消・履歴）、`index_repair_queue`（修復キュー）、および `BatchJournalManager`（2フェーズ中間退避・スワップ衝突防止・選択的 UNDO）の連携により、プロセス強制終了や異常終了時でも 100% のデータ保護と復元能力が実証されていることを確認。
+  * 現行の SQLite WAL `session_items`（未反映追跡）、`operation_history`（個別取消・履歴）、`index_repair_queue`（修復キュー）、および `BatchJournalManager`（2フェーズ中間退避・スワップ衝突防止・選択的 UNDO）の連携により、検証対象の障害注入およびプロセス強制終了テストの範囲内において高いデータ保護と復元能力が実証されていることを確認。
   * 過剰なテーブル細分化によるオーバーヘッドを回避し、現行の堅牢なスキーマを正式仕様として追認・固定。
 
 #### 【タスク 5-1】TOML 4セクション集約構成と設定メニュー完全整合: **完了・検証済**

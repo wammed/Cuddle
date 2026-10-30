@@ -50,19 +50,14 @@ impl Default for AppConfig {
 }
 
 /// Execution input mode for pipeline tasks (Design Section 8.1, Task 4-1).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS, Default)]
 #[ts(export, export_to = "../../src/types/")]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionInputMode {
+    #[default]
     PerFile,
     BatchList,
     StandardInput,
-}
-
-impl Default for ExecutionInputMode {
-    fn default() -> Self {
-        Self::PerFile
-    }
 }
 
 /// User-defined pipeline definition following Design Section 8.3 mandatory safe flow.
@@ -132,20 +127,15 @@ pub fn get_default_custom_pipeline_templates() -> Vec<CustomPipelineDefDto> {
 
 /// Safety confirmation level for operations and original reflections (Task 3-1).
 /// Note: "brief" (skip confirmation) is intentionally omitted to uphold Zero Data Loss.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS, Default)]
 #[ts(export, export_to = "../../src/types/")]
 #[serde(rename_all = "snake_case")]
 pub enum ConfirmationLevel {
     /// Standard confirmation dialogs with summary validation
+    #[default]
     Standard,
     /// Strict confirmation with full SHA-256 pre-verification and mandatory review
     Strict,
-}
-
-impl Default for ConfirmationLevel {
-    fn default() -> Self {
-        Self::Standard
-    }
 }
 
 /// General application preferences.

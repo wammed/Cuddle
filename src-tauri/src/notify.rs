@@ -4,20 +4,15 @@ use std::process::Command;
 use ts_rs::TS;
 
 /// Severity / urgency level of a desktop notification (Task 2-3).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS, Default)]
 #[ts(export, export_to = "../../src/types/")]
 #[serde(rename_all = "snake_case")]
 pub enum NotificationLevel {
+    #[default]
     Info,
     Success,
     Warning,
     Error,
-}
-
-impl Default for NotificationLevel {
-    fn default() -> Self {
-        Self::Info
-    }
 }
 
 /// Dispatches a native desktop notification conforming to the FreeDesktop Notifications Specification.

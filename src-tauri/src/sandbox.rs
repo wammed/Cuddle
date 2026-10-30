@@ -15,6 +15,8 @@ pub enum SandboxError {
     Ruleset(#[from] RulesetError),
     #[error("Failed to open path descriptor for {0}: {1}")]
     PathFd(PathBuf, String),
+    #[error("Mandatory path for Landlock does not exist: {0}")]
+    MandatoryPathNotFound(PathBuf),
     #[error("Process execution failed: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -106,26 +108,49 @@ impl LandlockSandbox {
             .create()
             .map_err(SandboxError::Ruleset)?;
 
-        // Apply read-only rules
+        // Apply read-only rules (optional paths log warnings if inaccessible)
         for p in &self.read_paths {
             if p.exists() {
-                if let Ok(fd) = PathFd::new(p) {
-                    ruleset = ruleset
-                        .add_rule(PathBeneath::new(fd, access_read))
-                        .map_err(SandboxError::Ruleset)?;
+                match PathFd::new(p) {
+                    Ok(fd) => {
+                        ruleset = ruleset
+                            .add_rule(PathBeneath::new(fd, access_read))
+                            .map_err(SandboxError::Ruleset)?;
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: Failed to open read path for Landlock '{}': {}",
+                            p.display(),
+                            e
+                        );
+                    }
                 }
+            } else {
+                eprintln!(
+                    "Warning: Optional read path does not exist for Landlock: '{}'",
+                    p.display()
+                );
             }
         }
 
-        // Apply read/write rules
+        // Apply read/write rules (write paths are MANDATORY for execution)
         for p in &self.write_paths {
-            if p.exists() {
-                if let Ok(fd) = PathFd::new(p) {
-                    ruleset = ruleset
-                        .add_rule(PathBeneath::new(fd, access_all))
-                        .map_err(SandboxError::Ruleset)?;
-                }
+            if !p.exists() {
+                return Err(SandboxError::MandatoryPathNotFound(p.clone()));
             }
+            let fd = PathFd::new(p).map_err(|e| {
+                SandboxError::PathFd(
+                    p.clone(),
+                    format!(
+                        "Failed to open mandatory write path '{}': {}",
+                        p.display(),
+                        e
+                    ),
+                )
+            })?;
+            ruleset = ruleset
+                .add_rule(PathBeneath::new(fd, access_all))
+                .map_err(SandboxError::Ruleset)?;
         }
 
         let status = ruleset.restrict_self().map_err(SandboxError::Ruleset)?;

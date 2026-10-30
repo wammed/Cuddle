@@ -18,8 +18,19 @@ export default defineConfig(() => ({
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   clearScreen: false,
   build: {
-    // Desktop apps load assets from local disk/memory; threshold adjusted to 1500 kB to suppress web-oriented warnings
-    chunkSizeWarningLimit: 1500,
+    chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/lucide-react")) {
+            return "vendor-icons";
+          }
+          if (id.includes("node_modules/react") || id.includes("node_modules/react-dom")) {
+            return "vendor-react";
+          }
+        },
+      },
+    },
   },
   server: {
     port: 1420,

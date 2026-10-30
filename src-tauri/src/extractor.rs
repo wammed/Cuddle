@@ -299,14 +299,24 @@ pub fn extract_markdown_text(markdown_input: &str) -> String {
     out.trim().to_string()
 }
 
-/// Extracts clean text from HTML, stripping scripts, styles, and tags, decoding common HTML entities (Task 1-4).
+/// Extracts prose text from HTML for search indexing purposes (Task 1-4).
+///
+/// NOTE: This function uses a fast heuristic regex pipeline designed specifically for
+/// indexing and preview extraction. It safely removes `<script>`, `<style>`, `<noscript>`,
+/// `<svg>`, comments (`<!-- ... -->`), and generic tags while decoding common HTML entities.
+/// It is NOT a full DOM parser and does not guarantee strict HTML syntax validation. If deep
+/// DOM structural manipulation is required in the future, integrate a dedicated HTML parser
+/// such as `scraper` or `html5ever`.
 pub fn extract_html_text(html_input: &str) -> String {
-    let re_blocks = regex::Regex::new(r"(?is)<script[^>]*>.*?</script>|<style[^>]*>.*?</style>|<noscript[^>]*>.*?</noscript>|<svg[^>]*>.*?</svg>").unwrap();
+    // 1. Strip comments, scripts, styles, noscript, and SVG blocks
+    let re_blocks = regex::Regex::new(r"(?is)<!--.*?-->|<script[^>]*>.*?</script>|<style[^>]*>.*?</style>|<noscript[^>]*>.*?</noscript>|<svg[^>]*>.*?</svg>").unwrap();
     let stripped_blocks = re_blocks.replace_all(html_input, " ");
 
+    // 2. Strip standard HTML tags
     let re_tags = regex::Regex::new(r"<[^>]+>").unwrap();
     let text_with_entities = re_tags.replace_all(&stripped_blocks, " ");
 
+    // 3. Decode common HTML entities
     let decoded = text_with_entities
         .replace("&nbsp;", " ")
         .replace("&amp;", "&")
@@ -458,10 +468,8 @@ fn parse_docx_xml(xml_bytes: &[u8]) -> Result<String, quick_xml::Error> {
                 let name = e.name();
                 if name.as_ref() == b"w:t" {
                     in_text = false;
-                } else if name.as_ref() == b"w:p" {
-                    if !out.ends_with('\n') {
-                        out.push('\n');
-                    }
+                } else if name.as_ref() == b"w:p" && !out.ends_with('\n') {
+                    out.push('\n');
                 }
             }
             Ok(Event::Empty(e)) => {
@@ -514,10 +522,8 @@ fn parse_xlsx_shared_strings(xml_bytes: &[u8]) -> Result<String, quick_xml::Erro
                 if name.as_ref() == b"t" {
                     in_text = false;
                     out.push(' ');
-                } else if name.as_ref() == b"si" {
-                    if !out.ends_with('\n') {
-                        out.push('\n');
-                    }
+                } else if name.as_ref() == b"si" && !out.ends_with('\n') {
+                    out.push('\n');
                 }
             }
             Ok(Event::Text(e)) => {

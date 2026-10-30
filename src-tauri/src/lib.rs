@@ -222,7 +222,7 @@ async fn run_index_operation(
 
 #[tauri::command]
 async fn process_index_repair_queue() -> Result<history::IndexRepairResultDto, String> {
-    tokio::task::spawn_blocking(|| search_fulltext::process_index_repair_queue())
+    tokio::task::spawn_blocking(search_fulltext::process_index_repair_queue)
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
@@ -1073,7 +1073,7 @@ mod tests {
             }],
             timestamp::TimestampModeSpec::Absolute(past_time_str.to_string()),
         );
-        let time_res = timestamp::execute_timestamp_plan(time_plan, Some(&hist_mgr));
+        let time_res = timestamp::execute_timestamp_plan(time_plan, Some(hist_mgr));
         assert!(time_res.success);
 
         let list_time = hist_mgr.list_history(5).unwrap();

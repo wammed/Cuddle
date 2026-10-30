@@ -494,6 +494,49 @@ impl SandboxedExecutor {
             }
         }
 
+        let stdout_handle = child.stdout.take();
+        let stderr_handle = child.stderr.take();
+
+        let max_log_bytes = 10 * 1024 * 1024; // 10 MiB safety cap
+
+        // Concurrently drain stdout and stderr in background threads to avoid OS pipe buffer deadlock
+        let stdout_thread = std::thread::spawn(move || {
+            let mut captured = Vec::new();
+            if let Some(mut reader) = stdout_handle {
+                use std::io::Read;
+                let mut buf = [0u8; 8192];
+                while let Ok(n) = reader.read(&mut buf) {
+                    if n == 0 {
+                        break;
+                    }
+                    if captured.len() < max_log_bytes {
+                        let take = n.min(max_log_bytes - captured.len());
+                        captured.extend_from_slice(&buf[..take]);
+                    }
+                    // Continue draining any further output so the child process is never blocked on write
+                }
+            }
+            captured
+        });
+
+        let stderr_thread = std::thread::spawn(move || {
+            let mut captured = Vec::new();
+            if let Some(mut reader) = stderr_handle {
+                use std::io::Read;
+                let mut buf = [0u8; 8192];
+                while let Ok(n) = reader.read(&mut buf) {
+                    if n == 0 {
+                        break;
+                    }
+                    if captured.len() < max_log_bytes {
+                        let take = n.min(max_log_bytes - captured.len());
+                        captured.extend_from_slice(&buf[..take]);
+                    }
+                }
+            }
+            captured
+        });
+
         // Monitor process with timeout and cancellation check
         loop {
             // Check cancellation request
@@ -501,6 +544,8 @@ impl SandboxedExecutor {
                 if flag.load(Ordering::SeqCst) {
                     let _ = child.kill();
                     let _ = child.wait();
+                    let _ = stdout_thread.join();
+                    let _ = stderr_thread.join();
                     let duration_ms = start_time.elapsed().as_millis() as u64;
                     return Ok(CommandExecutionResultDto {
                         success: false,
@@ -517,20 +562,11 @@ impl SandboxedExecutor {
             match child.try_wait() {
                 Ok(Some(status)) => {
                     let duration_ms = start_time.elapsed().as_millis() as u64;
-                    let output = child.wait_with_output().map_err(|e| {
-                        AppErrorDto::new(
-                            "ERR_PROCESS_IO",
-                            format!("Failed to read process output: {}", e),
-                        )
-                    })?;
+                    let stdout_bytes = stdout_thread.join().unwrap_or_default();
+                    let stderr_bytes = stderr_thread.join().unwrap_or_default();
 
-                    // Truncate to 10 MiB safety limit
-                    let max_bytes = 10 * 1024 * 1024;
-                    let stdout_truncated = &output.stdout[..output.stdout.len().min(max_bytes)];
-                    let stderr_truncated = &output.stderr[..output.stderr.len().min(max_bytes)];
-
-                    let stdout = String::from_utf8_lossy(stdout_truncated).to_string();
-                    let stderr = String::from_utf8_lossy(stderr_truncated).to_string();
+                    let stdout = String::from_utf8_lossy(&stdout_bytes).to_string();
+                    let stderr = String::from_utf8_lossy(&stderr_bytes).to_string();
 
                     return Ok(CommandExecutionResultDto {
                         success: status.success(),
@@ -550,6 +586,8 @@ impl SandboxedExecutor {
                     if start_time.elapsed() >= timeout_duration {
                         let _ = child.kill();
                         let _ = child.wait();
+                        let _ = stdout_thread.join();
+                        let _ = stderr_thread.join();
                         break;
                     }
                     std::thread::sleep(Duration::from_millis(50));
@@ -557,6 +595,8 @@ impl SandboxedExecutor {
                 Err(e) => {
                     let _ = child.kill();
                     let _ = child.wait();
+                    let _ = stdout_thread.join();
+                    let _ = stderr_thread.join();
                     return Err(AppErrorDto::new("ERR_PROCESS_WAIT", e.to_string()));
                 }
             }
@@ -3067,6 +3107,42 @@ mod tests {
             .contains("[stdin stream input]"));
 
         // Clean up
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_sandboxed_executor_large_output_does_not_deadlock() {
+        // Creates a 256 KiB data file (far exceeding OS 64 KiB pipe buffer)
+        let temp_dir =
+            std::env::temp_dir().join(format!("cuddle_large_pipe_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        let large_file = temp_dir.join("large.dat");
+        let chunk = vec![b'X'; 256 * 1024]; // 256 KiB
+        std::fs::write(&large_file, &chunk).unwrap();
+
+        let options = CommandExecutionOptionsDto {
+            working_dir: None,
+            timeout_secs: Some(10),
+            max_memory_bytes: None,
+            allowed_read_paths: vec![large_file.to_string_lossy().to_string()],
+            allowed_write_paths: vec![],
+            stdin_input: None,
+        };
+
+        // Execute `cat large.dat` which writes 256 KiB to stdout
+        let result = SandboxedExecutor::execute_with_cancellation(
+            "cat",
+            &[large_file.to_string_lossy().to_string()],
+            &options,
+            None,
+        )
+        .unwrap();
+
+        assert!(result.success);
+        assert!(!result.timed_out);
+        assert_eq!(result.stdout.len(), 256 * 1024);
+
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

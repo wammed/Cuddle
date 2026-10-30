@@ -307,7 +307,15 @@ export function App() {
   const handleStageFile = async (item: FileItem) => {
     try {
       const staged = await invoke<StagedItemDto>("stage_file", { pathBase64: item.raw_base64 });
-      setStagedItems((prev) => [...prev.filter((s) => s.stage_id !== staged.stage_id), staged]);
+      setStagedItems((prev) => [
+        ...prev.filter(
+          (s) =>
+            s.stage_id !== staged.stage_id &&
+            s.original_item_id !== item.item_id &&
+            s.raw_base64 !== item.raw_base64
+        ),
+        staged,
+      ]);
 
       const stagedAsFileItem: FileItem = {
         ...item,
@@ -320,7 +328,7 @@ export function App() {
           (f) =>
             f.item_id !== staged.stage_id &&
             f.item_id !== item.item_id &&
-            f.display_name !== staged.display_name
+            f.raw_base64 !== item.raw_base64
         );
         return [...filtered, stagedAsFileItem];
       });
@@ -349,8 +357,7 @@ export function App() {
       const target = stagedItems.find(
         (s) =>
           s.stage_id === stageId ||
-          s.original_item_id === stageId ||
-          s.display_name === stageId
+          s.original_item_id === stageId
       );
       const effectiveStageId = target ? target.stage_id : stageId;
 
@@ -359,8 +366,7 @@ export function App() {
         prev.filter(
           (f) =>
             f.item_id !== effectiveStageId &&
-            f.item_id !== stageId &&
-            (!target || (f.display_name !== target.display_name && f.raw_base64 !== target.staged_raw_base64))
+            f.item_id !== stageId
         )
       );
 

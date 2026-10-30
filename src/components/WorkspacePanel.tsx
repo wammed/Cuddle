@@ -82,8 +82,7 @@ export function WorkspacePanel({
         s.staged_raw_base64 === item.raw_base64 ||
         (item.inode > 0n &&
           s.original_snapshot.inode === item.inode &&
-          s.original_snapshot.dev === item.dev) ||
-        s.display_name === item.display_name
+          s.original_snapshot.dev === item.dev)
     );
     const targetStageId = match ? match.stage_id : item.item_id;
     onUnstageItem(targetStageId);

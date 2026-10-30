@@ -260,7 +260,6 @@ impl WorkspaceManager {
                 if v.original_item_id == stage_id
                     || v.raw_base64 == stage_id
                     || v.staged_raw_base64 == stage_id
-                    || v.display_name == stage_id
                 {
                     Some(k.clone())
                 } else {

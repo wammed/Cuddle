@@ -257,5 +257,112 @@ describe("WorkspacePanel & Staging Operations (Phase 4.1)", () => {
     fireEvent.click(backupBtn);
     expect(handleOpenBackup).toHaveBeenCalledTimes(1);
   });
+
+  it("renders and selectively unstages multiple files with identical display_names from different directories", async () => {
+    const handleUnstageItem = vi.fn();
+    const duplicateNameFiles: FileItem[] = [
+      {
+        item_id: "stage-uuid-1",
+        raw_base64: "L2Rpcl9hL21lbW8udHh0",
+        display_name: "memo.txt",
+        parent_raw_base64: null,
+        is_dir: false,
+        is_symlink: false,
+        size: 100n,
+        mtime_ms: 1000n,
+        readonly: false,
+        inode: 111n,
+        dev: 1n,
+      },
+      {
+        item_id: "stage-uuid-2",
+        raw_base64: "L2Rpcl9iL21lbW8udHh0",
+        display_name: "memo.txt",
+        parent_raw_base64: null,
+        is_dir: false,
+        is_symlink: false,
+        size: 200n,
+        mtime_ms: 2000n,
+        readonly: false,
+        inode: 222n,
+        dev: 1n,
+      },
+    ];
+
+    const duplicateStagedItems: StagedItemDto[] = [
+      {
+        stage_id: "stage-uuid-1",
+        original_item_id: "orig-1",
+        raw_base64: "L2Rpcl9hL21lbW8udHh0",
+        display_name: "memo.txt",
+        staged_raw_base64: "c3RhZ2VkLTE=",
+        staged_path: "/tmp/stage1_memo.txt",
+        size: 100,
+        clone_method: "Reflink",
+        status: "Staged",
+        staged_at_ms: 1000,
+        original_snapshot: {
+          item_id: "orig-1",
+          raw_base64: "L2Rpcl9hL21lbW8udHh0",
+          display_name: "memo.txt",
+          canonical_path: "/dir_a/memo.txt",
+          inode: 111,
+          dev: 1,
+          size: 100,
+          mtime_ms: 1000,
+          sha256: null,
+        },
+      },
+      {
+        stage_id: "stage-uuid-2",
+        original_item_id: "orig-2",
+        raw_base64: "L2Rpcl9iL21lbW8udHh0",
+        display_name: "memo.txt",
+        staged_raw_base64: "c3RhZ2VkLTI=",
+        staged_path: "/tmp/stage2_memo.txt",
+        size: 200,
+        clone_method: "Reflink",
+        status: "Staged",
+        staged_at_ms: 2000,
+        original_snapshot: {
+          item_id: "orig-2",
+          raw_base64: "L2Rpcl9iL21lbW8udHh0",
+          display_name: "memo.txt",
+          canonical_path: "/dir_b/memo.txt",
+          inode: 222,
+          dev: 1,
+          size: 200,
+          mtime_ms: 2000,
+          sha256: null,
+        },
+      },
+    ];
+
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    render(
+      <WorkspacePanel
+        stagedFiles={duplicateNameFiles}
+        stagedItems={duplicateStagedItems}
+        selectedId={null}
+        canUndo={false}
+        onSelect={vi.fn()}
+        onClearWorkspace={vi.fn()}
+        onUnstageItem={handleUnstageItem}
+      />
+    );
+
+    const fileElements = screen.getAllByText("memo.txt");
+    expect(fileElements.length).toBe(2);
+
+    const unstageButtons = screen.getAllByTitle("作業解除");
+    expect(unstageButtons.length).toBe(2);
+
+    // Click unstage on second item
+    fireEvent.click(unstageButtons[1]);
+    expect(handleUnstageItem).toHaveBeenCalledWith("stage-uuid-2");
+  });
 });
 

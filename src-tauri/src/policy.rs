@@ -349,13 +349,23 @@ impl OperationPolicy {
         verify_sha256: bool,
     ) -> Result<(), PolicyError> {
         let path = decode_path_from_base64(&snapshot.raw_base64)?;
+        Self::verify_conflict_on_path(&path, snapshot, verify_sha256)
+    }
+
+    /// Verifies whether a specific file path matches the snapshot.
+    /// Useful for validating isolated quarantined or swapped copies during atomic operations.
+    pub fn verify_conflict_on_path(
+        path: &Path,
+        snapshot: &OriginalSnapshotDto,
+        verify_sha256: bool,
+    ) -> Result<(), PolicyError> {
         if !path.exists() {
             return Err(PolicyError::ConflictDetected(
                 "Original file was deleted externally".to_string(),
             ));
         }
 
-        let meta = std::fs::symlink_metadata(&path)?;
+        let meta = std::fs::symlink_metadata(path)?;
 
         // 1. Inode / Device match (prevent file replacement)
         if meta.ino() != snapshot.inode || meta.dev() != snapshot.dev {
@@ -393,7 +403,7 @@ impl OperationPolicy {
         // 4. Cryptographic SHA-256 match (when requested or snapshot has hash)
         if verify_sha256 {
             if let Some(expected_hash) = &snapshot.sha256 {
-                let current_hash = compute_file_sha256(&path)?;
+                let current_hash = compute_file_sha256(path)?;
                 if &current_hash != expected_hash {
                     return Err(PolicyError::ConflictDetected(format!(
                         "Original content hash changed: expected {}, found {}",

@@ -374,11 +374,86 @@ impl HistoryManager {
                 item.original_snapshot.dev as i64,
                 item.original_snapshot.size as i64,
                 item.original_snapshot.mtime_ms,
-                item.original_snapshot.sha256,
+                item.original_snapshot.sha256.as_deref().unwrap_or(""),
             ],
         )
         .map_err(|e| format!("Failed to save session item {}: {}", item.stage_id, e))?;
 
+        Ok(())
+    }
+
+    /// Saves or updates multiple staged items within an atomic SQLite transaction.
+    /// If any insert/update fails, the entire transaction is rolled back.
+    pub fn save_session_items_batch(&self, items: &[StagedItemDto]) -> Result<(), String> {
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Failed to begin transaction for session items: {}", e))?;
+
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT INTO session_items (
+                        stage_id, original_item_id, raw_base64, display_name,
+                        staged_raw_base64, staged_path, size, clone_method, status,
+                        staged_at_ms, canonical_path, inode, dev, orig_size, mtime_ms, sha256
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                    ON CONFLICT(stage_id) DO UPDATE SET
+                        display_name = excluded.display_name,
+                        staged_raw_base64 = excluded.staged_raw_base64,
+                        staged_path = excluded.staged_path,
+                        size = excluded.size,
+                        clone_method = excluded.clone_method,
+                        status = excluded.status,
+                        canonical_path = excluded.canonical_path,
+                        inode = excluded.inode,
+                        dev = excluded.dev,
+                        orig_size = excluded.orig_size,
+                        mtime_ms = excluded.mtime_ms,
+                        sha256 = excluded.sha256;",
+                )
+                .map_err(|e| format!("Failed to prepare batch statement: {}", e))?;
+
+            for item in items {
+                let clone_method_str = match item.clone_method {
+                    CloneMethod::Reflink => "Reflink",
+                    CloneMethod::StandardCopy => "StandardCopy",
+                };
+                let status_str = match item.status {
+                    StageStatus::Staged => "Staged",
+                    StageStatus::Modified => "Modified",
+                    StageStatus::Reflected => "Reflected",
+                    StageStatus::Conflict => "Conflict",
+                };
+
+                stmt.execute(params![
+                    item.stage_id,
+                    item.original_item_id,
+                    item.raw_base64,
+                    item.display_name,
+                    item.staged_raw_base64,
+                    item.staged_path,
+                    item.size as i64,
+                    clone_method_str,
+                    status_str,
+                    item.staged_at_ms,
+                    item.original_snapshot.canonical_path,
+                    item.original_snapshot.inode as i64,
+                    item.original_snapshot.dev as i64,
+                    item.original_snapshot.size as i64,
+                    item.original_snapshot.mtime_ms,
+                    item.original_snapshot.sha256.as_deref().unwrap_or(""),
+                ])
+                .map_err(|e| format!("Failed to save session item {}: {}", item.stage_id, e))?;
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| format!("Failed to commit batch session items: {}", e))?;
         Ok(())
     }
 
@@ -704,6 +779,64 @@ mod tests {
         // 3. Remove item
         mgr.remove_session_item("stage-persist-1").unwrap();
         assert_eq!(mgr.load_all_session_items().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_session_items_batch_persistence() {
+        let mgr = HistoryManager::new_in_memory().unwrap();
+
+        let item1 = StagedItemDto {
+            stage_id: "batch-1".to_string(),
+            original_item_id: "orig-1".to_string(),
+            raw_base64: "L3BhdGgx".to_string(),
+            display_name: "test1.txt".to_string(),
+            staged_raw_base64: "L3N0YWdlZDE=".to_string(),
+            staged_path: "/tmp/staged_test1.txt".to_string(),
+            size: 100,
+            clone_method: CloneMethod::StandardCopy,
+            status: StageStatus::Staged,
+            staged_at_ms: 1000,
+            original_snapshot: OriginalSnapshotDto {
+                item_id: "orig-1".to_string(),
+                raw_base64: "L3BhdGgx".to_string(),
+                display_name: "test1.txt".to_string(),
+                canonical_path: "/home/susie/test1.txt".to_string(),
+                inode: 1001,
+                dev: 1,
+                size: 100,
+                mtime_ms: 1000,
+                sha256: None,
+            },
+        };
+
+        let item2 = StagedItemDto {
+            stage_id: "batch-2".to_string(),
+            original_item_id: "orig-2".to_string(),
+            raw_base64: "L3BhdGgy".to_string(),
+            display_name: "test2.txt".to_string(),
+            staged_raw_base64: "L3N0YWdlZDI=".to_string(),
+            staged_path: "/tmp/staged_test2.txt".to_string(),
+            size: 200,
+            clone_method: CloneMethod::Reflink,
+            status: StageStatus::Modified,
+            staged_at_ms: 2000,
+            original_snapshot: OriginalSnapshotDto {
+                item_id: "orig-2".to_string(),
+                raw_base64: "L3BhdGgy".to_string(),
+                display_name: "test2.txt".to_string(),
+                canonical_path: "/home/susie/test2.txt".to_string(),
+                inode: 1002,
+                dev: 1,
+                size: 200,
+                mtime_ms: 2000,
+                sha256: None,
+            },
+        };
+
+        // Batch save
+        mgr.save_session_items_batch(&[item1, item2]).unwrap();
+        let list = mgr.load_all_session_items().unwrap();
+        assert_eq!(list.len(), 2);
     }
 
     #[test]

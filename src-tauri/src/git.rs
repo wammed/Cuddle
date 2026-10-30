@@ -203,6 +203,7 @@ fn map_status_label(code: char) -> &'static str {
 
 /// Parse `git status --porcelain=v2 -z --branch` output.
 /// Supports both NUL-separated (-z) streams and newline-separated fallback.
+/// Note: Preserves leading and trailing whitespace in file paths.
 pub fn parse_porcelain_v2(output: &str, status: &mut GitStatusDto) {
     let records: Vec<&str> = if output.contains('\0') {
         output.split('\0').collect()
@@ -212,32 +213,31 @@ pub fn parse_porcelain_v2(output: &str, status: &mut GitStatusDto) {
 
     let mut it = records.into_iter().peekable();
     while let Some(raw_record) = it.next() {
-        let line = raw_record.trim_end_matches('\r').trim();
+        // Strip trailing CR (\r) for Windows line endings without trimming path whitespace
+        let line = raw_record.trim_end_matches('\r');
         if line.is_empty() {
             continue;
         }
 
-        if line.starts_with("# branch.head ") {
-            let branch = line.trim_start_matches("# branch.head ").trim();
-            status.branch = Some(branch.to_string());
-        } else if line.starts_with("# branch.upstream ") {
-            let upstream = line.trim_start_matches("# branch.upstream ").trim();
-            status.upstream = Some(upstream.to_string());
-        } else if line.starts_with("# branch.ab ") {
-            let ab = line.trim_start_matches("# branch.ab ").trim();
-            for part in ab.split_whitespace() {
+        if let Some(rest) = line.strip_prefix("# branch.head ") {
+            status.branch = Some(rest.trim().to_string());
+        } else if let Some(rest) = line.strip_prefix("# branch.upstream ") {
+            status.upstream = Some(rest.trim().to_string());
+        } else if let Some(rest) = line.strip_prefix("# branch.ab ") {
+            for part in rest.split_whitespace() {
                 if let Some(ahead_str) = part.strip_prefix('+') {
                     status.ahead = ahead_str.parse().unwrap_or(0);
                 } else if let Some(behind_str) = part.strip_prefix('-') {
                     status.behind = behind_str.parse().unwrap_or(0);
                 }
             }
-        } else if line.starts_with("1 ") {
+        } else if let Some(rest) = line.strip_prefix("1 ") {
             // Ordinary change entry: 1 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <path>
-            let parts: Vec<&str> = line.splitn(9, ' ').collect();
-            if parts.len() == 9 {
-                let xy = parts[1];
-                let path = parts[8].to_string();
+            // 8 fields before path: splitn(8, ' ') leaves exactly the raw <path> in index 7
+            let parts: Vec<&str> = rest.splitn(8, ' ').collect();
+            if parts.len() == 8 {
+                let xy = parts[0];
+                let path = parts[7].to_string();
                 let x_staged = xy.chars().next().unwrap_or('.');
                 let y_unstaged = xy.chars().nth(1).unwrap_or('.');
 
@@ -258,20 +258,22 @@ pub fn parse_porcelain_v2(output: &str, status: &mut GitStatusDto) {
                     });
                 }
             }
-        } else if line.starts_with("2 ") {
+        } else if let Some(rest) = line.strip_prefix("2 ") {
             // Renamed/copied entry:
             // 2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <Xscore> <path>
+            // 9 fields before path: splitn(9, ' ') leaves <path> in index 8
             // With -z, next entry is <origPath>. With tab, path\torigPath
-            let parts: Vec<&str> = line.splitn(10, ' ').collect();
-            if parts.len() == 10 {
-                let xy = parts[1];
-                let rest = parts[9];
-                let (path, orig_path) = if let Some((p, o)) = rest.split_once('\t') {
+            let parts: Vec<&str> = rest.splitn(9, ' ').collect();
+            if parts.len() == 9 {
+                let xy = parts[0];
+                let path_field = parts[8];
+                let (path, orig_path) = if let Some((p, o)) = path_field.split_once('\t') {
                     (p.to_string(), Some(o.to_string()))
                 } else if let Some(orig) = it.next() {
-                    (rest.to_string(), Some(orig.to_string()))
+                    let clean_orig = orig.trim_end_matches('\r').to_string();
+                    (path_field.to_string(), Some(clean_orig))
                 } else {
-                    (rest.to_string(), None)
+                    (path_field.to_string(), None)
                 };
 
                 let x_staged = xy.chars().next().unwrap_or('.');
@@ -294,11 +296,12 @@ pub fn parse_porcelain_v2(output: &str, status: &mut GitStatusDto) {
                     });
                 }
             }
-        } else if line.starts_with("u ") {
+        } else if let Some(rest) = line.strip_prefix("u ") {
             // Unmerged / conflict entry: u <XY> ... <path>
-            let parts: Vec<&str> = line.splitn(11, ' ').collect();
-            if parts.len() == 11 {
-                let path = parts[10].to_string();
+            // 10 fields before path: splitn(10, ' ') leaves <path> in index 9
+            let parts: Vec<&str> = rest.splitn(10, ' ').collect();
+            if parts.len() == 10 {
+                let path = parts[9].to_string();
                 status.conflict_files.push(GitFileItemDto {
                     path,
                     status_code: "U".to_string(),
@@ -386,6 +389,9 @@ u UU N... 100644 100644 100644 100644 5555 6666 7777 conflict.txt
         output.push_str("2 R. N... 100644 100644 100644 3333 4444 R100 新しい ドキュメント.pdf\0古い ドキュメント.pdf\0");
         // Untracked with tab/space
         output.push_str("? memo draft.txt\0");
+        // Test paths with leading and trailing spaces
+        output.push_str("1 .M N... 100644 100644 100644 5555 6666   spaced filename.txt  \0");
+        output.push_str("2 R. N... 100644 100644 100644 7777 8888 R100  new leading space.txt \0 old trailing space.txt \0");
 
         let mut status = GitStatusDto::default();
         parse_porcelain_v2(&output, &mut status);
@@ -394,7 +400,7 @@ u UU N... 100644 100644 100644 100644 5555 6666 7777 conflict.txt
         assert_eq!(status.ahead, 1);
         assert_eq!(status.behind, 0);
 
-        assert_eq!(status.staged_files.len(), 2);
+        assert_eq!(status.staged_files.len(), 3);
         assert_eq!(status.staged_files[0].path, "資料/重要な 仕様書 2026.docx");
         assert_eq!(status.staged_files[0].status_label, "Modified");
 
@@ -405,6 +411,16 @@ u UU N... 100644 100644 100644 100644 5555 6666 7777 conflict.txt
             Some("古い ドキュメント.pdf")
         );
         assert_eq!(status.staged_files[1].status_label, "Renamed");
+
+        // Verify whitespace preservation in rename
+        assert_eq!(status.staged_files[2].path, " new leading space.txt ");
+        assert_eq!(
+            status.staged_files[2].original_path.as_deref(),
+            Some(" old trailing space.txt ")
+        );
+
+        assert_eq!(status.unstaged_files.len(), 1);
+        assert_eq!(status.unstaged_files[0].path, "  spaced filename.txt  ");
 
         assert_eq!(status.untracked_files.len(), 1);
         assert_eq!(status.untracked_files[0].path, "memo draft.txt");

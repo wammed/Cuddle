@@ -496,6 +496,11 @@ pub fn restore_workspace_backup(
         }
 
         if path_str == "manifest.json" {
+            if manifest_data.is_some() {
+                cleanup_temp(&temp_restore_dir);
+                return Err("Duplicate manifest.json detected in backup archive".to_string());
+            }
+
             let entry_size = entry.size();
             if entry_size > MAX_MANIFEST_BYTES {
                 cleanup_temp(&temp_restore_dir);
@@ -520,11 +525,33 @@ pub fn restore_workspace_backup(
                 }
             };
 
-            // Pre-validate all items in manifest before proceeding
+            // Pre-validate all items in manifest and ensure stage_id uniqueness
+            let mut seen_stage_ids = std::collections::HashSet::new();
+            let mut seen_dest_paths = std::collections::HashSet::new();
+
             for item in &items {
-                if let Err(e) = validate_manifest_item(item, &global_staging) {
+                let dest_path = match validate_manifest_item(item, &global_staging) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        cleanup_temp(&temp_restore_dir);
+                        return Err(format!("Manifest validation failed: {}", e));
+                    }
+                };
+
+                if !seen_stage_ids.insert(item.stage_id.clone()) {
                     cleanup_temp(&temp_restore_dir);
-                    return Err(format!("Manifest validation failed: {}", e));
+                    return Err(format!(
+                        "Duplicate stage_id '{}' detected in manifest",
+                        item.stage_id
+                    ));
+                }
+
+                if !seen_dest_paths.insert(dest_path) {
+                    cleanup_temp(&temp_restore_dir);
+                    return Err(format!(
+                        "Duplicate destination path for item '{}' detected in manifest",
+                        item.display_name
+                    ));
                 }
             }
 
@@ -539,6 +566,14 @@ pub fn restore_workspace_backup(
                 cleanup_temp(&temp_restore_dir);
                 return Err(format!(
                     "Invalid file entry name in archive: '{}'",
+                    relative_name
+                ));
+            }
+
+            if extracted_file_keys.contains(relative_name) {
+                cleanup_temp(&temp_restore_dir);
+                return Err(format!(
+                    "Duplicate file entry '{}' detected in backup archive",
                     relative_name
                 ));
             }
@@ -604,6 +639,16 @@ pub fn restore_workspace_backup(
             return Err("Backup archive does not contain session manifest.json".to_string());
         }
     };
+
+    // Verify consistency between extracted file count and manifest item count
+    if items.len() != extracted_file_keys.len() {
+        cleanup_temp(&temp_restore_dir);
+        return Err(format!(
+            "Archive payload file count mismatch: manifest contains {} items, but archive extracted {} files",
+            items.len(),
+            extracted_file_keys.len()
+        ));
+    }
 
     // Verify that every manifest item has a corresponding extracted file in the archive
     let mut planned_restorations = Vec::new();
@@ -671,11 +716,8 @@ pub fn restore_workspace_backup(
     // Clean up temporary restore directory
     cleanup_temp(&temp_restore_dir);
 
-    // Register into SQLite session_items and WorkspaceManager
-    let hist_mgr = crate::history::get_history_manager();
-    let ws_mgr = crate::workspace::get_workspace_manager();
+    // Prepare restored items and verify conflict status before database commit
     let mut restored_items = Vec::new();
-
     for (_, dest_path, mut item) in planned_restorations {
         item.staged_path = dest_path.to_string_lossy().to_string();
         item.staged_raw_base64 = crate::models::encode_path_to_base64(&dest_path);
@@ -692,12 +734,26 @@ pub fn restore_workspace_backup(
             item.status = crate::workspace::StageStatus::Staged;
         }
 
-        // Save into SQLite session items
-        if let Err(e) = hist_mgr.save_session_item(&item) {
-            eprintln!("Warning: Failed to save restored session item to DB: {}", e);
-        }
-        ws_mgr.insert_staged_item(item.clone());
         restored_items.push(item);
+    }
+
+    // Persist all restored session items atomically in SQLite transaction
+    let hist_mgr = crate::history::get_history_manager();
+    if let Err(e) = hist_mgr.save_session_items_batch(&restored_items) {
+        // Rollback all committed physical files on SQLite transaction failure
+        for p in &committed_paths {
+            let _ = fs::remove_file(p);
+        }
+        return Err(format!(
+            "Failed to persist restored session items to SQLite: {}. Rolled back all restored files.",
+            e
+        ));
+    }
+
+    // Only update memory state after both disk rename and SQLite transaction succeed
+    let ws_mgr = crate::workspace::get_workspace_manager();
+    for item in &restored_items {
+        ws_mgr.insert_staged_item(item.clone());
     }
 
     // Record into operation history
@@ -1054,6 +1110,61 @@ mod tests {
         let result = validate_manifest_item(&bad_uuid_item, &global_staging);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("must be valid UUID format"));
+    }
+
+    #[test]
+    fn test_restore_rejects_duplicate_stage_id_in_manifest() {
+        let temp_dir = std::env::temp_dir().join(format!("cuddle_dup_test_{}", Uuid::new_v4()));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let dup_uuid = Uuid::new_v4().to_string();
+        let item1 = StagedItemDto {
+            stage_id: dup_uuid.clone(),
+            original_item_id: "orig-1".to_string(),
+            raw_base64: "dGVzdDE=".to_string(),
+            display_name: "file1.txt".to_string(),
+            staged_raw_base64: "dGVzdDE=".to_string(),
+            staged_path: "/tmp/staged1".to_string(),
+            size: 10,
+            clone_method: CloneMethod::StandardCopy,
+            status: StageStatus::Staged,
+            staged_at_ms: 1000,
+            original_snapshot: OriginalSnapshotDto {
+                item_id: "orig-1".to_string(),
+                raw_base64: "dGVzdDE=".to_string(),
+                display_name: "file1.txt".to_string(),
+                canonical_path: "/tmp/file1.txt".to_string(),
+                inode: 1,
+                dev: 1,
+                size: 10,
+                mtime_ms: 1000,
+                sha256: Some("sha1".to_string()),
+            },
+        };
+
+        let mut item2 = item1.clone();
+        item2.display_name = "file2.txt".to_string(); // Same stage_id!
+
+        let archive_target = temp_dir.join("dup_stage_id.tar.gz");
+        let file = File::create(&archive_target).unwrap();
+        let enc = GzEncoder::new(file, Compression::default());
+        let mut builder = Builder::new(enc);
+
+        let manifest_bytes = serde_json::to_vec_pretty(&[item1, item2]).unwrap();
+        let mut header = Header::new_gnu();
+        header.set_size(manifest_bytes.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, "manifest.json", &manifest_bytes[..])
+            .unwrap();
+        builder.into_inner().unwrap().finish().unwrap();
+
+        let result = restore_workspace_backup(Some(archive_target.to_string_lossy().to_string()));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Duplicate stage_id"));
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 
     #[test]

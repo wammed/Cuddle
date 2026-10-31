@@ -399,28 +399,54 @@ impl WorkspaceManager {
 
         // 6. Record operation in SQLite persistent history & save session atomically BEFORE registering in memory
         #[cfg(test)]
-        if test_hooks::is_fail_stage_db() {
-            let _ = fs::remove_file(&staged_target_path);
-            return Err(WorkspaceError::Io(std::io::Error::other(
-                "Simulated SQLite persistence failure",
-            )));
-        }
-
-        let hist_mgr = crate::history::get_history_manager();
-        let history_entry = crate::history::NewHistoryEntry {
-            operation_id: stage_id.clone(),
-            operation_type: "Stage".to_string(),
-            display_name: item.display_name.clone(),
-            original_path: Some(canonical_src.to_string_lossy().to_string()),
-            staged_path: Some(staged_dto.staged_path.clone()),
-            inode: Some(staged_dto.original_snapshot.inode as i64),
-            status: "Success".to_string(),
-            can_undo: true,
-            details: Some(format!("Cloned via {:?}", staged_dto.clone_method)),
+        let db_res = if test_hooks::is_fail_stage_db() {
+            Err("Simulated SQLite persistence failure".to_string())
+        } else {
+            let hist_mgr = crate::history::get_history_manager();
+            let history_entry = crate::history::NewHistoryEntry {
+                operation_id: stage_id.clone(),
+                operation_type: "Stage".to_string(),
+                display_name: item.display_name.clone(),
+                original_path: Some(canonical_src.to_string_lossy().to_string()),
+                staged_path: Some(staged_dto.staged_path.clone()),
+                inode: Some(staged_dto.original_snapshot.inode as i64),
+                status: "Success".to_string(),
+                can_undo: true,
+                details: Some(format!("Cloned via {:?}", staged_dto.clone_method)),
+            };
+            hist_mgr.record_stage_operation_and_session(&history_entry, &staged_dto)
         };
 
-        if let Err(e) = hist_mgr.record_stage_operation_and_session(&history_entry, &staged_dto) {
-            let _ = fs::remove_file(&staged_target_path);
+        #[cfg(not(test))]
+        let db_res = {
+            let hist_mgr = crate::history::get_history_manager();
+            let history_entry = crate::history::NewHistoryEntry {
+                operation_id: stage_id.clone(),
+                operation_type: "Stage".to_string(),
+                display_name: item.display_name.clone(),
+                original_path: Some(canonical_src.to_string_lossy().to_string()),
+                staged_path: Some(staged_dto.staged_path.clone()),
+                inode: Some(staged_dto.original_snapshot.inode as i64),
+                status: "Success".to_string(),
+                can_undo: true,
+                details: Some(format!("Cloned via {:?}", staged_dto.clone_method)),
+            };
+            hist_mgr.record_stage_operation_and_session(&history_entry, &staged_dto)
+        };
+
+        if let Err(e) = db_res {
+            if let Err(rm_err) = fs::remove_file(&staged_target_path) {
+                eprintln!(
+                    "[WARN] Staging DB persistence failed ({}) and failed to clean up staged working copy at '{}': {}. The orphaned artifact will be cleaned up by background maintenance.",
+                    e,
+                    staged_target_path.display(),
+                    rm_err
+                );
+                return Err(WorkspaceError::Io(std::io::Error::other(format!(
+                    "Failed to persist stage session/history to SQLite: {}. Cleanup of staged copy also failed: {}",
+                    e, rm_err
+                ))));
+            }
             return Err(WorkspaceError::Io(std::io::Error::other(e)));
         }
 
@@ -1297,7 +1323,7 @@ impl WorkspaceManager {
                                             item.stage_id, db_err
                                         );
                                     } else {
-                                        let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
+                                        if let Err(rec_err) = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
                                             operation_id: Uuid::new_v4().to_string(),
                                             operation_type: "RecoveryRollForward".to_string(),
                                             display_name: item.display_name.clone(),
@@ -1307,7 +1333,12 @@ impl WorkspaceManager {
                                             status: "Success".to_string(),
                                             can_undo: false,
                                             details: Some("Interrupted reflection auto-recovered and rolled forward to Reflected".to_string()),
-                                        });
+                                        }) {
+                                            eprintln!(
+                                                "[ERROR] Failed to record RecoveryRollForward operation in history for stage '{}': {}",
+                                                item.stage_id, rec_err
+                                            );
+                                        }
 
                                         // P0: Inspect leftover quarantine file .cuddle_reflect_{stage_id}_*.tmp
                                         // CRITICAL: DO NOT unconditionally delete it! It may hold concurrent writes from an open FD.
@@ -1358,8 +1389,14 @@ impl WorkspaceManager {
                                                                 );
                                                                 // Retain quarantine file and mark Conflict for safety
                                                                 item.status = StageStatus::Conflict;
-                                                                let _ = hist_mgr
-                                                                    .save_session_item(&item);
+                                                                if let Err(e) = hist_mgr
+                                                                    .save_session_item(&item)
+                                                                {
+                                                                    eprintln!(
+                                                                        "[ERROR] WAL recovery: Failed to save Conflict status to session DB for stage '{}': {}",
+                                                                        item.stage_id, e
+                                                                    );
+                                                                }
                                                             } else {
                                                                 eprintln!(
                                                                     "[SECURITY RECOVERY] Preserved concurrent external write during WAL restore: '{}' -> '{}'",
@@ -1407,7 +1444,12 @@ impl WorkspaceManager {
                 if !resolved {
                     // Cannot confirm clean roll-forward or clean rollback -> mark Conflict for safety
                     item.status = StageStatus::Conflict;
-                    let _ = hist_mgr.save_session_item(&item);
+                    if let Err(e) = hist_mgr.save_session_item(&item) {
+                        eprintln!(
+                            "[ERROR] WAL recovery: Failed to save Conflict status in session DB for unresolved stage '{}': {}",
+                            item.stage_id, e
+                        );
+                    }
                 }
 
                 map.insert(item.stage_id.clone(), item.clone());
@@ -1428,6 +1470,12 @@ impl WorkspaceManager {
                                 item.stage_id
                             );
                             item.status = StageStatus::Conflict;
+                            if let Err(e) = hist_mgr.save_session_item(&item) {
+                                eprintln!(
+                                    "[ERROR] Failed to save Conflict status to session DB for stage '{}' with leftover quarantine file: {}",
+                                    item.stage_id, e
+                                );
+                            }
                         }
                     }
                 }

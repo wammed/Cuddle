@@ -564,11 +564,22 @@ u UU N... 100644 100644 100644 100644 5555 6666 7777 conflict.txt
         use std::ffi::OsStr;
         use std::os::unix::ffi::OsStrExt;
 
-        let home = dirs::home_dir().expect("Home must exist");
-        let non_utf8_name = [b'c', b'u', b'd', b'd', b'l', b'e', b'_', 0xff, 0xfe];
-        let test_dir = home.join(OsStr::from_bytes(&non_utf8_name));
-        let _ = std::fs::remove_dir_all(&test_dir);
-        std::fs::create_dir_all(&test_dir).unwrap();
+        let temp_base = std::env::temp_dir();
+        let unique_id = uuid::Uuid::new_v4();
+        let mut non_utf8_name = format!(".cuddle_test_non_utf8_{}_", unique_id).into_bytes();
+        non_utf8_name.extend_from_slice(&[0xff, 0xfe]);
+
+        let test_dir = temp_base.join(OsStr::from_bytes(&non_utf8_name));
+        std::fs::create_dir_all(&test_dir).expect("Failed to create non-UTF-8 test directory");
+
+        // RAII guard to guarantee cleanup even if test panics
+        struct CleanupDir(std::path::PathBuf);
+        impl Drop for CleanupDir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _cleanup = CleanupDir(test_dir.clone());
 
         // Initialize a git repo inside the non-UTF-8 directory
         let init_status = Command::new("git")
@@ -589,8 +600,6 @@ u UU N... 100644 100644 100644 100644 5555 6666 7777 conflict.txt
             "Repository in non-UTF-8 path should be successfully detected"
         );
         assert!(res.error_message.is_none());
-
-        let _ = std::fs::remove_dir_all(&test_dir);
     }
 
     #[test]

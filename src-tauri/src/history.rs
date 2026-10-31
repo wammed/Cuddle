@@ -209,12 +209,13 @@ impl HistoryManager {
         let inserted_id = conn.last_insert_rowid();
 
         // Auto-trim to max_history_limit (50 items)
-        let _ = conn.execute(
+        conn.execute(
             "DELETE FROM operation_history WHERE id NOT IN (
                 SELECT id FROM operation_history ORDER BY timestamp_ms DESC LIMIT ?1
             );",
             params![self.max_history_limit as i64],
-        );
+        )
+        .map_err(|e| format!("Failed to trim operation history: {}", e))?;
 
         Ok(inserted_id)
     }
@@ -260,12 +261,13 @@ impl HistoryManager {
         let inserted_id = tx.last_insert_rowid();
 
         // Auto-trim to max_history_limit (50 items)
-        let _ = tx.execute(
+        tx.execute(
             "DELETE FROM operation_history WHERE id NOT IN (
                 SELECT id FROM operation_history ORDER BY timestamp_ms DESC LIMIT ?1
             );",
             params![self.max_history_limit as i64],
-        );
+        )
+        .map_err(|e| format!("Failed to trim operation history: {}", e))?;
 
         let clone_method_str = match item.clone_method {
             CloneMethod::Reflink => "Reflink",

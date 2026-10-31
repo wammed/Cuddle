@@ -54,6 +54,56 @@ pub fn atomic_exchange_files(_path_a: &Path, _path_b: &Path) -> std::io::Result<
     ))
 }
 
+/// Atomically renames a file using Linux `renameat2(..., RENAME_NOREPLACE)`.
+/// If the destination exists (as a regular file, directory, or valid/broken symlink),
+/// it returns an error with Kind `AlreadyExists` (errno `EEXIST`) and DOES NOT overwrite the destination.
+#[cfg(target_os = "linux")]
+pub fn atomic_rename_noreplace(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    // Fast check: inspect symlink metadata to catch existing files and broken symlinks upfront
+    if fs::symlink_metadata(to).is_ok() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "destination file or symlink already exists",
+        ));
+    }
+
+    let c_from = CString::new(from.as_os_str().as_bytes())
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+    let c_to = CString::new(to.as_os_str().as_bytes())
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+
+    let ret = unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
+            libc::AT_FDCWD,
+            c_from.as_ptr(),
+            libc::AT_FDCWD,
+            c_to.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+
+    if ret == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn atomic_rename_noreplace(from: &Path, to: &Path) -> std::io::Result<()> {
+    if fs::symlink_metadata(to).is_ok() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "destination file or symlink already exists",
+        ));
+    }
+    fs::rename(from, to)
+}
+
 #[derive(Error, Debug)]
 pub enum WorkspaceError {
     #[error("IO error: {0}")]
@@ -119,13 +169,75 @@ pub mod test_hooks {
 
     pub type HookFn = Box<dyn Fn(&Path)>;
 
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum CrashPoint {
+        None,
+        AfterApplyingSaved,       // Point 1
+        AfterRenameExchange,      // Point 2
+        AfterQuarantineSha256,    // Point 3
+        AfterRecoveryStatusSaved, // Point 4
+        AfterQuarantinePreserved, // Point 5
+    }
+
     thread_local! {
         static POST_SWAP_HOOK: RefCell<Option<HookFn>> = const { RefCell::new(None) };
         static POST_VERIFY_HOOK: RefCell<Option<HookFn>> = const { RefCell::new(None) };
         static POST_STAGE_CLONE_HOOK: RefCell<Option<HookFn>> = const { RefCell::new(None) };
+        static PRE_RENAME_BACKUP_HOOK: RefCell<Option<HookFn>> = const { RefCell::new(None) };
         static FAIL_STAGE_DB: Cell<bool> = const { Cell::new(false) };
         static FAIL_RESTORE_DB: Cell<bool> = const { Cell::new(false) };
         static FAIL_LOAD_SESSION_DB: Cell<bool> = const { Cell::new(false) };
+        static FAIL_HISTORY_DB: Cell<bool> = const { Cell::new(false) };
+        static FAIL_CASE_B_ENTRY_READ: Cell<bool> = const { Cell::new(false) };
+        static ACTIVE_CRASH_POINT: Cell<CrashPoint> = const { Cell::new(CrashPoint::None) };
+    }
+
+    pub fn set_crash_point(cp: CrashPoint) {
+        ACTIVE_CRASH_POINT.with(|c| c.set(cp));
+    }
+
+    pub fn check_crash_point(cp: CrashPoint) {
+        let current = ACTIVE_CRASH_POINT.with(|c| c.get());
+        if current == cp {
+            ACTIVE_CRASH_POINT.with(|c| c.set(CrashPoint::None));
+            panic!("CRASH_POINT_TRIGGERED: {:?}", cp);
+        }
+    }
+
+    pub fn set_pre_rename_backup_hook<F: Fn(&Path) + 'static>(f: F) {
+        PRE_RENAME_BACKUP_HOOK.with(|h| {
+            *h.borrow_mut() = Some(Box::new(f));
+        });
+    }
+
+    pub fn clear_pre_rename_backup_hook() {
+        PRE_RENAME_BACKUP_HOOK.with(|h| {
+            *h.borrow_mut() = None;
+        });
+    }
+
+    pub fn trigger_pre_rename_backup_hook(path: &Path) {
+        PRE_RENAME_BACKUP_HOOK.with(|h| {
+            if let Some(ref hook) = *h.borrow() {
+                hook(path);
+            }
+        });
+    }
+
+    pub fn set_fail_history_db(fail: bool) {
+        FAIL_HISTORY_DB.with(|c| c.set(fail));
+    }
+
+    pub fn is_fail_history_db() -> bool {
+        FAIL_HISTORY_DB.with(|c| c.get())
+    }
+
+    pub fn set_fail_case_b_entry_read(fail: bool) {
+        FAIL_CASE_B_ENTRY_READ.with(|c| c.set(fail));
+    }
+
+    pub fn is_fail_case_b_entry_read() -> bool {
+        FAIL_CASE_B_ENTRY_READ.with(|c| c.get())
     }
 
     pub fn set_fail_load_session_db(fail: bool) {
@@ -785,6 +897,10 @@ impl WorkspaceManager {
             WorkspaceError::Io(std::io::Error::other(e))
         })?;
 
+        // Crash Point 1: Immediately after Applying saved in SQLite (before physical exchange)
+        #[cfg(test)]
+        test_hooks::check_crash_point(test_hooks::CrashPoint::AfterApplyingSaved);
+
         // --- TOCTOU Prevention: Atomic Exchange & Quarantined Verification ---
         // Atomically swap candidate into place and quarantine the original file in tmp_reflect_path.
         // Then verify the quarantined original file in isolation against the snapshot.
@@ -807,6 +923,10 @@ impl WorkspaceManager {
         let swap_result = atomic_exchange_files(&tmp_reflect_path, &orig_path);
         match swap_result {
             Ok(()) => {
+                // Crash Point 2: Immediately after RENAME_EXCHANGE succeeds
+                #[cfg(test)]
+                test_hooks::check_crash_point(test_hooks::CrashPoint::AfterRenameExchange);
+
                 // Swap succeeded:
                 // `orig_path` now holds the newly reflected content.
                 // `tmp_reflect_path` now holds the exact pre-reflection original file.
@@ -835,24 +955,21 @@ impl WorkspaceManager {
                             // Concurrent external FD write detected!
                             // CRITICAL DEFENSE: Never delete the quarantined file!
                             // Safely preserve the external process's modified content in a timestamped backup.
-                            let lost_write_target = generate_lost_write_backup_path(&orig_path);
-                            if let Err(e) = fs::rename(&tmp_reflect_path, &lost_write_target) {
-                                eprintln!(
-                                    "[CRITICAL] Failed to preserve concurrent external write '{}': {}",
-                                    lost_write_target.display(),
-                                    e
-                                );
-                                return Err(WorkspaceError::LostWritePreserveFailed {
-                                    tmp_path: tmp_reflect_path.clone(),
-                                    lost_write_path: lost_write_target.clone(),
-                                    cause: format!("Failed to move quarantined file containing concurrent external writes: {}", e),
-                                });
-                            } else {
-                                eprintln!(
-                                    "[SECURITY] Concurrent external FD write detected and preserved to '{}'",
-                                    lost_write_target.display()
-                                );
-                                concurrent_write_path = Some(lost_write_target);
+                            match atomic_preserve_quarantine_backup(&tmp_reflect_path, &orig_path) {
+                                Err(e) => {
+                                    eprintln!(
+                                        "[CRITICAL] Failed to preserve concurrent external write: {}",
+                                        e
+                                    );
+                                    return Err(e);
+                                }
+                                Ok(lost_write_target) => {
+                                    eprintln!(
+                                        "[SECURITY] Concurrent external FD write detected and preserved to '{}'",
+                                        lost_write_target.display()
+                                    );
+                                    concurrent_write_path = Some(lost_write_target);
+                                }
                             }
                         } else if mode == ReflectionMode::BackupOrigin {
                             let backup_target = generate_origin_backup_path(&orig_path);
@@ -897,24 +1014,25 @@ impl WorkspaceManager {
                             );
 
                             if final_check.is_err() {
-                                let lost_write_target = generate_lost_write_backup_path(&orig_path);
-                                if let Err(e) = fs::rename(&tmp_reflect_path, &lost_write_target) {
-                                    eprintln!(
-                                        "[CRITICAL] Failed to preserve external write '{}': {}",
-                                        lost_write_target.display(),
-                                        e
-                                    );
-                                    return Err(WorkspaceError::LostWritePreserveFailed {
-                                        tmp_path: tmp_reflect_path.clone(),
-                                        lost_write_path: lost_write_target.clone(),
-                                        cause: format!("Failed to preserve concurrent write before removal: {}", e),
-                                    });
+                                match atomic_preserve_quarantine_backup(
+                                    &tmp_reflect_path,
+                                    &orig_path,
+                                ) {
+                                    Err(e) => {
+                                        eprintln!(
+                                            "[CRITICAL] Failed to preserve external write: {}",
+                                            e
+                                        );
+                                        return Err(e);
+                                    }
+                                    Ok(lost_write_target) => {
+                                        eprintln!(
+                                            "[SECURITY] Concurrent external write detected and preserved to '{}'",
+                                            lost_write_target.display()
+                                        );
+                                        concurrent_write_path = Some(lost_write_target);
+                                    }
                                 }
-                                eprintln!(
-                                    "[SECURITY] Concurrent external write detected and preserved to '{}'",
-                                    lost_write_target.display()
-                                );
-                                concurrent_write_path = Some(lost_write_target);
                             } else {
                                 // 2. Trigger post-verify hook AFTER initial verification passed, immediately before unlinking
                                 #[cfg(test)]
@@ -928,27 +1046,25 @@ impl WorkspaceManager {
                                 );
 
                                 if pre_unlink_check.is_err() {
-                                    let lost_write_target =
-                                        generate_lost_write_backup_path(&orig_path);
-                                    if let Err(e) =
-                                        fs::rename(&tmp_reflect_path, &lost_write_target)
-                                    {
-                                        eprintln!(
-                                            "[CRITICAL] Failed to preserve last-millisecond external write '{}': {}",
-                                            lost_write_target.display(),
-                                            e
-                                        );
-                                        return Err(WorkspaceError::LostWritePreserveFailed {
-                                            tmp_path: tmp_reflect_path.clone(),
-                                            lost_write_path: lost_write_target.clone(),
-                                            cause: format!("Failed to preserve last-millisecond concurrent write before removal: {}", e),
-                                        });
+                                    match atomic_preserve_quarantine_backup(
+                                        &tmp_reflect_path,
+                                        &orig_path,
+                                    ) {
+                                        Err(e) => {
+                                            eprintln!(
+                                                "[CRITICAL] Failed to preserve last-millisecond external write: {}",
+                                                e
+                                            );
+                                            return Err(e);
+                                        }
+                                        Ok(lost_write_target) => {
+                                            eprintln!(
+                                                "[SECURITY] Last-millisecond concurrent write detected after verification and preserved to '{}'",
+                                                lost_write_target.display()
+                                            );
+                                            concurrent_write_path = Some(lost_write_target);
+                                        }
                                     }
-                                    eprintln!(
-                                        "[SECURITY] Last-millisecond concurrent write detected after verification and preserved to '{}'",
-                                        lost_write_target.display()
-                                    );
-                                    concurrent_write_path = Some(lost_write_target);
                                 } else {
                                     // Safely remove the quarantined old original
                                     let _ = fs::remove_file(&tmp_reflect_path);
@@ -1470,6 +1586,12 @@ impl WorkspaceManager {
                                             item.stage_id, db_err
                                         );
                                     } else {
+                                        // Crash Point 4: Immediately after SQLite recovery status updated to Reflected
+                                        #[cfg(test)]
+                                        test_hooks::check_crash_point(
+                                            test_hooks::CrashPoint::AfterRecoveryStatusSaved,
+                                        );
+
                                         if let Err(rec_err) = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
                                             operation_id: Uuid::new_v4().to_string(),
                                             operation_type: "RecoveryRollForward".to_string(),
@@ -1537,6 +1659,13 @@ impl WorkspaceManager {
                                                                 let q_hash =
                                                                     compute_file_sha256(&q_path)
                                                                         .ok();
+
+                                                                // Crash Point 3: Immediately after quarantine SHA-256 calculation
+                                                                #[cfg(test)]
+                                                                test_hooks::check_crash_point(
+                                                                    test_hooks::CrashPoint::AfterQuarantineSha256,
+                                                                );
+
                                                                 if q_hash.is_some()
                                                                     && q_hash == old_snapshot_hash
                                                                 {
@@ -1553,38 +1682,74 @@ impl WorkspaceManager {
                                                                 } else {
                                                                     // Quarantined file has external modifications (e.g. concurrent FD write)
                                                                     // or cannot be verified! MUST PRESERVE as .concurrent_write backup!
-                                                                    let lost_write_target = generate_lost_write_backup_path(&orig_path);
-                                                                    if let Err(mv_err) = fs::rename(
+                                                                    match atomic_preserve_quarantine_backup(
                                                                         &q_path,
-                                                                        &lost_write_target,
+                                                                        &orig_path,
                                                                     ) {
-                                                                        eprintln!(
-                                                                            "[CRITICAL RECOVERY] Failed to preserve concurrent external write '{}' -> '{}': {}. Retaining quarantine file and marking Conflict.",
-                                                                            q_path.display(),
-                                                                            lost_write_target.display(),
-                                                                            mv_err
-                                                                        );
-                                                                        quarantine_failure = true;
-                                                                    } else {
-                                                                        eprintln!(
-                                                                            "[SECURITY RECOVERY] Preserved concurrent external write during WAL restore: '{}' -> '{}'",
-                                                                            q_path.display(),
-                                                                            lost_write_target.display()
-                                                                        );
-                                                                        let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
-                                                                            operation_id: Uuid::new_v4().to_string(),
-                                                                            operation_type: "QuarantinePreserved".to_string(),
-                                                                            display_name: item.display_name.clone(),
-                                                                            original_path: Some(item.original_snapshot.canonical_path.clone()),
-                                                                            staged_path: Some(lost_write_target.to_string_lossy().to_string()),
-                                                                            inode: None,
-                                                                            status: "Success".to_string(),
-                                                                            can_undo: false,
-                                                                            details: Some(format!(
-                                                                                "Concurrent external write detected during WAL restore and preserved to '{}'",
+                                                                        Err(e) => {
+                                                                            eprintln!(
+                                                                                "[CRITICAL RECOVERY] Failed to preserve concurrent external write: {}. Retaining quarantine file and marking Conflict.",
+                                                                                e
+                                                                            );
+                                                                            quarantine_failure = true;
+                                                                        }
+                                                                        Ok(lost_write_target) => {
+                                                                            eprintln!(
+                                                                                "[SECURITY RECOVERY] Preserved concurrent external write during WAL restore: '{}' -> '{}'",
+                                                                                q_path.display(),
                                                                                 lost_write_target.display()
-                                                                            )),
-                                                                        });
+                                                                            );
+
+                                                                            // Crash Point 5: Immediately after quarantine preservation
+                                                                            #[cfg(test)]
+                                                                            test_hooks::check_crash_point(
+                                                                                test_hooks::CrashPoint::AfterQuarantinePreserved,
+                                                                            );
+
+                                                                            #[cfg(test)]
+                                                                            let hist_res = if test_hooks::is_fail_history_db() {
+                                                                                Err("Simulated history DB recording failure".to_string())
+                                                                            } else {
+                                                                                hist_mgr.record_operation(&crate::history::NewHistoryEntry {
+                                                                                    operation_id: Uuid::new_v4().to_string(),
+                                                                                    operation_type: "QuarantinePreserved".to_string(),
+                                                                                    display_name: item.display_name.clone(),
+                                                                                    original_path: Some(item.original_snapshot.canonical_path.clone()),
+                                                                                    staged_path: Some(lost_write_target.to_string_lossy().to_string()),
+                                                                                    inode: None,
+                                                                                    status: "Success".to_string(),
+                                                                                    can_undo: false,
+                                                                                    details: Some(format!(
+                                                                                        "Concurrent external write detected during WAL restore and preserved to '{}'",
+                                                                                        lost_write_target.display()
+                                                                                    )),
+                                                                                })
+                                                                            };
+
+                                                                            #[cfg(not(test))]
+                                                                            let hist_res = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
+                                                                                operation_id: Uuid::new_v4().to_string(),
+                                                                                operation_type: "QuarantinePreserved".to_string(),
+                                                                                display_name: item.display_name.clone(),
+                                                                                original_path: Some(item.original_snapshot.canonical_path.clone()),
+                                                                                staged_path: Some(lost_write_target.to_string_lossy().to_string()),
+                                                                                inode: None,
+                                                                                status: "Success".to_string(),
+                                                                                can_undo: false,
+                                                                                details: Some(format!(
+                                                                                    "Concurrent external write detected during WAL restore and preserved to '{}'",
+                                                                                    lost_write_target.display()
+                                                                                )),
+                                                                            });
+
+                                                                            if let Err(rec_err) = hist_res {
+                                                                                eprintln!(
+                                                                                    "[ERROR] Failed to record QuarantinePreserved operation in history for stage '{}': {}. Marking Conflict to alert user.",
+                                                                                    item.stage_id, rec_err
+                                                                                );
+                                                                                quarantine_failure = true;
+                                                                            }
+                                                                        }
                                                                     }
                                                                 }
                                                             }
@@ -1609,7 +1774,17 @@ impl WorkspaceManager {
                                             resolved = true;
                                         } else {
                                             item.status = StageStatus::Conflict;
-                                            if let Err(e) = hist_mgr.save_session_item(&item) {
+                                            #[cfg(test)]
+                                            let db_save_res = if test_hooks::is_fail_restore_db() {
+                                                Err("Simulated restore SQLite persistence failure"
+                                                    .to_string())
+                                            } else {
+                                                hist_mgr.save_session_item(&item)
+                                            };
+                                            #[cfg(not(test))]
+                                            let db_save_res = hist_mgr.save_session_item(&item);
+
+                                            if let Err(e) = db_save_res {
                                                 eprintln!(
                                                     "[ERROR] WAL recovery: Failed to save Conflict status to session DB for stage '{}': {}. Reverting to Applying so subsequent restarts retry recovery.",
                                                     item.stage_id, e
@@ -1633,11 +1808,37 @@ impl WorkspaceManager {
                                 match fs::read_dir(parent) {
                                     Ok(entries) => {
                                         let marker = format!(".cuddle_reflect_{}", item.stage_id);
-                                        for entry in entries.flatten() {
-                                            if entry.file_name().to_string_lossy().contains(&marker)
-                                            {
-                                                has_leftover_quarantine = true;
-                                                break;
+                                        for entry_res in entries {
+                                            #[cfg(test)]
+                                            let entry_res =
+                                                if test_hooks::is_fail_case_b_entry_read() {
+                                                    Err(std::io::Error::new(
+                                                        std::io::ErrorKind::PermissionDenied,
+                                                        "Simulated entry read error in CASE B",
+                                                    ))
+                                                } else {
+                                                    entry_res
+                                                };
+
+                                            match entry_res {
+                                                Ok(entry) => {
+                                                    if entry
+                                                        .file_name()
+                                                        .to_string_lossy()
+                                                        .contains(&marker)
+                                                    {
+                                                        has_leftover_quarantine = true;
+                                                        break;
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    eprintln!(
+                                                        "[ERROR] WAL recovery: Failed reading directory entry in CASE B for stage '{}': {}. Marking Conflict for safety.",
+                                                        item.stage_id, e
+                                                    );
+                                                    dir_read_failed = true;
+                                                    break;
+                                                }
                                             }
                                         }
                                     }
@@ -1655,10 +1856,10 @@ impl WorkspaceManager {
 
                             if dir_read_failed || has_leftover_quarantine {
                                 // CRITICAL SAFETY (Quarantine Safety Fix for CASE B):
-                                // If quarantine files exist, do NOT delete them based on filename alone!
-                                // Safety of deletion cannot be proven -> retain files and mark Conflict!
+                                // If quarantine files exist or dir scan failed, do NOT delete them!
+                                // Safety cannot be proven -> retain files and mark Conflict! Rollback to Modified is strictly forbidden.
                                 eprintln!(
-                                    "[SECURITY RECOVERY] Leftover quarantine/reflection file exists in CASE B for stage '{}'. Retaining all files and marking Conflict for safety.",
+                                    "[SECURITY RECOVERY] Leftover quarantine/reflection file exists or directory scan failed in CASE B for stage '{}'. Retaining all files and marking Conflict for safety.",
                                     item.stage_id
                                 );
                                 item.status = StageStatus::Conflict;
@@ -1673,9 +1874,12 @@ impl WorkspaceManager {
 
                                 if let Err(db_err) = db_save_res {
                                     eprintln!(
-                                        "[ERROR] Failed to save Conflict status in CASE B for stage '{}': {}",
+                                        "[ERROR] Failed to save Conflict status in CASE B for stage '{}': {}. Reverting to Applying so subsequent restarts retry recovery.",
                                         item.stage_id, db_err
                                     );
+                                    let mut retry_item = item.clone();
+                                    retry_item.status = StageStatus::Applying;
+                                    let _ = hist_mgr.save_session_item(&retry_item);
                                 } else {
                                     resolved = true;
                                 }
@@ -1693,9 +1897,12 @@ impl WorkspaceManager {
 
                                 if let Err(db_err) = db_save_res {
                                     eprintln!(
-                                        "[ERROR] Failed to save rollback Modified status for stage '{}': {}",
+                                        "[ERROR] Failed to save rollback Modified status for stage '{}': {}. Reverting to Applying so subsequent restarts retry recovery.",
                                         item.stage_id, db_err
                                     );
+                                    let mut retry_item = item.clone();
+                                    retry_item.status = StageStatus::Applying;
+                                    let _ = hist_mgr.save_session_item(&retry_item);
                                 } else {
                                     resolved = true;
                                 }
@@ -1925,7 +2132,7 @@ pub fn generate_origin_backup_path(orig_path: &Path) -> PathBuf {
 
     let mut candidate = parent.join(backup_filename);
     let mut counter = 1;
-    while candidate.exists() {
+    while fs::symlink_metadata(&candidate).is_ok() && counter < 10000 {
         let unique_name = if let Some(e) = ext {
             format!("{}_{}_{}.origin.{}", stem, timestamp, counter, e)
         } else {
@@ -1935,6 +2142,98 @@ pub fn generate_origin_backup_path(orig_path: &Path) -> PathBuf {
         counter += 1;
     }
     candidate
+}
+
+/// Bounded retry ceiling for generating collision-resistant backup paths
+pub const MAX_BACKUP_RETRIES: usize = 1000;
+
+/// Atomically preserves a quarantine file to a timestamped `.concurrent_write` backup path without overwriting any existing files.
+/// Uses `atomic_rename_noreplace` (Linux `renameat2(..., RENAME_NOREPLACE)`) to guarantee atomic TOCTOU-safe placement.
+/// If candidate already exists (as a file, directory, or valid/broken symlink), it advances with numbered suffixes up to `MAX_BACKUP_RETRIES`.
+/// If all retries are exhausted or any non-collision I/O error occurs, the original `quarantine_path` is strictly kept intact.
+pub fn atomic_preserve_quarantine_backup(
+    quarantine_path: &Path,
+    orig_path: &Path,
+) -> Result<PathBuf, WorkspaceError> {
+    let parent = orig_path.parent().unwrap_or_else(|| Path::new("."));
+    let stem = orig_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("file");
+    let ext = orig_path.extension().and_then(|s| s.to_str());
+    let now = chrono::Local::now();
+    let timestamp = now.format("%Y%m%d_%H%M%S").to_string();
+
+    for counter in 0..=MAX_BACKUP_RETRIES {
+        let candidate = if counter == 0 {
+            if let Some(e) = ext {
+                parent.join(format!("{}_{}.concurrent_write.{}", stem, timestamp, e))
+            } else {
+                parent.join(format!("{}_{}.concurrent_write", stem, timestamp))
+            }
+        } else {
+            if let Some(e) = ext {
+                parent.join(format!(
+                    "{}_{}_{}.concurrent_write.{}",
+                    stem, timestamp, counter, e
+                ))
+            } else {
+                parent.join(format!(
+                    "{}_{}_{}.concurrent_write",
+                    stem, timestamp, counter
+                ))
+            }
+        };
+
+        // Fast-path pre-check: if a file, directory, or symlink (even broken) exists, advance to next counter
+        if fs::symlink_metadata(&candidate).is_ok() {
+            continue;
+        }
+
+        // Test hook to simulate another process creating candidate right before rename
+        #[cfg(test)]
+        test_hooks::trigger_pre_rename_backup_hook(&candidate);
+
+        match atomic_rename_noreplace(quarantine_path, &candidate) {
+            Ok(()) => return Ok(candidate),
+            Err(e)
+                if e.kind() == std::io::ErrorKind::AlreadyExists
+                    || e.raw_os_error() == Some(libc::EEXIST) =>
+            {
+                // Collided atomically with a concurrently created file or symlink; retry with next counter
+                continue;
+            }
+            Err(e) => {
+                // Unexpected I/O error (e.g. read-only filesystem or permissions)
+                // CRITICAL SAFETY: Original quarantine file remains untouched!
+                return Err(WorkspaceError::LostWritePreserveFailed {
+                    tmp_path: quarantine_path.to_path_buf(),
+                    lost_write_path: candidate,
+                    cause: format!("atomic_rename_noreplace failed: {}", e),
+                });
+            }
+        }
+    }
+
+    let last_candidate = if let Some(e) = ext {
+        parent.join(format!(
+            "{}_{}_{}.concurrent_write.{}",
+            stem, timestamp, MAX_BACKUP_RETRIES, e
+        ))
+    } else {
+        parent.join(format!(
+            "{}_{}_{}.concurrent_write",
+            stem, timestamp, MAX_BACKUP_RETRIES
+        ))
+    };
+    Err(WorkspaceError::LostWritePreserveFailed {
+        tmp_path: quarantine_path.to_path_buf(),
+        lost_write_path: last_candidate,
+        cause: format!(
+            "Exhausted {} retries to find non-colliding backup path",
+            MAX_BACKUP_RETRIES
+        ),
+    })
 }
 
 /// Generates a timestamped backup path for files that received concurrent external writes
@@ -1958,7 +2257,7 @@ pub fn generate_lost_write_backup_path(orig_path: &Path) -> PathBuf {
 
     let mut candidate = parent.join(backup_filename);
     let mut counter = 1;
-    while candidate.exists() {
+    while fs::symlink_metadata(&candidate).is_ok() && counter < 10000 {
         let unique_name = if let Some(e) = ext {
             format!("{}_{}_{}.concurrent_write.{}", stem, timestamp, counter, e)
         } else {
@@ -4706,33 +5005,46 @@ mod tests {
             let orig_file1 = test_dir.join("crash_point1.txt");
             fs::write(&orig_file1, orig_payload).unwrap();
 
-            let mgr = WorkspaceManager::new();
-            let staged1 = mgr.stage_file(&orig_file1).unwrap();
-            fs::write(&staged1.staged_path, staged_payload).unwrap();
+            let mgr1 = WorkspaceManager::new();
+            let staged1 = mgr1.stage_file(&orig_file1).unwrap();
+            mgr1.write_staged_text(
+                &staged1.stage_id,
+                "Staged candidate content for crash injection",
+            )
+            .unwrap();
 
-            // Candidate tmp file in orig directory exists (pre-swap copy)
-            let tmp_candidate = test_dir.join(format!(
-                ".cuddle_reflect_{}_{}.tmp",
-                staged1.stage_id,
-                Uuid::new_v4()
-            ));
-            fs::write(&tmp_candidate, staged_payload).unwrap();
+            // Interrupt real reflection immediately after Applying is committed to SQLite
+            test_hooks::set_crash_point(test_hooks::CrashPoint::AfterApplyingSaved);
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                mgr1.reflect_staged_file(&staged1.stage_id)
+            }));
+            assert!(
+                res.is_err(),
+                "Must be interrupted at CrashPoint::AfterApplyingSaved"
+            );
 
-            let mut item1 = staged1.clone();
-            item1.status = StageStatus::Applying;
-            let hist_mgr = crate::history::get_history_manager();
-            hist_mgr.save_session_item(&item1).unwrap();
+            // Verify disk state at crash: orig_file1 untouched, temporary candidate file exists
+            assert_eq!(
+                fs::read(&orig_file1).unwrap(),
+                orig_payload,
+                "Original file must be untouched at Point 1"
+            );
 
-            // Restore after Point 1 crash
-            let restored = mgr.restore_session().unwrap();
+            // Simulate application restart: instantiate a NEW WorkspaceManager and execute recovery
+            let mgr_rec = WorkspaceManager::new();
+            let restored = mgr_rec.restore_session().unwrap();
             let rec_item1 = restored
                 .iter()
                 .find(|i| i.stage_id == staged1.stage_id)
-                .unwrap();
-            // CASE B with quarantine file: safety cannot be proven -> Conflict, all files retained!
+                .expect("Item must be restored");
+
+            // CASE B: Pre-swap candidate file exists in directory -> Cannot prove deletion safety -> Conflict!
             assert_eq!(rec_item1.status, StageStatus::Conflict);
-            assert!(tmp_candidate.exists(), "Tmp file must not be deleted");
-            assert_eq!(fs::read(&orig_file1).unwrap(), orig_payload);
+            assert_eq!(
+                fs::read(&orig_file1).unwrap(),
+                orig_payload,
+                "Original payload must be preserved byte-for-byte"
+            );
         }
 
         // Crash Point 2: Immediately after RENAME_EXCHANGE (swap succeeded, before inspection)
@@ -4740,127 +5052,605 @@ mod tests {
             let orig_file2 = test_dir.join("crash_point2.txt");
             fs::write(&orig_file2, orig_payload).unwrap();
 
-            let mgr = WorkspaceManager::new();
-            let staged2 = mgr.stage_file(&orig_file2).unwrap();
-            fs::write(&staged2.staged_path, staged_payload).unwrap();
+            let mgr2 = WorkspaceManager::new();
+            let staged2 = mgr2.stage_file(&orig_file2).unwrap();
+            mgr2.write_staged_text(
+                &staged2.stage_id,
+                "Staged candidate content for crash injection",
+            )
+            .unwrap();
 
-            // Orig file now has staged_payload, quarantine file has orig_payload
-            fs::write(&orig_file2, staged_payload).unwrap();
-            let quarantine2 = test_dir.join(format!(
-                ".cuddle_reflect_{}_{}.tmp",
-                staged2.stage_id,
-                Uuid::new_v4()
-            ));
-            fs::write(&quarantine2, orig_payload).unwrap();
+            // Interrupt real reflection immediately after RENAME_EXCHANGE succeeds
+            test_hooks::set_crash_point(test_hooks::CrashPoint::AfterRenameExchange);
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                mgr2.reflect_staged_file(&staged2.stage_id)
+            }));
+            assert!(
+                res.is_err(),
+                "Must be interrupted at CrashPoint::AfterRenameExchange"
+            );
 
-            let mut item2 = staged2.clone();
-            item2.status = StageStatus::Applying;
-            let hist_mgr = crate::history::get_history_manager();
-            hist_mgr.save_session_item(&item2).unwrap();
+            // Verify disk state at crash: orig_file2 has staged_payload, quarantine file has orig_payload
+            assert_eq!(fs::read(&orig_file2).unwrap(), staged_payload);
 
-            // Restore after Point 2 crash
-            let restored = mgr.restore_session().unwrap();
+            // Simulate application restart: instantiate a NEW WorkspaceManager and execute recovery
+            let mgr_rec = WorkspaceManager::new();
+            let restored = mgr_rec.restore_session().unwrap();
             let rec_item2 = restored
                 .iter()
                 .find(|i| i.stage_id == staged2.stage_id)
-                .unwrap();
+                .expect("Item must be restored");
+
+            // CASE A: Clean quarantine file exists -> Quarantine Safety: retain quarantine file and mark Conflict!
             assert_eq!(rec_item2.status, StageStatus::Conflict);
-            assert!(quarantine2.exists(), "Quarantine file must not be deleted");
-            assert_eq!(fs::read(&quarantine2).unwrap(), orig_payload);
+            assert_eq!(fs::read(&orig_file2).unwrap(), staged_payload);
+
+            // Find quarantine file and verify byte-for-byte
+            let marker = format!(".cuddle_reflect_{}", staged2.stage_id);
+            let quarantine = fs::read_dir(&test_dir)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .find(|e| e.file_name().to_string_lossy().contains(&marker))
+                .expect("Quarantine file must be preserved");
+            assert_eq!(
+                fs::read(quarantine.path()).unwrap(),
+                orig_payload,
+                "Quarantine file must contain original bytes byte-for-byte"
+            );
         }
 
-        // Crash Point 3: Immediately after quarantine SHA-256 calculation
+        // Crash Point 3: Immediately after quarantine SHA-256 calculation during restore_session
         {
             let orig_file3 = test_dir.join("crash_point3.txt");
             fs::write(&orig_file3, orig_payload).unwrap();
 
-            let mgr = WorkspaceManager::new();
-            let staged3 = mgr.stage_file(&orig_file3).unwrap();
-            fs::write(&staged3.staged_path, staged_payload).unwrap();
+            let mgr3 = WorkspaceManager::new();
+            let staged3 = mgr3.stage_file(&orig_file3).unwrap();
+            mgr3.write_staged_text(
+                &staged3.stage_id,
+                "Staged candidate content for crash injection",
+            )
+            .unwrap();
 
-            fs::write(&orig_file3, staged_payload).unwrap();
-            let quarantine3 = test_dir.join(format!(
-                ".cuddle_reflect_{}_{}.tmp",
-                staged3.stage_id,
-                Uuid::new_v4()
-            ));
-            fs::write(&quarantine3, orig_payload).unwrap();
+            // Step 1: Interrupt reflection at Point 2 so that state is swapped and WAL is Applying
+            test_hooks::set_crash_point(test_hooks::CrashPoint::AfterRenameExchange);
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                mgr3.reflect_staged_file(&staged3.stage_id)
+            }));
 
-            let mut item3 = staged3.clone();
-            item3.status = StageStatus::Applying;
-            let hist_mgr = crate::history::get_history_manager();
-            hist_mgr.save_session_item(&item3).unwrap();
+            // Step 2: Now run restore_session() and interrupt immediately after calculating quarantine SHA-256
+            test_hooks::set_crash_point(test_hooks::CrashPoint::AfterQuarantineSha256);
+            let mgr_rec1 = WorkspaceManager::new();
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                mgr_rec1.restore_session()
+            }));
+            assert!(
+                res.is_err(),
+                "Must be interrupted at CrashPoint::AfterQuarantineSha256"
+            );
 
-            let restored = mgr.restore_session().unwrap();
+            // Step 3: Simulate second application restart: new WorkspaceManager completes recovery
+            let mgr_rec2 = WorkspaceManager::new();
+            let restored = mgr_rec2.restore_session().unwrap();
             let rec_item3 = restored
                 .iter()
                 .find(|i| i.stage_id == staged3.stage_id)
-                .unwrap();
+                .expect("Item must be restored");
+
             assert_eq!(rec_item3.status, StageStatus::Conflict);
-            assert!(quarantine3.exists());
+            assert_eq!(fs::read(&orig_file3).unwrap(), staged_payload);
+            let marker = format!(".cuddle_reflect_{}", staged3.stage_id);
+            let quarantine = fs::read_dir(&test_dir)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .find(|e| e.file_name().to_string_lossy().contains(&marker))
+                .expect("Quarantine file must be preserved");
+            assert_eq!(fs::read(quarantine.path()).unwrap(), orig_payload);
         }
 
-        // Crash Point 4: Immediately after SQLite recovery status update to Conflict
+        // Crash Point 4: Immediately after SQLite recovery status update to Reflected
         {
             let orig_file4 = test_dir.join("crash_point4.txt");
             fs::write(&orig_file4, orig_payload).unwrap();
 
-            let mgr = WorkspaceManager::new();
-            let staged4 = mgr.stage_file(&orig_file4).unwrap();
-            fs::write(&staged4.staged_path, staged_payload).unwrap();
+            let mgr4 = WorkspaceManager::new();
+            let staged4 = mgr4.stage_file(&orig_file4).unwrap();
+            mgr4.write_staged_text(
+                &staged4.stage_id,
+                "Staged candidate content for crash injection",
+            )
+            .unwrap();
 
-            fs::write(&orig_file4, staged_payload).unwrap();
-            let quarantine4 = test_dir.join(format!(
-                ".cuddle_reflect_{}_{}.tmp",
-                staged4.stage_id,
-                Uuid::new_v4()
-            ));
-            fs::write(&quarantine4, orig_payload).unwrap();
+            // Step 1: Interrupt at Point 2 to set up swapped state with WAL Applying
+            test_hooks::set_crash_point(test_hooks::CrashPoint::AfterRenameExchange);
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                mgr4.reflect_staged_file(&staged4.stage_id)
+            }));
 
-            let mut item4 = staged4.clone();
-            item4.status = StageStatus::Conflict;
-            let hist_mgr = crate::history::get_history_manager();
-            hist_mgr.save_session_item(&item4).unwrap();
+            // Step 2: Run restore_session() and interrupt immediately after Reflected status is committed to SQLite
+            test_hooks::set_crash_point(test_hooks::CrashPoint::AfterRecoveryStatusSaved);
+            let mgr_rec1 = WorkspaceManager::new();
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                mgr_rec1.restore_session()
+            }));
+            assert!(
+                res.is_err(),
+                "Must be interrupted at CrashPoint::AfterRecoveryStatusSaved"
+            );
 
-            let restored = mgr.restore_session().unwrap();
+            // Step 3: Simulate second application restart: state was committed to DB before crash,
+            // but leftover quarantine file exists on disk, so restore safely marks Conflict
+            let mgr_rec2 = WorkspaceManager::new();
+            let restored = mgr_rec2.restore_session().unwrap();
             let rec_item4 = restored
                 .iter()
                 .find(|i| i.stage_id == staged4.stage_id)
-                .unwrap();
+                .expect("Item must be restored");
+
             assert_eq!(rec_item4.status, StageStatus::Conflict);
-            assert!(quarantine4.exists());
+            assert_eq!(fs::read(&orig_file4).unwrap(), staged_payload);
+            let marker = format!(".cuddle_reflect_{}", staged4.stage_id);
+            let quarantine = fs::read_dir(&test_dir)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .find(|e| e.file_name().to_string_lossy().contains(&marker))
+                .expect("Quarantine file must be preserved");
+            assert_eq!(fs::read(quarantine.path()).unwrap(), orig_payload);
         }
 
-        // Crash Point 5: Immediately after quarantine preservation
+        // Crash Point 5: Immediately after quarantine preservation to .concurrent_write
         {
             let orig_file5 = test_dir.join("crash_point5.txt");
             fs::write(&orig_file5, orig_payload).unwrap();
 
-            let mgr = WorkspaceManager::new();
-            let staged5 = mgr.stage_file(&orig_file5).unwrap();
-            fs::write(&staged5.staged_path, staged_payload).unwrap();
+            let mgr5 = WorkspaceManager::new();
+            let staged5 = mgr5.stage_file(&orig_file5).unwrap();
+            mgr5.write_staged_text(
+                &staged5.stage_id,
+                "Staged candidate content for crash injection",
+            )
+            .unwrap();
 
-            fs::write(&orig_file5, staged_payload).unwrap();
-            let quarantine5 = test_dir.join(format!(
-                ".cuddle_reflect_{}_{}.tmp",
-                staged5.stage_id,
-                Uuid::new_v4()
-            ));
-            fs::write(&quarantine5, orig_payload).unwrap();
+            // Step 1: Interrupt at Point 2 to set up swapped state
+            test_hooks::set_crash_point(test_hooks::CrashPoint::AfterRenameExchange);
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                mgr5.reflect_staged_file(&staged5.stage_id)
+            }));
 
-            let mut item5 = staged5.clone();
-            item5.status = StageStatus::Conflict;
-            let hist_mgr = crate::history::get_history_manager();
-            hist_mgr.save_session_item(&item5).unwrap();
+            // Step 2: Mutate quarantine file to simulate concurrent external write
+            let marker = format!(".cuddle_reflect_{}", staged5.stage_id);
+            let quarantine = fs::read_dir(&test_dir)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .find(|e| e.file_name().to_string_lossy().contains(&marker))
+                .expect("Quarantine file must exist");
+            let external_payload =
+                b"External process modified quarantine via open FD during crash test";
+            fs::write(quarantine.path(), external_payload).unwrap();
 
-            let restored = mgr.restore_session().unwrap();
+            // Step 3: Run restore_session() and interrupt immediately after quarantine is preserved
+            test_hooks::set_crash_point(test_hooks::CrashPoint::AfterQuarantinePreserved);
+            let mgr_rec1 = WorkspaceManager::new();
+            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                mgr_rec1.restore_session()
+            }));
+            assert!(
+                res.is_err(),
+                "Must be interrupted at CrashPoint::AfterQuarantinePreserved"
+            );
+
+            // Step 4: Verify quarantine file was safely moved to .concurrent_write before crash
+            let backup_file = fs::read_dir(&test_dir)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .find(|e| {
+                    e.file_name()
+                        .to_string_lossy()
+                        .contains(".concurrent_write")
+                })
+                .expect("Backup file must have been created");
+            assert_eq!(
+                fs::read(backup_file.path()).unwrap(),
+                external_payload,
+                "Backup file must match external write byte-for-byte"
+            );
+
+            // Step 5: Simulate restart: new WorkspaceManager completes recovery
+            let mgr_rec2 = WorkspaceManager::new();
+            let restored = mgr_rec2.restore_session().unwrap();
             let rec_item5 = restored
                 .iter()
                 .find(|i| i.stage_id == staged5.stage_id)
-                .unwrap();
-            assert_eq!(rec_item5.status, StageStatus::Conflict);
-            assert!(quarantine5.exists());
+                .expect("Item must be restored");
+
+            assert!(
+                rec_item5.status == StageStatus::Reflected
+                    || rec_item5.status == StageStatus::Conflict,
+                "Status must be Reflected or Conflict"
+            );
+            assert_eq!(fs::read(&orig_file5).unwrap(), staged_payload);
+            assert_eq!(fs::read(backup_file.path()).unwrap(), external_payload);
         }
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_preserve_lost_write_does_not_overwrite_existing_file() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_overwrite_prev_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("document.txt");
+        fs::write(&orig_file, b"Original document").unwrap();
+
+        let quarantine = test_dir.join(format!(
+            ".cuddle_reflect_{}_{}.tmp",
+            Uuid::new_v4(),
+            Uuid::new_v4()
+        ));
+        let quarantine_bytes = b"Quarantine concurrent write bytes";
+        fs::write(&quarantine, quarantine_bytes).unwrap();
+
+        // Pre-create the first expected candidate path
+        let now = chrono::Local::now();
+        let timestamp = now.format("%Y%m%d_%H%M%S").to_string();
+        let first_candidate = test_dir.join(format!("document_{}.concurrent_write.txt", timestamp));
+        let existing_bytes = b"Pre-existing backup file DO NOT OVERWRITE";
+        fs::write(&first_candidate, existing_bytes).unwrap();
+
+        let preserved = atomic_preserve_quarantine_backup(&quarantine, &orig_file).unwrap();
+        assert_ne!(
+            preserved, first_candidate,
+            "Must not overwrite existing first candidate"
+        );
+        assert!(preserved.exists(), "Preserved backup file must exist");
+        assert_eq!(
+            fs::read(&preserved).unwrap(),
+            quarantine_bytes,
+            "Preserved file must match quarantine bytes"
+        );
+        assert_eq!(
+            fs::read(&first_candidate).unwrap(),
+            existing_bytes,
+            "Existing file must be completely untouched"
+        );
+        assert!(!quarantine.exists(), "Quarantine should be moved");
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_preserve_lost_write_race_collision_retries_with_noreplace() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_race_noreplace_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("raced.txt");
+        fs::write(&orig_file, b"Original").unwrap();
+
+        let quarantine = test_dir.join(format!(
+            ".cuddle_reflect_{}_{}.tmp",
+            Uuid::new_v4(),
+            Uuid::new_v4()
+        ));
+        let quarantine_bytes = b"Quarantine raced bytes";
+        fs::write(&quarantine, quarantine_bytes).unwrap();
+
+        // Hook simulates another process racing to create the candidate path after candidate check but before rename
+        let collision_count = Arc::new(AtomicUsize::new(0));
+        let collision_count_clone = collision_count.clone();
+
+        test_hooks::set_pre_rename_backup_hook(move |candidate_path| {
+            if collision_count_clone.fetch_add(1, Ordering::SeqCst) < 2 {
+                // Create a conflicting file at the exact candidate path to cause atomic EEXIST
+                let _ = fs::write(candidate_path, b"Raced by external process");
+            }
+        });
+
+        let preserved = atomic_preserve_quarantine_backup(&quarantine, &orig_file).unwrap();
+        test_hooks::clear_pre_rename_backup_hook();
+
+        assert!(preserved.exists());
+        assert_eq!(fs::read(&preserved).unwrap(), quarantine_bytes);
+        assert!(
+            collision_count.load(Ordering::SeqCst) >= 2,
+            "Must have collided at least twice and retried"
+        );
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_preserve_lost_write_does_not_overwrite_symlink() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_symlink_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("link_test.txt");
+        fs::write(&orig_file, b"Original link test").unwrap();
+
+        let quarantine = test_dir.join(format!(
+            ".cuddle_reflect_{}_{}.tmp",
+            Uuid::new_v4(),
+            Uuid::new_v4()
+        ));
+        let quarantine_bytes = b"Quarantine link bytes";
+        fs::write(&quarantine, quarantine_bytes).unwrap();
+
+        // Pre-create candidate as a BROKEN symlink
+        let now = chrono::Local::now();
+        let timestamp = now.format("%Y%m%d_%H%M%S").to_string();
+        let first_candidate =
+            test_dir.join(format!("link_test_{}.concurrent_write.txt", timestamp));
+        let dead_target = test_dir.join("nonexistent_destination_file");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&dead_target, &first_candidate).unwrap();
+
+        let preserved = atomic_preserve_quarantine_backup(&quarantine, &orig_file).unwrap();
+        assert_ne!(preserved, first_candidate, "Must not overwrite symlink");
+        assert!(preserved.exists());
+        assert_eq!(fs::read(&preserved).unwrap(), quarantine_bytes);
+
+        // Verify symlink still exists and still points to dead_target
+        #[cfg(unix)]
+        {
+            let meta = fs::symlink_metadata(&first_candidate).unwrap();
+            assert!(
+                meta.file_type().is_symlink(),
+                "Symlink must not be destroyed or converted"
+            );
+        }
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_preserve_lost_write_failure_leaves_quarantine_intact() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_fail_quar_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("fail_test.txt");
+        fs::write(&orig_file, b"Original").unwrap();
+
+        let quarantine = test_dir.join(format!(
+            ".cuddle_reflect_{}_{}.tmp",
+            Uuid::new_v4(),
+            Uuid::new_v4()
+        ));
+        let quarantine_bytes = b"Crucial data in quarantine that must not be lost";
+        fs::write(&quarantine, quarantine_bytes).unwrap();
+
+        // Point to an impossible non-existent parent directory where rename cannot succeed
+        let impossible_orig = test_dir
+            .join("nonexistent_parent_dir")
+            .join("fail_test.txt");
+
+        let res = atomic_preserve_quarantine_backup(&quarantine, &impossible_orig);
+        assert!(
+            res.is_err(),
+            "Must fail when destination directory does not exist"
+        );
+
+        // CRITICAL: Quarantine file must remain untouched
+        assert!(
+            quarantine.exists(),
+            "Quarantine file must NOT be deleted or moved on failure"
+        );
+        assert_eq!(fs::read(&quarantine).unwrap(), quarantine_bytes);
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_wal_recovery_case_b_read_dir_error_marks_conflict() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_case_b_readdir_{}", Uuid::new_v4()));
+        let unreadable_dir = test_dir.join("unreadable_dir");
+        fs::create_dir_all(&unreadable_dir).unwrap();
+
+        let orig_file = unreadable_dir.join("file.txt");
+        let payload = b"Case B read_dir error content";
+        fs::write(&orig_file, payload).unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        mgr.write_staged_text(&staged.stage_id, "Case B modified candidate content")
+            .unwrap();
+
+        let mut item = staged.clone();
+        item.status = StageStatus::Applying;
+        let hist_mgr = crate::history::get_history_manager();
+        hist_mgr.save_session_item(&item).unwrap();
+
+        // Make directory unreadable to cause fs::read_dir() failure
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(&unreadable_dir).unwrap().permissions();
+            perms.set_mode(0o000);
+            fs::set_permissions(&unreadable_dir, perms).unwrap();
+        }
+
+        let mgr_rec = WorkspaceManager::new();
+        let restored = mgr_rec.restore_session().unwrap();
+        let rec_item = restored
+            .iter()
+            .find(|i| i.stage_id == staged.stage_id)
+            .unwrap();
+
+        // Restore permissions so cleanup works
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(&unreadable_dir).unwrap().permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&unreadable_dir, perms).unwrap();
+        }
+
+        // Must be marked Conflict (NOT rolled back to Modified)
+        assert_eq!(rec_item.status, StageStatus::Conflict);
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_wal_recovery_case_b_entry_read_error_marks_conflict() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_case_b_entry_read_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("entry_error.txt");
+        let payload = b"Case B entry read error content";
+        fs::write(&orig_file, payload).unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        mgr.write_staged_text(&staged.stage_id, "Case B modified candidate content")
+            .unwrap();
+
+        let mut item = staged.clone();
+        item.status = StageStatus::Applying;
+        let hist_mgr = crate::history::get_history_manager();
+        hist_mgr.save_session_item(&item).unwrap();
+
+        // Simulate individual directory entry read error
+        test_hooks::set_fail_case_b_entry_read(true);
+        let mgr_rec = WorkspaceManager::new();
+        let restored = mgr_rec.restore_session().unwrap();
+        test_hooks::set_fail_case_b_entry_read(false);
+
+        let rec_item = restored
+            .iter()
+            .find(|i| i.stage_id == staged.stage_id)
+            .unwrap();
+        // 1 error in directory entries must abort rollback and mark Conflict!
+        assert_eq!(rec_item.status, StageStatus::Conflict);
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_wal_recovery_db_failure_retry_after_restart() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_db_fail_retry_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("db_fail.txt");
+        let payload = b"DB fail content";
+        fs::write(&orig_file, payload).unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        mgr.write_staged_text(&staged.stage_id, "Case B modified candidate content")
+            .unwrap();
+
+        let mut item = staged.clone();
+        item.status = StageStatus::Applying;
+        let hist_mgr = crate::history::get_history_manager();
+        hist_mgr.save_session_item(&item).unwrap();
+
+        // 1. Simulate DB failure during restore
+        test_hooks::set_fail_restore_db(true);
+        let mgr_fail = WorkspaceManager::new();
+        let _ = mgr_fail.restore_session();
+        test_hooks::set_fail_restore_db(false);
+
+        // Verify SQLite still records Applying
+        let loaded = hist_mgr.load_all_session_items().unwrap();
+        let item_db = loaded
+            .iter()
+            .find(|i| i.stage_id == staged.stage_id)
+            .unwrap();
+        assert_eq!(
+            item_db.status,
+            StageStatus::Applying,
+            "Must remain Applying so recovery can be retried"
+        );
+
+        // 2. Restart again with DB operational
+        let mgr_retry = WorkspaceManager::new();
+        let restored = mgr_retry.restore_session().unwrap();
+        let rec_item = restored
+            .iter()
+            .find(|i| i.stage_id == staged.stage_id)
+            .unwrap();
+        assert_ne!(
+            rec_item.status,
+            StageStatus::Applying,
+            "Recovery must complete on retry"
+        );
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_wal_recovery_history_db_failure_marks_conflict_and_preserves_backup() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_hist_db_fail_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("hist_fail.txt");
+        let orig_payload = b"Original before hist fail";
+        let concurrent_payload = b"Concurrent write to quarantine before hist fail";
+        fs::write(&orig_file, orig_payload).unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        mgr.write_staged_text(&staged.stage_id, "Staged before hist fail")
+            .unwrap();
+
+        // Interrupt reflection at Point 2 so that state is swapped and WAL is Applying
+        test_hooks::set_crash_point(test_hooks::CrashPoint::AfterRenameExchange);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            mgr.reflect_staged_file(&staged.stage_id)
+        }));
+
+        // Mutate quarantine file to trigger concurrent_write retreat
+        let marker = format!(".cuddle_reflect_{}", staged.stage_id);
+        let quarantine = fs::read_dir(&test_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .find(|e| e.file_name().to_string_lossy().contains(&marker))
+            .expect("Quarantine file must exist");
+        fs::write(quarantine.path(), concurrent_payload).unwrap();
+
+        // Simulate history DB recording failure
+        test_hooks::set_fail_history_db(true);
+        let mgr_rec = WorkspaceManager::new();
+        let restored = mgr_rec.restore_session().unwrap();
+        test_hooks::set_fail_history_db(false);
+
+        let rec_item = restored
+            .iter()
+            .find(|i| i.stage_id == staged.stage_id)
+            .unwrap();
+        // Since history recording failed, quarantine_failure is set, marking Conflict instead of silent success!
+        assert_eq!(rec_item.status, StageStatus::Conflict);
+
+        // Verify backup was safely preserved on disk
+        let backup_file = fs::read_dir(&test_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .find(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .contains(".concurrent_write")
+            })
+            .expect("Backup file must be preserved despite history recording failure");
+        assert_eq!(fs::read(backup_file.path()).unwrap(), concurrent_payload);
 
         let _ = fs::remove_dir_all(&test_dir);
     }

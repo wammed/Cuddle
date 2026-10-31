@@ -125,6 +125,15 @@ pub mod test_hooks {
         static POST_STAGE_CLONE_HOOK: RefCell<Option<HookFn>> = const { RefCell::new(None) };
         static FAIL_STAGE_DB: Cell<bool> = const { Cell::new(false) };
         static FAIL_RESTORE_DB: Cell<bool> = const { Cell::new(false) };
+        static FAIL_LOAD_SESSION_DB: Cell<bool> = const { Cell::new(false) };
+    }
+
+    pub fn set_fail_load_session_db(fail: bool) {
+        FAIL_LOAD_SESSION_DB.with(|c| c.set(fail));
+    }
+
+    pub fn is_fail_load_session_db() -> bool {
+        FAIL_LOAD_SESSION_DB.with(|c| c.get())
     }
 
     pub fn set_fail_restore_db(fail: bool) {
@@ -1488,6 +1497,8 @@ impl WorkspaceManager {
                                                         ".cuddle_reflect_{}",
                                                         item.stage_id
                                                     );
+                                                    let mut matching_entries: Vec<PathBuf> =
+                                                        Vec::new();
                                                     for entry_res in entries {
                                                         let entry = match entry_res {
                                                             Ok(e) => e,
@@ -1507,86 +1518,73 @@ impl WorkspaceManager {
                                                             .to_string_lossy()
                                                             .to_string();
                                                         if entry_name.contains(&marker) {
-                                                            let q_path = entry.path();
-                                                            let q_hash =
-                                                                compute_file_sha256(&q_path).ok();
+                                                            matching_entries.push(entry.path());
+                                                        }
+                                                    }
 
-                                                            if q_hash.is_some()
-                                                                && q_hash == old_snapshot_hash
-                                                            {
-                                                                // Quarantined file exactly matches the pristine pre-reflection original.
-                                                                // No external writes occurred -> safe to remove.
-                                                                if let Err(rm_err) =
-                                                                    fs::remove_file(&q_path)
+                                                    if !quarantine_failure {
+                                                        if matching_entries.len() > 1 {
+                                                            // Ambiguous state: multiple quarantine files exist!
+                                                            // CRITICAL: Retain all files without deleting or renaming!
+                                                            eprintln!(
+                                                                "[SECURITY RECOVERY] Found multiple ({}) quarantine files for stage '{}'. Ambiguous state: retaining all files without deletion and marking Conflict.",
+                                                                matching_entries.len(),
+                                                                item.stage_id
+                                                            );
+                                                            quarantine_failure = true;
+                                                        } else {
+                                                            for q_path in matching_entries {
+                                                                let q_hash =
+                                                                    compute_file_sha256(&q_path)
+                                                                        .ok();
+                                                                if q_hash.is_some()
+                                                                    && q_hash == old_snapshot_hash
                                                                 {
+                                                                    // CRITICAL DEFENSE (Quarantine Safety Fix):
+                                                                    // Do NOT delete the quarantined original file based merely on SHA-256 match!
+                                                                    // An external process may still hold an open FD to this inode.
+                                                                    // Retain the quarantine file and mark Conflict for safety.
                                                                     eprintln!(
-                                                                        "[WARN] Failed to remove clean quarantined original at '{}': {}",
+                                                                        "[SECURITY RECOVERY] Clean quarantine file exists at '{}' for stage '{}'. Retaining file and marking Conflict to prevent TOCTOU data loss.",
                                                                         q_path.display(),
-                                                                        rm_err
+                                                                        item.stage_id
                                                                     );
-                                                                }
-                                                            } else {
-                                                                // Quarantined file has external modifications (e.g. concurrent FD write)
-                                                                // or cannot be verified! MUST PRESERVE as .concurrent_write backup!
-                                                                let lost_write_target =
-                                                                    generate_lost_write_backup_path(
-                                                                        &orig_path,
-                                                                    );
-                                                                if let Err(mv_err) = fs::rename(
-                                                                    &q_path,
-                                                                    &lost_write_target,
-                                                                ) {
-                                                                    eprintln!(
-                                                                        "[CRITICAL RECOVERY] Failed to preserve concurrent external write '{}' -> '{}': {}. Retaining quarantine file and marking Conflict.",
-                                                                        q_path.display(),
-                                                                        lost_write_target.display(),
-                                                                        mv_err
-                                                                    );
-                                                                    // Retain quarantine file and mark Conflict for safety
-                                                                    item.status =
-                                                                        StageStatus::Conflict;
-                                                                    if let Err(e) = hist_mgr
-                                                                        .save_session_item(&item)
-                                                                    {
-                                                                        eprintln!(
-                                                                            "[ERROR] WAL recovery: Failed to save Conflict status to session DB for stage '{}': {}. Reverting to Applying so subsequent restarts retry recovery.",
-                                                                            item.stage_id, e
-                                                                        );
-                                                                        let mut retry_item =
-                                                                            item.clone();
-                                                                        retry_item.status =
-                                                                            StageStatus::Applying;
-                                                                        let _ = hist_mgr
-                                                                            .save_session_item(
-                                                                                &retry_item,
-                                                                            );
-                                                                    }
                                                                     quarantine_failure = true;
                                                                 } else {
-                                                                    eprintln!(
-                                                                        "[SECURITY RECOVERY] Preserved concurrent external write during WAL restore: '{}' -> '{}'",
-                                                                        q_path.display(),
-                                                                        lost_write_target.display()
-                                                                    );
-                                                                    // Record preserved write in history for user visibility
-                                                                    if let Err(rec_err) = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
-                                                                        operation_id: Uuid::new_v4().to_string(),
-                                                                        operation_type: "QuarantinePreserved".to_string(),
-                                                                        display_name: item.display_name.clone(),
-                                                                        original_path: Some(item.original_snapshot.canonical_path.clone()),
-                                                                        staged_path: Some(lost_write_target.to_string_lossy().to_string()),
-                                                                        inode: None,
-                                                                        status: "Success".to_string(),
-                                                                        can_undo: false,
-                                                                        details: Some(format!(
-                                                                            "Concurrent external write detected during WAL restore and preserved to '{}'",
-                                                                            lost_write_target.display()
-                                                                        )),
-                                                                    }) {
+                                                                    // Quarantined file has external modifications (e.g. concurrent FD write)
+                                                                    // or cannot be verified! MUST PRESERVE as .concurrent_write backup!
+                                                                    let lost_write_target = generate_lost_write_backup_path(&orig_path);
+                                                                    if let Err(mv_err) = fs::rename(
+                                                                        &q_path,
+                                                                        &lost_write_target,
+                                                                    ) {
                                                                         eprintln!(
-                                                                            "[WARN] Failed to record QuarantinePreserved in history for stage '{}': {}",
-                                                                            item.stage_id, rec_err
+                                                                            "[CRITICAL RECOVERY] Failed to preserve concurrent external write '{}' -> '{}': {}. Retaining quarantine file and marking Conflict.",
+                                                                            q_path.display(),
+                                                                            lost_write_target.display(),
+                                                                            mv_err
                                                                         );
+                                                                        quarantine_failure = true;
+                                                                    } else {
+                                                                        eprintln!(
+                                                                            "[SECURITY RECOVERY] Preserved concurrent external write during WAL restore: '{}' -> '{}'",
+                                                                            q_path.display(),
+                                                                            lost_write_target.display()
+                                                                        );
+                                                                        let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
+                                                                            operation_id: Uuid::new_v4().to_string(),
+                                                                            operation_type: "QuarantinePreserved".to_string(),
+                                                                            display_name: item.display_name.clone(),
+                                                                            original_path: Some(item.original_snapshot.canonical_path.clone()),
+                                                                            staged_path: Some(lost_write_target.to_string_lossy().to_string()),
+                                                                            inode: None,
+                                                                            status: "Success".to_string(),
+                                                                            can_undo: false,
+                                                                            details: Some(format!(
+                                                                                "Concurrent external write detected during WAL restore and preserved to '{}'",
+                                                                                lost_write_target.display()
+                                                                            )),
+                                                                        });
                                                                     }
                                                                 }
                                                             }
@@ -1619,6 +1617,8 @@ impl WorkspaceManager {
                                                 let mut retry_item = item.clone();
                                                 retry_item.status = StageStatus::Applying;
                                                 let _ = hist_mgr.save_session_item(&retry_item);
+                                            } else {
+                                                resolved = true;
                                             }
                                         }
                                     }
@@ -1626,27 +1626,79 @@ impl WorkspaceManager {
                             }
                         } else if item.original_snapshot.sha256.as_ref() == Some(oh) {
                             // CASE B: orig_path still matches pre-reflection snapshot (swap was not completed or rolled back).
-                            // Safely roll back to Modified status.
-                            item.status = StageStatus::Modified;
-                            if let Err(db_err) = hist_mgr.save_session_item(&item) {
-                                eprintln!(
-                                    "[ERROR] Failed to save rollback Modified status for stage '{}': {}",
-                                    item.stage_id, db_err
-                                );
-                            } else {
-                                // Clean up leftover staging candidate tmp file if present
-                                if let Some(parent) = orig_path.parent() {
-                                    if let Ok(entries) = fs::read_dir(parent) {
+                            let mut has_leftover_quarantine = false;
+                            let mut dir_read_failed = false;
+
+                            if let Some(parent) = orig_path.parent() {
+                                match fs::read_dir(parent) {
+                                    Ok(entries) => {
                                         let marker = format!(".cuddle_reflect_{}", item.stage_id);
                                         for entry in entries.flatten() {
                                             if entry.file_name().to_string_lossy().contains(&marker)
                                             {
-                                                let _ = fs::remove_file(entry.path());
+                                                has_leftover_quarantine = true;
+                                                break;
                                             }
                                         }
                                     }
+                                    Err(e) => {
+                                        eprintln!(
+                                            "[ERROR] WAL recovery: Failed reading parent directory in CASE B for stage '{}': {}. Retaining files and marking Conflict for safety.",
+                                            item.stage_id, e
+                                        );
+                                        dir_read_failed = true;
+                                    }
                                 }
-                                resolved = true;
+                            } else {
+                                dir_read_failed = true;
+                            }
+
+                            if dir_read_failed || has_leftover_quarantine {
+                                // CRITICAL SAFETY (Quarantine Safety Fix for CASE B):
+                                // If quarantine files exist, do NOT delete them based on filename alone!
+                                // Safety of deletion cannot be proven -> retain files and mark Conflict!
+                                eprintln!(
+                                    "[SECURITY RECOVERY] Leftover quarantine/reflection file exists in CASE B for stage '{}'. Retaining all files and marking Conflict for safety.",
+                                    item.stage_id
+                                );
+                                item.status = StageStatus::Conflict;
+                                #[cfg(test)]
+                                let db_save_res = if test_hooks::is_fail_restore_db() {
+                                    Err("Simulated restore SQLite persistence failure".to_string())
+                                } else {
+                                    hist_mgr.save_session_item(&item)
+                                };
+                                #[cfg(not(test))]
+                                let db_save_res = hist_mgr.save_session_item(&item);
+
+                                if let Err(db_err) = db_save_res {
+                                    eprintln!(
+                                        "[ERROR] Failed to save Conflict status in CASE B for stage '{}': {}",
+                                        item.stage_id, db_err
+                                    );
+                                } else {
+                                    resolved = true;
+                                }
+                            } else {
+                                // Clean rollback: no quarantine files exist, original untouched on disk.
+                                item.status = StageStatus::Modified;
+                                #[cfg(test)]
+                                let db_save_res = if test_hooks::is_fail_restore_db() {
+                                    Err("Simulated restore SQLite persistence failure".to_string())
+                                } else {
+                                    hist_mgr.save_session_item(&item)
+                                };
+                                #[cfg(not(test))]
+                                let db_save_res = hist_mgr.save_session_item(&item);
+
+                                if let Err(db_err) = db_save_res {
+                                    eprintln!(
+                                        "[ERROR] Failed to save rollback Modified status for stage '{}': {}",
+                                        item.stage_id, db_err
+                                    );
+                                } else {
+                                    resolved = true;
+                                }
                             }
                         }
                     }
@@ -1654,12 +1706,21 @@ impl WorkspaceManager {
 
                 if !resolved {
                     // Cannot confirm clean roll-forward or clean rollback -> mark Conflict for safety
-                    item.status = StageStatus::Conflict;
-                    if let Err(e) = hist_mgr.save_session_item(&item) {
-                        eprintln!(
-                            "[ERROR] WAL recovery: Failed to save Conflict status in session DB for unresolved stage '{}': {}",
-                            item.stage_id, e
-                        );
+                    #[cfg(test)]
+                    let is_failing_db = test_hooks::is_fail_restore_db();
+                    #[cfg(not(test))]
+                    let is_failing_db = false;
+
+                    if !is_failing_db {
+                        item.status = StageStatus::Conflict;
+                        if let Err(e) = hist_mgr.save_session_item(&item) {
+                            eprintln!(
+                                "[ERROR] WAL recovery: Failed to save Conflict status in session DB for unresolved stage '{}': {}",
+                                item.stage_id, e
+                            );
+                        }
+                    } else {
+                        item.status = StageStatus::Applying;
                     }
                 }
 
@@ -2003,9 +2064,27 @@ pub fn cleanup_stale_staging_artifacts_with_threshold(threshold_secs: u64) {
         }
     }
 
-    let active_stage_ids: std::collections::HashSet<String> = hist_mgr
-        .load_all_session_items()
-        .unwrap_or_default()
+    #[cfg(test)]
+    let load_res = if test_hooks::is_fail_load_session_db() {
+        Err("Simulated load_all_session_items failure".to_string())
+    } else {
+        hist_mgr.load_all_session_items()
+    };
+    #[cfg(not(test))]
+    let load_res = hist_mgr.load_all_session_items();
+
+    let session_items = match load_res {
+        Ok(items) => items,
+        Err(e) => {
+            eprintln!(
+                "[ERROR] cleanup_stale_staging_artifacts: Failed to load session items from database: {}. Aborting cleanup for data safety.",
+                e
+            );
+            return;
+        }
+    };
+
+    let active_stage_ids: std::collections::HashSet<String> = session_items
         .into_iter()
         .map(|item| item.stage_id)
         .collect();
@@ -2120,9 +2199,27 @@ pub fn cleanup_stale_staging_artifacts_with_dir_and_threshold(
     }
 
     let hist_mgr = crate::history::get_history_manager();
-    let active_stage_ids: std::collections::HashSet<String> = hist_mgr
-        .load_all_session_items()
-        .unwrap_or_default()
+    #[cfg(test)]
+    let load_res = if test_hooks::is_fail_load_session_db() {
+        Err("Simulated load_all_session_items failure".to_string())
+    } else {
+        hist_mgr.load_all_session_items()
+    };
+    #[cfg(not(test))]
+    let load_res = hist_mgr.load_all_session_items();
+
+    let session_items = match load_res {
+        Ok(items) => items,
+        Err(e) => {
+            eprintln!(
+                "[ERROR] cleanup_stale_staging_artifacts: Failed to load session items from database: {}. Aborting cleanup for data safety.",
+                e
+            );
+            return;
+        }
+    };
+
+    let active_stage_ids: std::collections::HashSet<String> = session_items
         .into_iter()
         .map(|item| item.stage_id)
         .collect();
@@ -3642,29 +3739,16 @@ mod tests {
             .iter()
             .find(|i| i.stage_id == staged.stage_id)
             .unwrap();
-        assert_eq!(restored_item.status, StageStatus::Reflected);
+        // Section 8 Test 3: Multiple quarantines must be treated as Conflict fail-safe
+        assert_eq!(restored_item.status, StageStatus::Conflict);
 
-        // Clean quarantine file should be removed
+        // All quarantine files must be preserved - none unlinked!
         assert!(
-            !q_clean.exists(),
-            "Clean quarantine file should be unlinked"
+            q_clean.exists(),
+            "Clean quarantine file must NOT be unlinked"
         );
-
-        // Both modified quarantine files must be preserved as .concurrent_write backups
-        let backups: Vec<_> = fs::read_dir(&test_dir)
-            .unwrap()
-            .flatten()
-            .filter(|e| {
-                e.file_name()
-                    .to_string_lossy()
-                    .contains(".concurrent_write")
-            })
-            .collect();
-        assert_eq!(
-            backups.len(),
-            2,
-            "Both external writes A and B must be safely preserved"
-        );
+        assert!(q_mod_a.exists(), "Quarantine file A must NOT be unlinked");
+        assert!(q_mod_b.exists(), "Quarantine file B must NOT be unlinked");
 
         let _ = fs::remove_dir_all(&test_dir);
     }
@@ -4243,6 +4327,651 @@ mod tests {
 
         // Cleanup
         let _ = fs::remove_file(&outside_file);
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_wal_recovery_test1_quarantine_sha256_match_preserves_quarantine_and_state() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_wal_test1_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("test1_doc.txt");
+        let orig_initial_content = b"Original content pristine V1";
+        fs::write(&orig_file, orig_initial_content).unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        let hist_mgr = crate::history::get_history_manager();
+
+        // Simulate state where swap happened, orig_file matches staged copy
+        let reflected_content = b"Reflected Content V2 from Staging";
+        fs::write(&orig_file, reflected_content).unwrap();
+        fs::write(&staged.staged_path, reflected_content).unwrap();
+
+        // Quarantine file has exact SHA-256 matching original snapshot
+        let quarantine_file = test_dir.join(format!(
+            ".cuddle_reflect_{}_{}.tmp",
+            staged.stage_id,
+            Uuid::new_v4()
+        ));
+        fs::write(&quarantine_file, orig_initial_content).unwrap();
+
+        let mut item = staged.clone();
+        item.status = StageStatus::Applying;
+        hist_mgr.save_session_item(&item).unwrap();
+
+        // Execute recovery
+        let restored = mgr.restore_session().unwrap();
+        let restored_item = restored
+            .iter()
+            .find(|i| i.stage_id == staged.stage_id)
+            .expect("Stage must be restored");
+
+        // Test 1 Assertions:
+        // 1. Quarantine file must NOT be deleted!
+        assert!(
+            quarantine_file.exists(),
+            "Quarantine file must NOT be deleted even when SHA-256 matches pre-reflection snapshot"
+        );
+        // 2. Recovery state properly saved as Conflict for safety (or appropriate preserved state)
+        assert_eq!(
+            restored_item.status,
+            StageStatus::Conflict,
+            "Must be marked Conflict because external write to open FD cannot be ruled out"
+        );
+        // 3. Data is preserved
+        assert_eq!(
+            fs::read(&quarantine_file).unwrap(),
+            orig_initial_content,
+            "Quarantine data must be completely preserved without alteration"
+        );
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_wal_recovery_test2_quarantine_sha256_mismatch_preserves_data_and_state() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_wal_test2_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("test2_doc.txt");
+        fs::write(&orig_file, b"Original V1").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        let hist_mgr = crate::history::get_history_manager();
+
+        // orig_file matches staged copy
+        fs::write(&orig_file, b"Reflected Content V2").unwrap();
+        fs::write(&staged.staged_path, b"Reflected Content V2").unwrap();
+
+        // Quarantine file has content that DIFFERS from original snapshot (concurrent external write)
+        let quarantine_file = test_dir.join(format!(
+            ".cuddle_reflect_{}_{}.tmp",
+            staged.stage_id,
+            Uuid::new_v4()
+        ));
+        let external_write_payload = b"Original V1 with concurrent write modification!";
+        fs::write(&quarantine_file, external_write_payload).unwrap();
+
+        let mut item = staged.clone();
+        item.status = StageStatus::Applying;
+        hist_mgr.save_session_item(&item).unwrap();
+
+        let restored = mgr.restore_session().unwrap();
+        let restored_item = restored
+            .iter()
+            .find(|i| i.stage_id == staged.stage_id)
+            .expect("Stage must be restored");
+
+        // Test 2 Assertions:
+        // 1. Data must NOT be deleted! Either kept as quarantine or preserved to .concurrent_write
+        let has_quarantine = quarantine_file.exists();
+        let concurrent_backups: Vec<_> = fs::read_dir(&test_dir)
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .contains(".concurrent_write")
+            })
+            .collect();
+
+        assert!(
+            has_quarantine || !concurrent_backups.is_empty(),
+            "Quarantine or concurrent_write backup must be preserved"
+        );
+
+        let preserved_data = if has_quarantine {
+            fs::read(&quarantine_file).unwrap()
+        } else {
+            fs::read(concurrent_backups[0].path()).unwrap()
+        };
+        assert_eq!(
+            preserved_data, external_write_payload,
+            "External write content must be preserved without loss"
+        );
+
+        // 2. Conflict or appropriate preserved state
+        assert!(
+            restored_item.status == StageStatus::Conflict
+                || restored_item.status == StageStatus::Reflected,
+            "Recovery state must be Conflict or appropriate preserved state"
+        );
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_wal_recovery_test3_multiple_quarantines_retains_all_and_marks_conflict() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_wal_test3_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("test3_doc.txt");
+        fs::write(&orig_file, b"Original V1").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        let hist_mgr = crate::history::get_history_manager();
+
+        fs::write(&orig_file, b"Reflected Content V2").unwrap();
+        fs::write(&staged.staged_path, b"Reflected Content V2").unwrap();
+
+        // 3 separate quarantine files for same stage_id
+        let q1 = test_dir.join(format!(
+            ".cuddle_reflect_{}_{}.tmp",
+            staged.stage_id,
+            Uuid::new_v4()
+        ));
+        fs::write(&q1, b"Payload Q1").unwrap();
+
+        let q2 = test_dir.join(format!(
+            ".cuddle_reflect_{}_{}.tmp",
+            staged.stage_id,
+            Uuid::new_v4()
+        ));
+        fs::write(&q2, b"Payload Q2").unwrap();
+
+        let q3 = test_dir.join(format!(
+            ".cuddle_reflect_{}_{}.tmp",
+            staged.stage_id,
+            Uuid::new_v4()
+        ));
+        fs::write(&q3, b"Payload Q3").unwrap();
+
+        let mut item = staged.clone();
+        item.status = StageStatus::Applying;
+        hist_mgr.save_session_item(&item).unwrap();
+
+        let restored = mgr.restore_session().unwrap();
+        let restored_item = restored
+            .iter()
+            .find(|i| i.stage_id == staged.stage_id)
+            .expect("Stage must be restored");
+
+        // Test 3 Assertions:
+        // 1. None of the files deleted
+        assert!(q1.exists(), "Q1 must not be deleted");
+        assert!(q2.exists(), "Q2 must not be deleted");
+        assert!(q3.exists(), "Q3 must not be deleted");
+
+        // 2. None overwritten
+        assert_eq!(fs::read(&q1).unwrap(), b"Payload Q1");
+        assert_eq!(fs::read(&q2).unwrap(), b"Payload Q2");
+        assert_eq!(fs::read(&q3).unwrap(), b"Payload Q3");
+
+        // 3. Ambiguous state treated as Conflict
+        assert_eq!(restored_item.status, StageStatus::Conflict);
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_wal_recovery_test4_sqlite_failure_retains_quarantine_and_allows_retry() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_wal_test4_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("test4_doc.txt");
+        fs::write(&orig_file, b"Original V1").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        let hist_mgr = crate::history::get_history_manager();
+
+        fs::write(&orig_file, b"Reflected Content V2").unwrap();
+        fs::write(&staged.staged_path, b"Reflected Content V2").unwrap();
+
+        let quarantine_file = test_dir.join(format!(
+            ".cuddle_reflect_{}_{}.tmp",
+            staged.stage_id,
+            Uuid::new_v4()
+        ));
+        fs::write(&quarantine_file, b"Quarantine content V1").unwrap();
+
+        let mut item = staged.clone();
+        item.status = StageStatus::Applying;
+        hist_mgr.save_session_item(&item).unwrap();
+
+        // 1. Simulate SQLite persistence failure during restore
+        test_hooks::set_fail_restore_db(true);
+        let _ = mgr.restore_session();
+        test_hooks::set_fail_restore_db(false);
+
+        // Quarantine must NOT be deleted
+        assert!(
+            quarantine_file.exists(),
+            "Quarantine file must be preserved on SQLite save failure"
+        );
+
+        // SQLite DB must still record Applying (not completed)
+        let loaded = hist_mgr.load_all_session_items().unwrap();
+        let db_item = loaded
+            .iter()
+            .find(|i| i.stage_id == staged.stage_id)
+            .expect("Item must still exist in DB");
+        assert_eq!(
+            db_item.status,
+            StageStatus::Applying,
+            "DB item status must remain Applying so retry is possible"
+        );
+
+        // 2. Retry restore with DB operational -> succeeds
+        let restored_retry = mgr.restore_session().unwrap();
+        let retry_item = restored_retry
+            .iter()
+            .find(|i| i.stage_id == staged.stage_id)
+            .expect("Item must be restored on retry");
+        assert!(
+            retry_item.status == StageStatus::Conflict
+                || retry_item.status == StageStatus::Reflected,
+            "Retry item status must be Conflict or Reflected"
+        );
+        let has_quarantine_or_backup = quarantine_file.exists()
+            || fs::read_dir(&test_dir).unwrap().flatten().any(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .contains(".concurrent_write")
+            });
+        assert!(
+            has_quarantine_or_backup,
+            "Quarantine data must be preserved on retry"
+        );
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_wal_recovery_test5_cleanup_queue_conflict_retains_quarantine() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_wal_test5_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let local_staging = test_dir.join(".cuddle-temp");
+        fs::create_dir_all(&local_staging).unwrap();
+
+        let orig_file = test_dir.join("test5_doc.txt");
+        fs::write(&orig_file, b"Original V1").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        let hist_mgr = crate::history::get_history_manager();
+
+        // Quarantine file located in local staging
+        let quarantine_file = local_staging.join(format!(
+            ".cuddle_reflect_{}_{}.tmp",
+            staged.stage_id,
+            Uuid::new_v4()
+        ));
+        fs::write(&quarantine_file, b"Quarantine data needing protection").unwrap();
+
+        // Item is registered in Conflict status
+        let mut item = staged.clone();
+        item.status = StageStatus::Conflict;
+        hist_mgr.save_session_item(&item).unwrap();
+
+        // Register quarantine path in cleanup_queue
+        hist_mgr
+            .queue_cleanup_path(&quarantine_file.to_string_lossy(), None)
+            .unwrap();
+
+        // Execute cleanup with 0 threshold (immediate stale cleanup)
+        cleanup_stale_staging_artifacts_with_threshold(0);
+
+        // Guardrail Assertions:
+        // Quarantine file must NOT be deleted because it is associated with a Conflict session item!
+        assert!(
+            quarantine_file.exists(),
+            "Quarantine file must NOT be deleted by cleanup_queue when associated with Conflict session item"
+        );
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_wal_recovery_test6_db_read_failure_during_cleanup_aborts_and_protects_files() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_wal_test6_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let local_staging = test_dir.join(".cuddle-temp");
+        fs::create_dir_all(&local_staging).unwrap();
+
+        // Create a staging artifact in local staging
+        let stage_artifact = local_staging.join(format!(
+            ".cuddle_reflect_{}_{}.tmp",
+            Uuid::new_v4(),
+            Uuid::new_v4()
+        ));
+        fs::write(&stage_artifact, b"Artifact data to protect").unwrap();
+
+        // Simulate DB read failure in load_all_session_items()
+        test_hooks::set_fail_load_session_db(true);
+
+        cleanup_stale_staging_artifacts_with_threshold(0);
+        cleanup_stale_staging_artifacts_with_dir_and_threshold(&local_staging, 0);
+
+        test_hooks::set_fail_load_session_db(false);
+
+        // Cleanup must abort and NOT delete staging artifact!
+        assert!(
+            stage_artifact.exists(),
+            "Staging artifact must NOT be deleted when database read fails during cleanup maintenance"
+        );
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_wal_recovery_test7_crash_injection_at_critical_points() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_wal_test7_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_payload = b"Original content at crash injection start";
+        let staged_payload = b"Staged candidate content for crash injection";
+
+        // Crash Point 1: Immediately after Applying saved in SQLite (before physical exchange)
+        {
+            let orig_file1 = test_dir.join("crash_point1.txt");
+            fs::write(&orig_file1, orig_payload).unwrap();
+
+            let mgr = WorkspaceManager::new();
+            let staged1 = mgr.stage_file(&orig_file1).unwrap();
+            fs::write(&staged1.staged_path, staged_payload).unwrap();
+
+            // Candidate tmp file in orig directory exists (pre-swap copy)
+            let tmp_candidate = test_dir.join(format!(
+                ".cuddle_reflect_{}_{}.tmp",
+                staged1.stage_id,
+                Uuid::new_v4()
+            ));
+            fs::write(&tmp_candidate, staged_payload).unwrap();
+
+            let mut item1 = staged1.clone();
+            item1.status = StageStatus::Applying;
+            let hist_mgr = crate::history::get_history_manager();
+            hist_mgr.save_session_item(&item1).unwrap();
+
+            // Restore after Point 1 crash
+            let restored = mgr.restore_session().unwrap();
+            let rec_item1 = restored
+                .iter()
+                .find(|i| i.stage_id == staged1.stage_id)
+                .unwrap();
+            // CASE B with quarantine file: safety cannot be proven -> Conflict, all files retained!
+            assert_eq!(rec_item1.status, StageStatus::Conflict);
+            assert!(tmp_candidate.exists(), "Tmp file must not be deleted");
+            assert_eq!(fs::read(&orig_file1).unwrap(), orig_payload);
+        }
+
+        // Crash Point 2: Immediately after RENAME_EXCHANGE (swap succeeded, before inspection)
+        {
+            let orig_file2 = test_dir.join("crash_point2.txt");
+            fs::write(&orig_file2, orig_payload).unwrap();
+
+            let mgr = WorkspaceManager::new();
+            let staged2 = mgr.stage_file(&orig_file2).unwrap();
+            fs::write(&staged2.staged_path, staged_payload).unwrap();
+
+            // Orig file now has staged_payload, quarantine file has orig_payload
+            fs::write(&orig_file2, staged_payload).unwrap();
+            let quarantine2 = test_dir.join(format!(
+                ".cuddle_reflect_{}_{}.tmp",
+                staged2.stage_id,
+                Uuid::new_v4()
+            ));
+            fs::write(&quarantine2, orig_payload).unwrap();
+
+            let mut item2 = staged2.clone();
+            item2.status = StageStatus::Applying;
+            let hist_mgr = crate::history::get_history_manager();
+            hist_mgr.save_session_item(&item2).unwrap();
+
+            // Restore after Point 2 crash
+            let restored = mgr.restore_session().unwrap();
+            let rec_item2 = restored
+                .iter()
+                .find(|i| i.stage_id == staged2.stage_id)
+                .unwrap();
+            assert_eq!(rec_item2.status, StageStatus::Conflict);
+            assert!(quarantine2.exists(), "Quarantine file must not be deleted");
+            assert_eq!(fs::read(&quarantine2).unwrap(), orig_payload);
+        }
+
+        // Crash Point 3: Immediately after quarantine SHA-256 calculation
+        {
+            let orig_file3 = test_dir.join("crash_point3.txt");
+            fs::write(&orig_file3, orig_payload).unwrap();
+
+            let mgr = WorkspaceManager::new();
+            let staged3 = mgr.stage_file(&orig_file3).unwrap();
+            fs::write(&staged3.staged_path, staged_payload).unwrap();
+
+            fs::write(&orig_file3, staged_payload).unwrap();
+            let quarantine3 = test_dir.join(format!(
+                ".cuddle_reflect_{}_{}.tmp",
+                staged3.stage_id,
+                Uuid::new_v4()
+            ));
+            fs::write(&quarantine3, orig_payload).unwrap();
+
+            let mut item3 = staged3.clone();
+            item3.status = StageStatus::Applying;
+            let hist_mgr = crate::history::get_history_manager();
+            hist_mgr.save_session_item(&item3).unwrap();
+
+            let restored = mgr.restore_session().unwrap();
+            let rec_item3 = restored
+                .iter()
+                .find(|i| i.stage_id == staged3.stage_id)
+                .unwrap();
+            assert_eq!(rec_item3.status, StageStatus::Conflict);
+            assert!(quarantine3.exists());
+        }
+
+        // Crash Point 4: Immediately after SQLite recovery status update to Conflict
+        {
+            let orig_file4 = test_dir.join("crash_point4.txt");
+            fs::write(&orig_file4, orig_payload).unwrap();
+
+            let mgr = WorkspaceManager::new();
+            let staged4 = mgr.stage_file(&orig_file4).unwrap();
+            fs::write(&staged4.staged_path, staged_payload).unwrap();
+
+            fs::write(&orig_file4, staged_payload).unwrap();
+            let quarantine4 = test_dir.join(format!(
+                ".cuddle_reflect_{}_{}.tmp",
+                staged4.stage_id,
+                Uuid::new_v4()
+            ));
+            fs::write(&quarantine4, orig_payload).unwrap();
+
+            let mut item4 = staged4.clone();
+            item4.status = StageStatus::Conflict;
+            let hist_mgr = crate::history::get_history_manager();
+            hist_mgr.save_session_item(&item4).unwrap();
+
+            let restored = mgr.restore_session().unwrap();
+            let rec_item4 = restored
+                .iter()
+                .find(|i| i.stage_id == staged4.stage_id)
+                .unwrap();
+            assert_eq!(rec_item4.status, StageStatus::Conflict);
+            assert!(quarantine4.exists());
+        }
+
+        // Crash Point 5: Immediately after quarantine preservation
+        {
+            let orig_file5 = test_dir.join("crash_point5.txt");
+            fs::write(&orig_file5, orig_payload).unwrap();
+
+            let mgr = WorkspaceManager::new();
+            let staged5 = mgr.stage_file(&orig_file5).unwrap();
+            fs::write(&staged5.staged_path, staged_payload).unwrap();
+
+            fs::write(&orig_file5, staged_payload).unwrap();
+            let quarantine5 = test_dir.join(format!(
+                ".cuddle_reflect_{}_{}.tmp",
+                staged5.stage_id,
+                Uuid::new_v4()
+            ));
+            fs::write(&quarantine5, orig_payload).unwrap();
+
+            let mut item5 = staged5.clone();
+            item5.status = StageStatus::Conflict;
+            let hist_mgr = crate::history::get_history_manager();
+            hist_mgr.save_session_item(&item5).unwrap();
+
+            let restored = mgr.restore_session().unwrap();
+            let rec_item5 = restored
+                .iter()
+                .find(|i| i.stage_id == staged5.stage_id)
+                .unwrap();
+            assert_eq!(rec_item5.status, StageStatus::Conflict);
+            assert!(quarantine5.exists());
+        }
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_wal_recovery_test8_external_open_fd_write_protection_linux() {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_wal_test8_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("open_fd_test.txt");
+        let initial_data = b"Initial original data before external process opens FD";
+        fs::write(&orig_file, initial_data).unwrap();
+
+        // 1. External application opens original file and holds open file descriptor
+        let mut open_fd = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(&orig_file)
+            .expect("Failed to open file descriptor for external process");
+
+        // 2. Stage the file
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        let hist_mgr = crate::history::get_history_manager();
+
+        // 3. Cuddle simulates atomic_exchange_files:
+        // Staged content moves to orig_file.
+        // Original inode moves to quarantine_file.
+        let reflected_content = b"New reflected content from Cuddle staging candidate";
+        let quarantine_file = test_dir.join(format!(
+            ".cuddle_reflect_{}_{}.tmp",
+            staged.stage_id,
+            Uuid::new_v4()
+        ));
+
+        // Create quarantine file with identical content first, then atomic exchange
+        fs::write(&quarantine_file, reflected_content).unwrap();
+        atomic_exchange_files(&quarantine_file, &orig_file).expect("Atomic swap failed");
+
+        // Now orig_file has reflected_content!
+        // quarantine_file now holds the original inode that open_fd is pointing to!
+        fs::write(&staged.staged_path, reflected_content).unwrap();
+
+        // 4. External process writes to its open file descriptor!
+        // Under POSIX semantics, this writes directly to the quarantined inode at quarantine_file!
+        let concurrent_external_write = b"CRITICAL CONCURRENT WRITE FROM OPEN UNIX FD AFTER SWAP!";
+        open_fd
+            .write_all(concurrent_external_write)
+            .expect("Writing to open FD must succeed");
+        open_fd.flush().expect("Flushing open FD must succeed");
+
+        // 5. Cuddle simulates crash in Applying WAL state
+        let mut item = staged.clone();
+        item.status = StageStatus::Applying;
+        hist_mgr.save_session_item(&item).unwrap();
+
+        // 6. Execute session restore (WAL recovery)
+        let restored = mgr.restore_session().unwrap();
+        let restored_item = restored
+            .iter()
+            .find(|i| i.stage_id == staged.stage_id)
+            .expect("Stage must be restored");
+
+        // Close external FD now that recovery has executed
+        drop(open_fd);
+
+        // Test 8 Assertions:
+        // 1. External FD writes must NOT be lost!
+        let has_quarantine = quarantine_file.exists();
+        let backups: Vec<_> = fs::read_dir(&test_dir)
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .contains(".concurrent_write")
+            })
+            .collect();
+
+        assert!(
+            has_quarantine || !backups.is_empty(),
+            "Quarantine file or preserved concurrent write must exist"
+        );
+
+        let preserved_bytes = if has_quarantine {
+            fs::read(&quarantine_file).unwrap()
+        } else {
+            fs::read(backups[0].path()).unwrap()
+        };
+
+        assert!(
+            preserved_bytes
+                .windows(concurrent_external_write.len())
+                .any(|w| w == concurrent_external_write),
+            "Preserved file must contain the exact data written via open Unix file descriptor"
+        );
+
+        // 2. Recovery state must be safely preserved as Conflict (or Reflected with preserved backup)
+        assert!(
+            restored_item.status == StageStatus::Conflict
+                || restored_item.status == StageStatus::Reflected,
+            "Item status must be Conflict or Reflected with preserved backup"
+        );
+
         let _ = fs::remove_dir_all(&test_dir);
     }
 

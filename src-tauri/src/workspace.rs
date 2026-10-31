@@ -85,6 +85,13 @@ pub enum WorkspaceError {
         lost_write_path: PathBuf,
         cause: String,
     },
+    #[error("Reflection rollback swap failed for stage '{stage_id}': unable to restore original file '{path}' from quarantined file '{quarantined_path}': {cause}")]
+    ReflectRollbackFailed {
+        stage_id: String,
+        path: PathBuf,
+        quarantined_path: PathBuf,
+        cause: String,
+    },
 }
 
 impl WorkspaceError {
@@ -95,6 +102,7 @@ impl WorkspaceError {
             WorkspaceError::StagingDirUnavailable => "ERR_STAGING_DIR_UNAVAILABLE",
             WorkspaceError::InsufficientSpace => "ERR_INSUFFICIENT_SPACE",
             WorkspaceError::RollbackFailed { .. } => "ERR_UNSTAGE_ROLLBACK_FAILED",
+            WorkspaceError::ReflectRollbackFailed { .. } => "ERR_REFLECT_ROLLBACK_FAILED",
             WorkspaceError::AtomicExchangeUnsupported(_) => "ERR_ATOMIC_EXCHANGE_UNSUPPORTED",
             WorkspaceError::LostWritePreserveFailed { .. } => "ERR_LOST_WRITE_PRESERVE_FAILED",
             WorkspaceError::Io(_) => "ERR_IO",
@@ -612,8 +620,9 @@ impl WorkspaceManager {
             .parent()
             .ok_or(WorkspaceError::StagingDirUnavailable)?;
 
-        // Temporary file in same directory for atomic POSIX rename
-        let tmp_reflect_name = format!(".cuddle_reflect_{}.tmp", Uuid::new_v4());
+        // Temporary file in same directory for atomic POSIX rename (includes stage_id for crash recovery tracking)
+        let tmp_reflect_name =
+            format!(".cuddle_reflect_{}_{}.tmp", staged.stage_id, Uuid::new_v4());
         let tmp_reflect_path = orig_parent.join(tmp_reflect_name);
 
         // Copy staged content to temporary file in destination volume
@@ -682,18 +691,34 @@ impl WorkspaceManager {
                             let backup_target = generate_origin_backup_path(&orig_path);
                             if let Err(e) = fs::rename(&tmp_reflect_path, &backup_target) {
                                 // If saving backup fails, swap original back to recover
-                                let _ = atomic_exchange_files(&tmp_reflect_path, &orig_path);
+                                if let Err(rb_err) =
+                                    atomic_exchange_files(&tmp_reflect_path, &orig_path)
+                                {
+                                    eprintln!(
+                                        "[CRITICAL] Reflection rollback exchange failed! Quarantined original file at '{}', candidate at '{}': {}",
+                                        tmp_reflect_path.display(),
+                                        orig_path.display(),
+                                        rb_err
+                                    );
+                                    // CRITICAL: NEVER remove tmp_reflect_path when exchange fails, as it contains the original data!
+                                    return Err(WorkspaceError::ReflectRollbackFailed {
+                                        stage_id: staged.stage_id.clone(),
+                                        path: orig_path.clone(),
+                                        quarantined_path: tmp_reflect_path.clone(),
+                                        cause: format!(
+                                            "Failed to save backup ({}). Subsequent rollback swap also failed: {}. Original data preserved in quarantined file at {}",
+                                            e, rb_err, tmp_reflect_path.display()
+                                        ),
+                                    });
+                                }
+                                // Rollback exchange succeeded: orig_path has the original back, tmp_reflect_path has staging candidate
                                 let _ = fs::remove_file(&tmp_reflect_path);
                                 return Err(WorkspaceError::Io(e));
                             }
                             backup_origin_path = Some(backup_target);
                         } else {
                             // Mode A (Overwrite):
-                            // To protect against race conditions where an external process writes via an open FD
-                            // immediately before or during unlink, trigger verification hook and perform final check:
-                            #[cfg(test)]
-                            test_hooks::trigger_post_verify_hook(&tmp_reflect_path);
-
+                            // 1. Initial verification before removal:
                             let final_check = OperationPolicy::verify_conflict_on_path(
                                 &tmp_reflect_path,
                                 &staged.original_snapshot,
@@ -704,24 +729,59 @@ impl WorkspaceManager {
                                 let lost_write_target = generate_lost_write_backup_path(&orig_path);
                                 if let Err(e) = fs::rename(&tmp_reflect_path, &lost_write_target) {
                                     eprintln!(
-                                        "[CRITICAL] Failed to preserve last-second external write '{}': {}",
+                                        "[CRITICAL] Failed to preserve external write '{}': {}",
                                         lost_write_target.display(),
                                         e
                                     );
                                     return Err(WorkspaceError::LostWritePreserveFailed {
                                         tmp_path: tmp_reflect_path.clone(),
                                         lost_write_path: lost_write_target.clone(),
-                                        cause: format!("Failed to preserve last-second concurrent write before removal: {}", e),
+                                        cause: format!("Failed to preserve concurrent write before removal: {}", e),
                                     });
                                 }
                                 eprintln!(
-                                    "[SECURITY] Concurrent external write detected right before removal and preserved to '{}'",
+                                    "[SECURITY] Concurrent external write detected and preserved to '{}'",
                                     lost_write_target.display()
                                 );
                                 concurrent_write_path = Some(lost_write_target);
                             } else {
-                                // Safely remove the quarantined old original
-                                let _ = fs::remove_file(&tmp_reflect_path);
+                                // 2. Trigger post-verify hook AFTER initial verification passed, immediately before unlinking
+                                #[cfg(test)]
+                                test_hooks::trigger_post_verify_hook(&tmp_reflect_path);
+
+                                // 3. Double-check right before unlinking to catch last-millisecond concurrent writes:
+                                let pre_unlink_check = OperationPolicy::verify_conflict_on_path(
+                                    &tmp_reflect_path,
+                                    &staged.original_snapshot,
+                                    true,
+                                );
+
+                                if pre_unlink_check.is_err() {
+                                    let lost_write_target =
+                                        generate_lost_write_backup_path(&orig_path);
+                                    if let Err(e) =
+                                        fs::rename(&tmp_reflect_path, &lost_write_target)
+                                    {
+                                        eprintln!(
+                                            "[CRITICAL] Failed to preserve last-millisecond external write '{}': {}",
+                                            lost_write_target.display(),
+                                            e
+                                        );
+                                        return Err(WorkspaceError::LostWritePreserveFailed {
+                                            tmp_path: tmp_reflect_path.clone(),
+                                            lost_write_path: lost_write_target.clone(),
+                                            cause: format!("Failed to preserve last-millisecond concurrent write before removal: {}", e),
+                                        });
+                                    }
+                                    eprintln!(
+                                        "[SECURITY] Last-millisecond concurrent write detected after verification and preserved to '{}'",
+                                        lost_write_target.display()
+                                    );
+                                    concurrent_write_path = Some(lost_write_target);
+                                } else {
+                                    // Safely remove the quarantined old original
+                                    let _ = fs::remove_file(&tmp_reflect_path);
+                                }
                             }
                         }
                     }
@@ -729,7 +789,28 @@ impl WorkspaceManager {
                         // CONFLICT DETECTED!
                         // An external modification occurred prior to the swap.
                         // Rollback immediately: swap the original file back into place!
-                        let _ = atomic_exchange_files(&tmp_reflect_path, &orig_path);
+                        if let Err(rb_err) = atomic_exchange_files(&tmp_reflect_path, &orig_path) {
+                            eprintln!(
+                                "[CRITICAL] Conflict rollback swap failed! Quarantined original file at '{}', candidate at '{}': {}",
+                                tmp_reflect_path.display(),
+                                orig_path.display(),
+                                rb_err
+                            );
+                            // CRITICAL: NEVER remove tmp_reflect_path when exchange fails, as it contains the user's original data!
+                            staged.status = StageStatus::Conflict;
+                            let hist_mgr = crate::history::get_history_manager();
+                            let _ = hist_mgr.save_session_item(staged);
+                            return Err(WorkspaceError::ReflectRollbackFailed {
+                                stage_id: staged.stage_id.clone(),
+                                path: orig_path.clone(),
+                                quarantined_path: tmp_reflect_path.clone(),
+                                cause: format!(
+                                    "Conflict detected ({}). Rollback swap failed: {}. Original data preserved in quarantined file at {}",
+                                    conflict_err, rb_err, tmp_reflect_path.display()
+                                ),
+                            });
+                        }
+                        // Rollback exchange succeeded: original file restored to orig_path, tmp_reflect_path has staging candidate
                         let _ = fs::remove_file(&tmp_reflect_path);
                         staged.status = StageStatus::Conflict;
                         let hist_mgr = crate::history::get_history_manager();
@@ -1074,7 +1155,12 @@ impl WorkspaceManager {
                         staged_path.display()
                     );
                     item.status = StageStatus::Conflict;
-                    let _ = hist_mgr.save_session_item(&item);
+                    if let Err(e) = hist_mgr.save_session_item(&item) {
+                        eprintln!(
+                            "[ERROR] Failed to save Conflict status to session DB for stage '{}': {}",
+                            item.stage_id, e
+                        );
+                    }
                     map.insert(item.stage_id.clone(), item.clone());
                     restored.push(item);
                     continue;
@@ -1083,16 +1169,45 @@ impl WorkspaceManager {
 
             // Verify original file and detect conflict
             let orig_path = Path::new(&item.original_snapshot.canonical_path);
+
+            // Check if an interrupted reflection or failed rollback left a quarantined original file (.cuddle_reflect_{stage_id}_*.tmp)
+            if let Some(orig_parent) = orig_path.parent() {
+                if let Ok(entries) = fs::read_dir(orig_parent) {
+                    let reflect_marker = format!(".cuddle_reflect_{}", item.stage_id);
+                    for entry in entries.flatten() {
+                        let entry_name = entry.file_name().to_string_lossy().to_string();
+                        if entry_name.contains(&reflect_marker) {
+                            eprintln!(
+                                "[CRITICAL RECOVERY] Found uncompleted reflection quarantine file '{}' for stage '{}'. Retaining original data and marking Conflict.",
+                                entry.path().display(),
+                                item.stage_id
+                            );
+                            item.status = StageStatus::Conflict;
+                        }
+                    }
+                }
+            }
+
             if !orig_path.exists() {
                 item.status = StageStatus::Conflict;
-                let _ = hist_mgr.save_session_item(&item);
+                if let Err(e) = hist_mgr.save_session_item(&item) {
+                    eprintln!(
+                        "[ERROR] Failed to save Conflict status for missing original '{}': {}",
+                        item.stage_id, e
+                    );
+                }
             } else {
                 match OperationPolicy::verify_conflict(&item.original_snapshot, true) {
                     Ok(_) => {}
                     Err(PolicyError::ConflictDetected(_)) => {
                         // External modification detected! Mark as Conflict per user decision
                         item.status = StageStatus::Conflict;
-                        let _ = hist_mgr.save_session_item(&item);
+                        if let Err(e) = hist_mgr.save_session_item(&item) {
+                            eprintln!(
+                                "[ERROR] Failed to save Conflict status for detected conflict '{}': {}",
+                                item.stage_id, e
+                            );
+                        }
                     }
                     Err(e) => {
                         // Permission denied or IO error: do not assume Clean! Mark as Conflict for safety
@@ -1102,7 +1217,12 @@ impl WorkspaceManager {
                             e
                         );
                         item.status = StageStatus::Conflict;
-                        let _ = hist_mgr.save_session_item(&item);
+                        if let Err(db_err) = hist_mgr.save_session_item(&item) {
+                            eprintln!(
+                                "[ERROR] Failed to save Conflict status on IO verification error '{}': {}",
+                                item.stage_id, db_err
+                            );
+                        }
                     }
                 }
             }
@@ -1827,9 +1947,12 @@ mod tests {
             "Preserved lost-write backup file must exist on disk"
         );
         let lost_bytes = fs::read(&lost_write_path).unwrap();
+        let expected_payload = b"Concurrent external write through open FD post-swap";
         assert!(
-            lost_bytes.contains(&b"Concurrent external write through open FD post-swap"[0]),
-            "Preserved backup file must contain the concurrent external FD writes"
+            lost_bytes
+                .windows(expected_payload.len())
+                .any(|w| w == expected_payload),
+            "Preserved backup file must contain the complete concurrent write payload"
         );
 
         // Original file must have the staged content V2
@@ -1882,7 +2005,13 @@ mod tests {
         let lost_path = backup_path.unwrap();
         assert!(lost_path.exists());
         let lost_bytes = fs::read(&lost_path).unwrap();
-        assert!(lost_bytes.contains(&b"Last-millisecond write before unlink"[0]));
+        let expected_payload = b"Last-millisecond write before unlink";
+        assert!(
+            lost_bytes
+                .windows(expected_payload.len())
+                .any(|w| w == expected_payload),
+            "Preserved backup file must contain the complete last-millisecond payload"
+        );
 
         drop(external_fd);
         let _ = fs::remove_dir_all(&test_dir);
@@ -1967,18 +2096,32 @@ mod tests {
                 .expect("External process opens file"),
         ));
 
-        // Hook simulates concurrent write and then unlinks tmp_reflect_path to force rename failure
+        // Hook simulates concurrent write and then restricts directory permissions to force rename failure
         let fd_clone = Arc::clone(&external_fd);
-        test_hooks::set_post_swap_hook(move |quarantined_path| {
+        let test_dir_clone = test_dir.clone();
+        test_hooks::set_post_swap_hook(move |_quarantined_path| {
             let mut fd = fd_clone.lock().unwrap();
-            fd.write_all(b"Concurrent write").unwrap();
+            fd.write_all(b"Concurrent write data that must be preserved")
+                .unwrap();
             fd.flush().unwrap();
-            // Remove quarantined file behind the scenes to trigger rename error
-            let _ = fs::remove_file(quarantined_path);
+            // Restrict permissions on destination parent directory to force rename failure
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(&test_dir_clone, fs::Permissions::from_mode(0o555));
+            }
         });
 
-        let reflect_res = mgr.reflect_staged_file(&staged.stage_id);
+        let reflect_res =
+            mgr.reflect_staged_file_with_mode(&staged.stage_id, ReflectionMode::Overwrite);
         test_hooks::clear_post_swap_hook();
+
+        // Restore permissions for inspection and cleanup
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&test_dir, fs::Permissions::from_mode(0o755));
+        }
 
         // Must FAIL with LostWritePreserveFailed, NOT succeed!
         assert!(
@@ -1991,7 +2134,88 @@ mod tests {
             .to_string()
             .contains("Failed to preserve concurrent external write"));
 
+        // CRITICAL DATA PRESERVATION CHECK:
+        // The quarantined temporary file must NOT have been deleted and must still exist with the data!
+        if let WorkspaceError::LostWritePreserveFailed { tmp_path, .. } = &err {
+            assert!(
+                tmp_path.exists(),
+                "Quarantined temporary file containing concurrent writes must remain on disk!"
+            );
+            let preserved_bytes = fs::read(tmp_path).unwrap();
+            let expected_payload = b"Concurrent write data that must be preserved";
+            assert!(
+                preserved_bytes
+                    .windows(expected_payload.len())
+                    .any(|w| w == expected_payload),
+                "Quarantined file must retain the full uncorrupted external write payload"
+            );
+        } else {
+            panic!("Expected LostWritePreserveFailed error variant");
+        }
+
         drop(external_fd);
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_workspace_reflect_rollback_failure_preserves_quarantined_original() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_rb_fail_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("original_precious_data.txt");
+        let original_data = b"Precious original data that must NEVER be lost";
+        fs::write(&orig_file, original_data).unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+
+        // Mutate staged file to candidate content
+        fs::write(&staged.staged_path, b"Candidate content to be reflected").unwrap();
+
+        // Use post-swap hook to make directory read-only,
+        // which forces the backup rename to fail AND rollback atomic_exchange_files to fail with EACCES!
+        let test_dir_clone = test_dir.clone();
+        test_hooks::set_post_swap_hook(move |_quarantined_path| {
+            // Restrict permissions on test_dir so both backup rename and atomic_exchange_files fail
+            let _ = fs::set_permissions(&test_dir_clone, fs::Permissions::from_mode(0o555));
+        });
+
+        let reflect_res =
+            mgr.reflect_staged_file_with_mode(&staged.stage_id, ReflectionMode::BackupOrigin);
+        test_hooks::clear_post_swap_hook();
+
+        // Restore permissions for inspection and cleanup
+        let _ = fs::set_permissions(&test_dir, fs::Permissions::from_mode(0o755));
+
+        // Must FAIL with ReflectRollbackFailed, NOT delete the quarantined file!
+        assert!(reflect_res.is_err(), "Reflection must fail");
+        let err = reflect_res.unwrap_err();
+        assert_eq!(err.error_code(), "ERR_REFLECT_ROLLBACK_FAILED");
+
+        // CRITICAL DEFENSE: Verify quarantined original file was NOT deleted and retains original content!
+        if let WorkspaceError::ReflectRollbackFailed {
+            quarantined_path, ..
+        } = &err
+        {
+            assert!(
+                quarantined_path.exists(),
+                "CRITICAL: Quarantined original file must NEVER be removed when rollback exchange fails!"
+            );
+            let preserved = fs::read(quarantined_path).unwrap();
+            assert_eq!(
+                preserved, original_data,
+                "Quarantined original file must retain the user's precious original data intact"
+            );
+        } else {
+            panic!(
+                "Expected ReflectRollbackFailed error variant, got: {:?}",
+                err
+            );
+        }
+
         let _ = fs::remove_dir_all(&test_dir);
     }
 

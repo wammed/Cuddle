@@ -397,7 +397,7 @@ impl WorkspaceManager {
             original_snapshot: snapshot,
         };
 
-        // 6. Record operation in SQLite persistent history & save session BEFORE registering in memory
+        // 6. Record operation in SQLite persistent history & save session atomically BEFORE registering in memory
         #[cfg(test)]
         if test_hooks::is_fail_stage_db() {
             let _ = fs::remove_file(&staged_target_path);
@@ -407,7 +407,7 @@ impl WorkspaceManager {
         }
 
         let hist_mgr = crate::history::get_history_manager();
-        if let Err(e) = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
+        let history_entry = crate::history::NewHistoryEntry {
             operation_id: stage_id.clone(),
             operation_type: "Stage".to_string(),
             display_name: item.display_name.clone(),
@@ -417,12 +417,9 @@ impl WorkspaceManager {
             status: "Success".to_string(),
             can_undo: true,
             details: Some(format!("Cloned via {:?}", staged_dto.clone_method)),
-        }) {
-            let _ = fs::remove_file(&staged_target_path);
-            return Err(WorkspaceError::Io(std::io::Error::other(e)));
-        }
+        };
 
-        if let Err(e) = hist_mgr.save_session_item(&staged_dto) {
+        if let Err(e) = hist_mgr.record_stage_operation_and_session(&history_entry, &staged_dto) {
             let _ = fs::remove_file(&staged_target_path);
             return Err(WorkspaceError::Io(std::io::Error::other(e)));
         }
@@ -2855,6 +2852,15 @@ mod tests {
         assert!(
             mgr.list_staged().is_empty(),
             "Memory map must have 0 items on DB failure"
+        );
+
+        // Verify no ghost history records were recorded in history table
+        let hist_mgr = crate::history::get_history_manager();
+        let history = hist_mgr.list_history(50).unwrap_or_default();
+        let has_ghost_history = history.iter().any(|h| h.display_name == "db_fail_test.txt");
+        assert!(
+            !has_ghost_history,
+            "No ghost history record must exist for failed stage"
         );
 
         let staging_dir = resolve_staging_directory(&orig_file);

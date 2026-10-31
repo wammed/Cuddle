@@ -577,20 +577,18 @@ u UU N... 100644 100644 100644 100644 5555 6666 7777 conflict.txt
             .args(["init", "-q"])
             .status();
 
-        if let Ok(st) = init_status {
-            if st.success() {
-                // Encode directory path to base64
-                let b64 = base64::engine::general_purpose::STANDARD
-                    .encode(test_dir.as_os_str().as_bytes());
+        let st = init_status.expect("git binary must be executable");
+        assert!(st.success(), "git init in non-UTF-8 path must succeed");
 
-                let res = get_git_status(b64).unwrap();
-                assert!(
-                    res.is_repo,
-                    "Repository in non-UTF-8 path should be successfully detected"
-                );
-                assert!(res.error_message.is_none());
-            }
-        }
+        // Encode directory path to base64
+        let b64 = base64::engine::general_purpose::STANDARD.encode(test_dir.as_os_str().as_bytes());
+
+        let res = get_git_status(b64).expect("get_git_status should succeed");
+        assert!(
+            res.is_repo,
+            "Repository in non-UTF-8 path should be successfully detected"
+        );
+        assert!(res.error_message.is_none());
 
         let _ = std::fs::remove_dir_all(&test_dir);
     }

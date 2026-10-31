@@ -219,6 +219,112 @@ impl HistoryManager {
         Ok(inserted_id)
     }
 
+    /// Records a Stage operation into `operation_history` and registers the staged item in `session_items`
+    /// within a single atomic SQLite transaction. If either insert fails, both are rolled back,
+    /// preventing ghost history records or orphaned session items.
+    pub fn record_stage_operation_and_session(
+        &self,
+        entry: &NewHistoryEntry,
+        item: &StagedItemDto,
+    ) -> Result<i64, String> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Failed to begin transaction for stage operation: {}", e))?;
+
+        let now_ms = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+
+        tx.execute(
+            "INSERT INTO operation_history (
+                operation_id, timestamp_ms, operation_type, display_name,
+                original_path, staged_path, inode, status, can_undo, details
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10);",
+            params![
+                entry.operation_id,
+                now_ms,
+                entry.operation_type,
+                entry.display_name,
+                entry.original_path,
+                entry.staged_path,
+                entry.inode,
+                entry.status,
+                if entry.can_undo { 1 } else { 0 },
+                entry.details,
+            ],
+        )
+        .map_err(|e| format!("Failed to insert operation history: {}", e))?;
+
+        let inserted_id = tx.last_insert_rowid();
+
+        // Auto-trim to max_history_limit (50 items)
+        let _ = tx.execute(
+            "DELETE FROM operation_history WHERE id NOT IN (
+                SELECT id FROM operation_history ORDER BY timestamp_ms DESC LIMIT ?1
+            );",
+            params![self.max_history_limit as i64],
+        );
+
+        let clone_method_str = match item.clone_method {
+            CloneMethod::Reflink => "Reflink",
+            CloneMethod::StandardCopy => "StandardCopy",
+        };
+        let status_str = match item.status {
+            StageStatus::Staged => "Staged",
+            StageStatus::Modified => "Modified",
+            StageStatus::Applying => "Applying",
+            StageStatus::Reflected => "Reflected",
+            StageStatus::Conflict => "Conflict",
+        };
+
+        tx.execute(
+            "INSERT INTO session_items (
+                stage_id, original_item_id, raw_base64, display_name,
+                staged_raw_base64, staged_path, size, clone_method, status,
+                staged_at_ms, canonical_path, inode, dev, orig_size, mtime_ms, sha256
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+            ON CONFLICT(stage_id) DO UPDATE SET
+                display_name = excluded.display_name,
+                staged_raw_base64 = excluded.staged_raw_base64,
+                staged_path = excluded.staged_path,
+                size = excluded.size,
+                clone_method = excluded.clone_method,
+                status = excluded.status,
+                canonical_path = excluded.canonical_path,
+                inode = excluded.inode,
+                dev = excluded.dev,
+                orig_size = excluded.orig_size,
+                mtime_ms = excluded.mtime_ms,
+                sha256 = excluded.sha256;",
+            params![
+                item.stage_id,
+                item.original_item_id,
+                item.raw_base64,
+                item.display_name,
+                item.staged_raw_base64,
+                item.staged_path,
+                item.size as i64,
+                clone_method_str,
+                status_str,
+                item.staged_at_ms,
+                item.original_snapshot.canonical_path,
+                item.original_snapshot.inode as i64,
+                item.original_snapshot.dev as i64,
+                item.original_snapshot.size as i64,
+                item.original_snapshot.mtime_ms,
+                item.original_snapshot.sha256.as_deref().unwrap_or(""),
+            ],
+        )
+        .map_err(|e| format!("Failed to save session item {}: {}", item.stage_id, e))?;
+
+        tx.commit()
+            .map_err(|e| format!("Failed to commit stage operation transaction: {}", e))?;
+
+        Ok(inserted_id)
+    }
+
     /// Lists the most recent history records up to `limit` (default: 50)
     pub fn list_history(&self, limit: usize) -> Result<Vec<OperationHistoryDto>, String> {
         let conn = self.conn.lock().unwrap();

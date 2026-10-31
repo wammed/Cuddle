@@ -1,20 +1,21 @@
 /**
- * SPDX License Expression Parser & Compliance Evaluator for Cuddle
+ * SPDX License Expression Parser & Compliance Evaluator for Cuddle (Phase 7)
  *
- * Implements standard SPDX recursive descent parsing:
- *   Expression ::= OrExpr
- *   OrExpr     ::= AndExpr ( 'OR' AndExpr )*
- *   AndExpr    ::= WithExpr ( 'AND' WithExpr )*
- *   WithExpr   ::= PrimaryExpr ( 'WITH' ExceptionIdent )?
- *   PrimaryExpr::= '(' Expression ')' | LicenseIdent
+ * Implements formal SPDX 3.0 recursive descent parsing:
+ *   Expression  ::= OrExpr
+ *   OrExpr      ::= AndExpr ( 'OR' AndExpr )*
+ *   AndExpr     ::= WithExpr ( 'AND' WithExpr )*
+ *   WithExpr    ::= SimpleLicense ( 'WITH' ExceptionIdent )? | '(' Expression ')'
+ *   SimpleLicense ::= LicenseIdent ( '+' )?
  *
  * Evaluation Statuses:
  *   PASS    : Unconditionally allowed under Cuddle permissive policy.
  *   REVIEW  : Conditionally approved individual exception (e.g. build-time tool).
  *   FAIL    : Disallowed copyleft / restricted license.
- *   UNKNOWN : Unrecognized license identifier, empty expression, or syntax error.
+ *   UNKNOWN : Unrecognized license identifier, unapproved exception, empty expression, or syntax error.
  */
 
+// Permissive licenses accepted unconditionally
 export const PERMISSIVE_LICENSES = new Set([
   'MIT',
   'Apache-2.0',
@@ -30,8 +31,13 @@ export const PERMISSIVE_LICENSES = new Set([
   'Zlib',
   'Unicode-3.0',
   'CDLA-Permissive-2.0',
+  'PostgreSQL',
+  'X11',
+  'Python-2.0',
+  'Artistic-2.0',
 ]);
 
+// Known restrictive copyleft licenses recognized by SPDX
 export const KNOWN_RESTRICTIVE_LICENSES = new Set([
   'GPL-1.0-only',
   'GPL-1.0-or-later',
@@ -61,12 +67,43 @@ export const KNOWN_RESTRICTIVE_LICENSES = new Set([
   'CC-BY-NC-4.0',
 ]);
 
-export const ALLOWED_EXCEPTIONS = new Set([
+// Known formal SPDX license exception identifiers
+export const KNOWN_SPDX_EXCEPTIONS = new Set([
   'LLVM-exception',
+  'Classpath-exception-2.0',
+  'Autoconf-exception-2.0',
+  'Autoconf-exception-3.0',
+  'Bison-exception-2.2',
+  'Bootloader-exception',
+  'CLISP-exception-2.0',
+  'DigiRule-FIRMWARE-exception',
+  'FLOSS-exception',
+  'GPL-3.0-linking-exception',
+  'GPL-3.0-linking-source-exception',
+  'GPL-CC-1.0',
+  'LGPL-3.0-linking-exception',
+  'Libtool-exception',
+  'Linux-syscall-note',
+  'OCCT-exception-1.0',
+  'OpenJDK-assembly-exception-1.0',
+  'Qt-GPL-exception-1.0',
+  'Qt-LGPL-exception-1.1',
+  'Qwt-exception-1.0',
+  'Swift-exception',
+  'u-boot-exception-2.0',
+  'Universal-FOSS-exception-1.0',
+  'WxWindows-exception-3.1',
+]);
+
+// Approved base license + exception combinations under Cuddle's compliance policy
+export const APPROVED_WITH_COMBINATIONS = new Map([
+  ['Apache-2.0', new Set(['LLVM-exception'])],
 ]);
 
 /**
  * Tokenizes an SPDX expression string into an array of tokens.
+ * Strictly adheres to SPDX 3.0 keywords: AND, OR, WITH.
+ * Does NOT accept non-standard symbols like || or &&.
  */
 export function tokenizeSpdx(exprStr) {
   if (typeof exprStr !== 'string') return null;
@@ -102,13 +139,22 @@ export function tokenizeSpdx(exprStr) {
     }
     const word = trimmed.slice(start, i);
 
-    if (word === 'OR' || word === '||') {
+    // Reject non-SPDX symbols (like ||, &&, |, &)
+    if (word === '||' || word === '&&' || word === '|' || word === '&') {
+      return null; // Syntax error
+    }
+
+    if (word === 'OR') {
       tokens.push({ type: 'OR', value: 'OR' });
-    } else if (word === 'AND' || word === '&&') {
+    } else if (word === 'AND') {
       tokens.push({ type: 'AND', value: 'AND' });
     } else if (word === 'WITH') {
       tokens.push({ type: 'WITH', value: 'WITH' });
     } else {
+      // Must be a valid identifier format
+      if (!/^[A-Za-z0-9_.\-+]+$/.test(word)) {
+        return null;
+      }
       tokens.push({ type: 'IDENT', value: word });
     }
   }
@@ -118,6 +164,8 @@ export function tokenizeSpdx(exprStr) {
 
 /**
  * Parses tokens into an AST using recursive descent.
+ * Strictly enforces that WITH can ONLY follow a SimpleLicense (IDENT),
+ * NOT a parenthesized or compound expression.
  */
 export function parseSpdxTokens(tokens) {
   if (!tokens || tokens.length === 0) return null;
@@ -167,132 +215,200 @@ export function parseSpdxTokens(tokens) {
   }
 
   function parseWith() {
-    let left = parsePrimary();
-    if (!left) return null;
-
-    if (peek() && peek().type === 'WITH') {
-      consume('WITH');
-      const excToken = consume('IDENT');
-      if (!excToken) return null;
-      left = { type: 'WITH', license: left, exception: excToken.value };
-    }
-    return left;
-  }
-
-  function parsePrimary() {
     const tok = peek();
     if (!tok) return null;
 
+    // If it starts with '(', parse as a parenthesized Expression
     if (tok.type === 'LPAREN') {
       consume('LPAREN');
-      const expr = parseExpression();
-      if (!expr) return null;
+      const inner = parseExpression();
+      if (!inner) return null;
       if (!consume('RPAREN')) return null;
-      return expr;
+
+      // In formal SPDX grammar, WITH CANNOT follow a parenthesized expression!
+      // e.g. (MIT OR Apache-2.0) WITH LLVM-exception is invalid!
+      if (peek() && peek().type === 'WITH') {
+        return null; // Syntax error: WITH on compound expression
+      }
+      return inner;
     }
 
+    // Otherwise, must be a SimpleLicense IDENT
     if (tok.type === 'IDENT') {
       consume('IDENT');
-      return { type: 'LICENSE', id: tok.value };
+      const licenseNode = { type: 'LICENSE', id: tok.value };
+
+      // Check if followed by WITH
+      if (peek() && peek().type === 'WITH') {
+        consume('WITH');
+        const excToken = consume('IDENT');
+        if (!excToken) return null;
+        return { type: 'WITH', license: licenseNode, exception: excToken.value };
+      }
+
+      return licenseNode;
     }
 
     return null;
   }
 
   const ast = parseExpression();
-  if (pos !== tokens.length) {
-    // Unconsumed tokens left -> syntax error
+  if (!ast || pos !== tokens.length) {
+    // Extra unconsumed tokens -> syntax error
     return null;
   }
   return ast;
 }
 
 /**
- * Evaluates an SPDX AST against Cuddle's compliance policy.
+ * Validates ALL identifiers and WITH exception combinations in the AST.
+ * This runs BEFORE policy evaluation so that any unknown identifier
+ * anywhere in the expression (even in an OR branch) immediately yields UNKNOWN.
  *
  * @param {object} ast
- * @param {string} pkgId Package identifier, e.g. "lightningcss@1.33.0"
+ * @param {string} pkgId
  * @param {Map<string, { license: string, reason: string }>} individualExceptions
- * @returns {{ status: 'PASS' | 'REVIEW' | 'FAIL' | 'UNKNOWN', reason?: string }}
+ * @returns {{ valid: boolean, status?: 'UNKNOWN', reason?: string }}
  */
-export function evaluateAst(ast, pkgId, individualExceptions) {
+export function validateAstIdentifiers(ast, pkgId, individualExceptions) {
   if (!ast) {
-    return { status: 'UNKNOWN', reason: 'Invalid or empty AST' };
+    return { valid: false, status: 'UNKNOWN', reason: 'Empty or invalid AST node' };
   }
 
   if (ast.type === 'LICENSE') {
-    const lic = ast.id;
-
-    // 1. Check individual approved exception
+    const id = ast.id;
+    // Check if approved individual exception for this package
     if (individualExceptions && individualExceptions.has(pkgId)) {
       const exc = individualExceptions.get(pkgId);
-      if (exc.license === lic) {
+      if (exc.license === id) {
+        return { valid: true };
+      }
+    }
+
+    // Check permissive list
+    if (PERMISSIVE_LICENSES.has(id)) {
+      return { valid: true };
+    }
+
+    // Check known restrictive list
+    if (KNOWN_RESTRICTIVE_LICENSES.has(id)) {
+      return { valid: true };
+    }
+
+    // Check standard prefix/suffix patterns like GPL-2.0+ or Apache-2.0+
+    if (id.endsWith('+')) {
+      const base = id.slice(0, -1);
+      if (PERMISSIVE_LICENSES.has(base) || KNOWN_RESTRICTIVE_LICENSES.has(base)) {
+        return { valid: true };
+      }
+    }
+
+    return { valid: false, status: 'UNKNOWN', reason: `Unrecognized license identifier: "${id}"` };
+  }
+
+  if (ast.type === 'WITH') {
+    const licVal = validateAstIdentifiers(ast.license, pkgId, individualExceptions);
+    if (!licVal.valid) return licVal;
+
+    const exc = ast.exception;
+    if (!KNOWN_SPDX_EXCEPTIONS.has(exc)) {
+      return { valid: false, status: 'UNKNOWN', reason: `Unrecognized SPDX exception identifier: "${exc}"` };
+    }
+
+    // Validate license + exception combination
+    const baseId = ast.license.id;
+    const allowedForBase = APPROVED_WITH_COMBINATIONS.get(baseId);
+    if (!allowedForBase || !allowedForBase.has(exc)) {
+      return {
+        valid: false,
+        status: 'UNKNOWN',
+        reason: `Unapproved license exception combination: "${baseId} WITH ${exc}"`,
+      };
+    }
+
+    return { valid: true };
+  }
+
+  if (ast.type === 'OR' || ast.type === 'AND') {
+    const leftVal = validateAstIdentifiers(ast.left, pkgId, individualExceptions);
+    if (!leftVal.valid) return leftVal;
+    const rightVal = validateAstIdentifiers(ast.right, pkgId, individualExceptions);
+    if (!rightVal.valid) return rightVal;
+    return { valid: true };
+  }
+
+  return { valid: false, status: 'UNKNOWN', reason: `Invalid AST node type: ${ast.type}` };
+}
+
+/**
+ * Evaluates an already validated SPDX AST against Cuddle's compliance policy.
+ *
+ * @param {object} ast
+ * @param {string} pkgId
+ * @param {Map<string, { license: string, reason: string }>} individualExceptions
+ * @returns {{ status: 'PASS' | 'REVIEW' | 'FAIL' | 'UNKNOWN', reason?: string }}
+ */
+export function evaluateAstPolicy(ast, pkgId, individualExceptions) {
+  if (ast.type === 'LICENSE') {
+    const id = ast.id;
+
+    // Check individual exception
+    if (individualExceptions && individualExceptions.has(pkgId)) {
+      const exc = individualExceptions.get(pkgId);
+      if (exc.license === id) {
         return { status: 'REVIEW', reason: `Individually audited exception: ${exc.reason}` };
       }
     }
 
-    // 2. Check permissive whitelist
-    if (PERMISSIVE_LICENSES.has(lic)) {
+    // Check permissive
+    if (PERMISSIVE_LICENSES.has(id)) {
       return { status: 'PASS' };
     }
 
-    // 3. Check known restrictive / copyleft
-    if (KNOWN_RESTRICTIVE_LICENSES.has(lic) || lic.startsWith('GPL-') || lic.startsWith('AGPL-') || lic.startsWith('LGPL-') || lic.startsWith('MPL-')) {
-      return { status: 'FAIL', reason: `Disallowed copyleft/restricted license: ${lic}` };
+    // Check known restrictive
+    if (KNOWN_RESTRICTIVE_LICENSES.has(id)) {
+      return { status: 'FAIL', reason: `Disallowed copyleft/restricted license: ${id}` };
     }
 
-    // 4. Unrecognized identifier
-    return { status: 'UNKNOWN', reason: `Unrecognized license identifier: ${lic}` };
+    return { status: 'UNKNOWN', reason: `Unrecognized license identifier: ${id}` };
   }
 
   if (ast.type === 'WITH') {
-    const baseEval = evaluateAst(ast.license, pkgId, individualExceptions);
-    if (baseEval.status === 'FAIL' || baseEval.status === 'UNKNOWN') {
-      return baseEval;
+    // Approved combinations (e.g. Apache-2.0 WITH LLVM-exception) are PASS
+    const baseEval = evaluateAstPolicy(ast.license, pkgId, individualExceptions);
+    if (baseEval.status === 'PASS') {
+      return { status: 'PASS' };
     }
-    const exc = ast.exception;
-    if (ALLOWED_EXCEPTIONS.has(exc)) {
-      return baseEval;
-    }
-    return { status: 'UNKNOWN', reason: `Unrecognized license exception: WITH ${exc}` };
+    return baseEval;
   }
 
   if (ast.type === 'OR') {
-    const left = evaluateAst(ast.left, pkgId, individualExceptions);
-    const right = evaluateAst(ast.right, pkgId, individualExceptions);
+    const left = evaluateAstPolicy(ast.left, pkgId, individualExceptions);
+    const right = evaluateAstPolicy(ast.right, pkgId, individualExceptions);
 
-    // If either choice is PASS, the licensee may choose the PASS option!
+    // If either option is PASS, the licensee may choose the PASS option
     if (left.status === 'PASS' || right.status === 'PASS') {
       return { status: 'PASS' };
     }
 
-    // If neither is PASS, but at least one is REVIEW, licensee chooses REVIEW
+    // If either is REVIEW, choice allows REVIEW
     if (left.status === 'REVIEW' || right.status === 'REVIEW') {
       return left.status === 'REVIEW' ? left : right;
-    }
-
-    // If either is UNKNOWN, cannot confirm compliance
-    if (left.status === 'UNKNOWN' || right.status === 'UNKNOWN') {
-      return { status: 'UNKNOWN', reason: `Unresolved choice: ${left.reason || ''} / ${right.reason || ''}` };
     }
 
     return { status: 'FAIL', reason: `No allowed option in OR: ${left.reason} AND ${right.reason}` };
   }
 
   if (ast.type === 'AND') {
-    const left = evaluateAst(ast.left, pkgId, individualExceptions);
-    const right = evaluateAst(ast.right, pkgId, individualExceptions);
+    const left = evaluateAstPolicy(ast.left, pkgId, individualExceptions);
+    const right = evaluateAstPolicy(ast.right, pkgId, individualExceptions);
 
-    // In conjunction (AND), all terms apply! Any failure is fatal.
+    // In AND, all terms apply. Any FAIL is fatal.
     if (left.status === 'FAIL') return left;
     if (right.status === 'FAIL') return right;
-    if (left.status === 'UNKNOWN') return left;
-    if (right.status === 'UNKNOWN') return right;
-
     if (left.status === 'REVIEW' || right.status === 'REVIEW') {
       return { status: 'REVIEW', reason: `${left.reason || ''} ${right.reason || ''}`.trim() };
     }
-
     return { status: 'PASS' };
   }
 
@@ -301,6 +417,11 @@ export function evaluateAst(ast, pkgId, individualExceptions) {
 
 /**
  * Main evaluation entrypoint for an SPDX license string.
+ *
+ * Enforces two-step pipeline:
+ *   1. Tokenization & AST Parsing (rejects invalid operators, syntax, and WITH scopes)
+ *   2. Global AST Identifier & Exception Validation (rejects unknown licenses anywhere in expr)
+ *   3. Logical Policy Evaluation (applies AND / OR / WITH rules)
  */
 export function evaluateLicenseExpression(exprStr, pkgId, individualExceptions) {
   if (!exprStr || typeof exprStr !== 'string' || exprStr.trim() === '') {
@@ -309,14 +430,20 @@ export function evaluateLicenseExpression(exprStr, pkgId, individualExceptions) 
 
   const tokens = tokenizeSpdx(exprStr);
   if (!tokens || tokens.length === 0) {
-    return { status: 'UNKNOWN', reason: 'Failed to tokenize license expression' };
+    return { status: 'UNKNOWN', reason: `Syntax error or invalid operators in license expression: "${exprStr}"` };
   }
 
   const ast = parseSpdxTokens(tokens);
   if (!ast) {
-    return { status: 'UNKNOWN', reason: `Syntax error in SPDX expression: "${exprStr}"` };
+    return { status: 'UNKNOWN', reason: `Grammar syntax error in SPDX expression: "${exprStr}"` };
   }
 
-  return evaluateAst(ast, pkgId, individualExceptions);
-}
+  // Step 1: Validate all identifiers & combinations
+  const validation = validateAstIdentifiers(ast, pkgId, individualExceptions);
+  if (!validation.valid) {
+    return { status: 'UNKNOWN', reason: validation.reason };
+  }
 
+  // Step 2: Logical policy evaluation
+  return evaluateAstPolicy(ast, pkgId, individualExceptions);
+}

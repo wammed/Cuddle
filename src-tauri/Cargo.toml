@@ -30,7 +30,7 @@ toml = "0.8"
 dirs = "5"
 walkdir = "2"
 tantivy = "0.26"
-lindera = { version = "5", features = ["embed-ipadic"] }
+lindera = { version = "6", features = ["embed-ipadic"] }
 lindera-tantivy = { version = "5", features = ["embed-ipadic"] }
 encoding_rs = "0.8"
 chardetng = "0.1"

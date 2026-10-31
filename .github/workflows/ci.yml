@@ -59,11 +59,14 @@ jobs:
           cargo deny --manifest-path src-tauri/Cargo.toml check licenses
           cargo deny --manifest-path src-tauri/Cargo.toml check
 
+      - name: Frontend SPDX evaluator unit tests
+        run: node scripts/test-spdx.mjs
+
       - name: Frontend dependency license check (Node audit)
         run: pnpm run check:licenses
 
       - name: Frontend license check verification (license-checker-rseidelsohn)
-        run: pnpm dlx license-checker-rseidelsohn@4.4.2 --excludePrivatePackages --onlyAllow "MIT;Apache-2.0;ISC;BSD-2-Clause;BSD-3-Clause;0BSD;BlueOak-1.0.0;CC0-1.0;MIT-0;MPL-2.0"
+        run: pnpm dlx license-checker-rseidelsohn@4.4.2 --excludePrivatePackages --excludePackages "lightningcss@1.33.0;lightningcss-linux-x64-gnu@1.33.0" --onlyAllow "MIT;Apache-2.0;ISC;BSD-2-Clause;BSD-3-Clause;0BSD;BlueOak-1.0.0;CC0-1.0;MIT-0"
 
       - name: Rust formatting check (cargo fmt)
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check

@@ -49,12 +49,12 @@ allow = [
 # MPL-2.0 crates listed here are isolated utility crates where no source code modifications exist,
 # and Cuddle is distributed under a source-only distribution model.
 exceptions = [
-    { allow = ["MPL-2.0"], crate = "cssparser" },
-    { allow = ["MPL-2.0"], crate = "cssparser-macros" },
-    { allow = ["MPL-2.0"], crate = "dtoa-short" },
-    { allow = ["MPL-2.0"], crate = "htmlescape" },
-    { allow = ["MPL-2.0"], crate = "option-ext" },
-    { allow = ["MPL-2.0"], crate = "selectors" },
+    { allow = ["MPL-2.0"], crate = "cssparser@0.37.0" },
+    { allow = ["MPL-2.0"], crate = "cssparser-macros@0.7.1" },
+    { allow = ["MPL-2.0"], crate = "dtoa-short@0.3.5" },
+    { allow = ["MPL-2.0"], crate = "htmlescape@0.3.1" },
+    { allow = ["MPL-2.0"], crate = "option-ext@0.2.0" },
+    { allow = ["MPL-2.0"], crate = "selectors@0.38.0" },
 ]
 
 [licenses.private]
@@ -73,7 +73,7 @@ skip = []
 skip-tree = []
 
 [sources]
-unknown-registry = "warn"
-unknown-git = "warn"
+unknown-registry = "deny"
+unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = []

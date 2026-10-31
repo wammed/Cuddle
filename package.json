@@ -10,6 +10,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:spdx": "node scripts/test-spdx.mjs",
     "check:licenses": "node scripts/check-frontend-licenses.mjs",
     "tauri": "tauri"
   },

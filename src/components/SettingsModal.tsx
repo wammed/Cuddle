@@ -128,7 +128,10 @@ description = "~/.local/bin を PATH に追加"
 id = "jsonc-config"
 language = "jsonc"
 label = "+ 設定雛形"
-snippet = '{\\n  "version": "1.0.0",\\n  "enabled": true\\n}'
+snippet = '''{
+  "version": "1.0.0",
+  "enabled": true
+}'''
 description = "JSONC 設定オブジェクトの基本テンプレート"
 
 # ==============================================================================
@@ -221,7 +224,10 @@ description = "Add ~/.local/bin to PATH"
 id = "jsonc-config"
 language = "jsonc"
 label = "+ Config Template"
-snippet = '{\\n  "version": "1.0.0",\\n  "enabled": true\\n}'
+snippet = '''{
+  "version": "1.0.0",
+  "enabled": true
+}'''
 description = "Basic JSONC configuration schema template"
 
 # ==============================================================================

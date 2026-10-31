@@ -79,6 +79,12 @@ pub enum WorkspaceError {
     },
     #[error("Atomic exchange unsupported: {0}")]
     AtomicExchangeUnsupported(String),
+    #[error("Failed to preserve concurrent external write: unable to move temporary file '{tmp_path}' to backup '{lost_write_path}': {cause}")]
+    LostWritePreserveFailed {
+        tmp_path: PathBuf,
+        lost_write_path: PathBuf,
+        cause: String,
+    },
 }
 
 impl WorkspaceError {
@@ -90,10 +96,64 @@ impl WorkspaceError {
             WorkspaceError::InsufficientSpace => "ERR_INSUFFICIENT_SPACE",
             WorkspaceError::RollbackFailed { .. } => "ERR_UNSTAGE_ROLLBACK_FAILED",
             WorkspaceError::AtomicExchangeUnsupported(_) => "ERR_ATOMIC_EXCHANGE_UNSUPPORTED",
+            WorkspaceError::LostWritePreserveFailed { .. } => "ERR_LOST_WRITE_PRESERVE_FAILED",
             WorkspaceError::Io(_) => "ERR_IO",
             WorkspaceError::Model(_) => "ERR_INVALID_PATH",
             WorkspaceError::Diff(_) => "ERR_DIFF_FAILED",
         }
+    }
+}
+
+#[cfg(test)]
+pub mod test_hooks {
+    use std::cell::RefCell;
+    use std::path::Path;
+
+    pub type HookFn = Box<dyn Fn(&Path)>;
+
+    thread_local! {
+        static POST_SWAP_HOOK: RefCell<Option<HookFn>> = const { RefCell::new(None) };
+        static POST_VERIFY_HOOK: RefCell<Option<HookFn>> = const { RefCell::new(None) };
+    }
+
+    pub fn set_post_swap_hook<F: Fn(&Path) + 'static>(f: F) {
+        POST_SWAP_HOOK.with(|h| {
+            *h.borrow_mut() = Some(Box::new(f));
+        });
+    }
+
+    pub fn clear_post_swap_hook() {
+        POST_SWAP_HOOK.with(|h| {
+            *h.borrow_mut() = None;
+        });
+    }
+
+    pub fn trigger_post_swap_hook(path: &Path) {
+        POST_SWAP_HOOK.with(|h| {
+            if let Some(ref hook) = *h.borrow() {
+                hook(path);
+            }
+        });
+    }
+
+    pub fn set_post_verify_hook<F: Fn(&Path) + 'static>(f: F) {
+        POST_VERIFY_HOOK.with(|h| {
+            *h.borrow_mut() = Some(Box::new(f));
+        });
+    }
+
+    pub fn clear_post_verify_hook() {
+        POST_VERIFY_HOOK.with(|h| {
+            *h.borrow_mut() = None;
+        });
+    }
+
+    pub fn trigger_post_verify_hook(path: &Path) {
+        POST_VERIFY_HOOK.with(|h| {
+            if let Some(ref hook) = *h.borrow() {
+                hook(path);
+            }
+        });
     }
 }
 
@@ -327,9 +387,17 @@ impl WorkspaceManager {
             let path = decode_path_from_base64(&staged.staged_raw_base64)?;
 
             // 1. Two-phase deletion with atomic rollback:
-            // Quarantine staged copy by renaming to temporary path before touching database
+            // Quarantine staged copy by renaming to temporary path before touching database.
+            // Preserve the original full filename (with extension) and include stage_id for reliable recovery.
             let temp_trash_path = if path.exists() {
-                let trash = path.with_extension(format!("unstage_trash_{}", Uuid::new_v4()));
+                let orig_file_name = path.file_name().unwrap_or_default().to_string_lossy();
+                let trash_name = format!(
+                    "{}.unstage_trash_{}_{}",
+                    orig_file_name,
+                    staged.stage_id,
+                    Uuid::new_v4()
+                );
+                let trash = path.with_file_name(trash_name);
                 fs::rename(&path, &trash).map_err(WorkspaceError::Io)?;
                 Some(trash)
             } else {
@@ -577,6 +645,10 @@ impl WorkspaceManager {
                         // Check for concurrent writes from external processes holding an open file descriptor:
                         // In POSIX systems, an open FD continues pointing to the swapped inode at `tmp_reflect_path`.
                         // Re-verifying right before removing ensures any unflushed or concurrent writes are detected.
+
+                        #[cfg(test)]
+                        test_hooks::trigger_post_swap_hook(&tmp_reflect_path);
+
                         let concurrent_check = OperationPolicy::verify_conflict_on_path(
                             &tmp_reflect_path,
                             &staged.original_snapshot,
@@ -594,6 +666,11 @@ impl WorkspaceManager {
                                     lost_write_target.display(),
                                     e
                                 );
+                                return Err(WorkspaceError::LostWritePreserveFailed {
+                                    tmp_path: tmp_reflect_path.clone(),
+                                    lost_write_path: lost_write_target.clone(),
+                                    cause: format!("Failed to move quarantined file containing concurrent external writes: {}", e),
+                                });
                             } else {
                                 eprintln!(
                                     "[SECURITY] Concurrent external FD write detected and preserved to '{}'",
@@ -611,8 +688,41 @@ impl WorkspaceManager {
                             }
                             backup_origin_path = Some(backup_target);
                         } else {
-                            // Mode A (Overwrite): Safely remove the quarantined old original
-                            let _ = fs::remove_file(&tmp_reflect_path);
+                            // Mode A (Overwrite):
+                            // To protect against race conditions where an external process writes via an open FD
+                            // immediately before or during unlink, trigger verification hook and perform final check:
+                            #[cfg(test)]
+                            test_hooks::trigger_post_verify_hook(&tmp_reflect_path);
+
+                            let final_check = OperationPolicy::verify_conflict_on_path(
+                                &tmp_reflect_path,
+                                &staged.original_snapshot,
+                                true,
+                            );
+
+                            if final_check.is_err() {
+                                let lost_write_target = generate_lost_write_backup_path(&orig_path);
+                                if let Err(e) = fs::rename(&tmp_reflect_path, &lost_write_target) {
+                                    eprintln!(
+                                        "[CRITICAL] Failed to preserve last-second external write '{}': {}",
+                                        lost_write_target.display(),
+                                        e
+                                    );
+                                    return Err(WorkspaceError::LostWritePreserveFailed {
+                                        tmp_path: tmp_reflect_path.clone(),
+                                        lost_write_path: lost_write_target.clone(),
+                                        cause: format!("Failed to preserve last-second concurrent write before removal: {}", e),
+                                    });
+                                }
+                                eprintln!(
+                                    "[SECURITY] Concurrent external write detected right before removal and preserved to '{}'",
+                                    lost_write_target.display()
+                                );
+                                concurrent_write_path = Some(lost_write_target);
+                            } else {
+                                // Safely remove the quarantined old original
+                                let _ = fs::remove_file(&tmp_reflect_path);
+                            }
                         }
                     }
                     Err(conflict_err) => {
@@ -718,7 +828,7 @@ impl WorkspaceManager {
             })
             .map_err(|e| WorkspaceError::Io(std::io::Error::other(e)))?;
 
-        Ok((staged.clone(), backup_origin_path))
+        Ok((staged.clone(), backup_origin_path.or(concurrent_write_path)))
     }
 
     /// Saves the staged working copy as an alternate copy (e.g., .edit.ext) without modifying the original.
@@ -936,14 +1046,10 @@ impl WorkspaceManager {
                 let mut recovered = false;
                 if let Some(parent) = staged_path.parent() {
                     if let Ok(entries) = fs::read_dir(parent) {
-                        let filename_stem = staged_path
-                            .file_name()
-                            .unwrap_or_default()
-                            .to_string_lossy();
+                        let target_marker = format!("unstage_trash_{}", item.stage_id);
                         for entry in entries.flatten() {
                             let entry_name = entry.file_name().to_string_lossy().to_string();
-                            if entry_name.contains("unstage_trash_")
-                                && entry_name.starts_with(&*filename_stem)
+                            if entry_name.contains(&target_marker)
                                 && fs::rename(entry.path(), staged_path).is_ok()
                             {
                                 eprintln!(
@@ -959,8 +1065,18 @@ impl WorkspaceManager {
                 }
 
                 if !recovered && !staged_path.exists() {
-                    // Staged working copy was removed from disk, purge from session
-                    let _ = hist_mgr.remove_session_item(&item.stage_id);
+                    // Staged working copy was missing from disk:
+                    // For original data protection, DO NOT silently purge DB session item!
+                    // Retain in Conflict status so user can inspect and resolve.
+                    eprintln!(
+                        "[WARN] Staged working copy for stage '{}' is missing at '{}'. Retaining in Conflict status to prevent silent data loss.",
+                        item.stage_id,
+                        staged_path.display()
+                    );
+                    item.status = StageStatus::Conflict;
+                    let _ = hist_mgr.save_session_item(&item);
+                    map.insert(item.stage_id.clone(), item.clone());
+                    restored.push(item);
                     continue;
                 }
             }
@@ -1673,31 +1789,207 @@ mod tests {
         fs::write(&staged.staged_path, b"Staged reflected content V2").unwrap();
 
         // Simulate external process holding an open write file descriptor
-        let mut external_fd = fs::OpenOptions::new()
-            .write(true)
-            .open(&orig_file)
-            .expect("External process opens file");
+        let external_fd = Arc::new(Mutex::new(
+            fs::OpenOptions::new()
+                .write(true)
+                .open(&orig_file)
+                .expect("External process opens file"),
+        ));
 
-        // External process writes via its open FD
-        external_fd
-            .write_all(b"Concurrent external write through open FD")
-            .unwrap();
-        external_fd.flush().unwrap();
+        // Use post-swap hook to write via open FD *after* atomic exchange, right before concurrent_check!
+        let fd_clone = Arc::clone(&external_fd);
+        test_hooks::set_post_swap_hook(move |_quarantined_path| {
+            let mut fd = fd_clone.lock().unwrap();
+            fd.write_all(b"Concurrent external write through open FD post-swap")
+                .unwrap();
+            fd.flush().unwrap();
+        });
 
-        // Attempt reflection:
-        // Must detect modification and block reflection with Conflict!
+        // Attempt reflection in Overwrite mode
+        let reflect_res =
+            mgr.reflect_staged_file_with_mode(&staged.stage_id, ReflectionMode::Overwrite);
+        test_hooks::clear_post_swap_hook();
+
+        assert!(
+            reflect_res.is_ok(),
+            "Reflection succeeds while safely preserving concurrent FD write"
+        );
+        let (reflected_item, backup_path) = reflect_res.unwrap();
+        assert_eq!(reflected_item.status, StageStatus::Reflected);
+        assert!(
+            backup_path.is_some(),
+            "Backup path must be returned pointing to preserved concurrent writes"
+        );
+
+        let lost_write_path = backup_path.unwrap();
+        assert!(
+            lost_write_path.exists(),
+            "Preserved lost-write backup file must exist on disk"
+        );
+        let lost_bytes = fs::read(&lost_write_path).unwrap();
+        assert!(
+            lost_bytes.contains(&b"Concurrent external write through open FD post-swap"[0]),
+            "Preserved backup file must contain the concurrent external FD writes"
+        );
+
+        // Original file must have the staged content V2
+        let orig_bytes = fs::read(&orig_file).unwrap();
+        assert_eq!(orig_bytes, b"Staged reflected content V2");
+
+        drop(external_fd);
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_workspace_reflect_concurrent_write_before_unlink_protection() {
+        use std::io::Write;
+
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_post_verify_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("post_verify_doc.txt");
+        fs::write(&orig_file, b"Original V1").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+
+        fs::write(&staged.staged_path, b"Staged V2").unwrap();
+
+        let external_fd = Arc::new(Mutex::new(
+            fs::OpenOptions::new()
+                .write(true)
+                .open(&orig_file)
+                .expect("External process opens file"),
+        ));
+
+        // Use post-verify hook to simulate write occurring immediately before unlink
+        let fd_clone = Arc::clone(&external_fd);
+        test_hooks::set_post_verify_hook(move |_quarantined_path| {
+            let mut fd = fd_clone.lock().unwrap();
+            fd.write_all(b"Last-millisecond write before unlink")
+                .unwrap();
+            fd.flush().unwrap();
+        });
+
+        let reflect_res =
+            mgr.reflect_staged_file_with_mode(&staged.stage_id, ReflectionMode::Overwrite);
+        test_hooks::clear_post_verify_hook();
+
+        assert!(reflect_res.is_ok());
+        let (_item, backup_path) = reflect_res.unwrap();
+        assert!(backup_path.is_some());
+        let lost_path = backup_path.unwrap();
+        assert!(lost_path.exists());
+        let lost_bytes = fs::read(&lost_path).unwrap();
+        assert!(lost_bytes.contains(&b"Last-millisecond write before unlink"[0]));
+
+        drop(external_fd);
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_workspace_unstage_recovery_preserves_extension_and_restores_by_stage_id() {
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_unstage_rec_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("document.txt");
+        fs::write(&orig_file, b"Original document text").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+
+        let staged_path = PathBuf::from(&staged.staged_path);
+        assert!(staged_path.exists());
+
+        // Simulate interrupted unstage: staged copy was renamed to trash with extension intact and stage_id
+        let orig_name = staged_path.file_name().unwrap().to_string_lossy();
+        let trash_name = format!(
+            "{}.unstage_trash_{}_{}",
+            orig_name,
+            staged.stage_id,
+            Uuid::new_v4()
+        );
+        let trash_path = staged_path.with_file_name(trash_name);
+        fs::rename(&staged_path, &trash_path).unwrap();
+
+        // Staged copy does not exist at original path, but trash exists
+        assert!(!staged_path.exists());
+        assert!(trash_path.exists());
+
+        // Trigger session restore: must recover trash by stage_id
+        let restored = mgr.restore_session().unwrap();
+        let found = restored.iter().find(|i| i.stage_id == staged.stage_id);
+        assert!(found.is_some(), "Session item must be restored");
+        assert!(
+            staged_path.exists(),
+            "Staged file must be recovered to original staged path"
+        );
+        assert!(!trash_path.exists(), "Trash file must be renamed away");
+
+        // Verify missing file retention (anti-silent purge protection):
+        // If staged file is deleted and no trash exists, it must be retained as Conflict, NOT purged
+        fs::remove_file(&staged_path).unwrap();
+        let restored_again = mgr.restore_session().unwrap();
+        let found_conflict = restored_again
+            .iter()
+            .find(|i| i.stage_id == staged.stage_id);
+        assert!(
+            found_conflict.is_some(),
+            "Item must NOT be silently purged from session"
+        );
+        assert_eq!(found_conflict.unwrap().status, StageStatus::Conflict);
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_workspace_reflect_lost_write_rename_failure_returns_error() {
+        use std::io::Write;
+
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_lost_write_err_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("lost_write_fail.txt");
+        fs::write(&orig_file, b"Original V1").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+
+        fs::write(&staged.staged_path, b"Staged V2").unwrap();
+
+        let external_fd = Arc::new(Mutex::new(
+            fs::OpenOptions::new()
+                .write(true)
+                .open(&orig_file)
+                .expect("External process opens file"),
+        ));
+
+        // Hook simulates concurrent write and then unlinks tmp_reflect_path to force rename failure
+        let fd_clone = Arc::clone(&external_fd);
+        test_hooks::set_post_swap_hook(move |quarantined_path| {
+            let mut fd = fd_clone.lock().unwrap();
+            fd.write_all(b"Concurrent write").unwrap();
+            fd.flush().unwrap();
+            // Remove quarantined file behind the scenes to trigger rename error
+            let _ = fs::remove_file(quarantined_path);
+        });
+
         let reflect_res = mgr.reflect_staged_file(&staged.stage_id);
+        test_hooks::clear_post_swap_hook();
+
+        // Must FAIL with LostWritePreserveFailed, NOT succeed!
         assert!(
             reflect_res.is_err(),
-            "Reflection must detect conflict when external FD modified original inode"
+            "Must not succeed when lost-write preservation fails"
         );
-
-        // Original file must retain the external process modification intact without data loss
-        let orig_bytes = fs::read(&orig_file).unwrap();
-        assert!(
-            orig_bytes.starts_with(b"Concurrent external write through open FD"),
-            "Original file must keep external FD writes safe and intact"
-        );
+        let err = reflect_res.unwrap_err();
+        assert_eq!(err.error_code(), "ERR_LOST_WRITE_PRESERVE_FAILED");
+        assert!(err
+            .to_string()
+            .contains("Failed to preserve concurrent external write"));
 
         drop(external_fd);
         let _ = fs::remove_dir_all(&test_dir);

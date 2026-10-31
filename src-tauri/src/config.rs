@@ -830,4 +830,63 @@ input_mode = "batch_list"
         let deserialized: AppConfig = toml::from_str(&serialized).expect("Deserialization failed");
         assert_eq!(deserialized.snippets.len(), 40);
     }
+
+    #[test]
+    fn test_default_settings_modal_toml_and_json_snippets() {
+        // TOML template snippets as defined in SettingsModal.tsx
+        let toml_snippet_text = r#"
+[[snippets]]
+id = "bash-path"
+language = "bash"
+label = "+ PATH 追加"
+snippet = 'export PATH="$HOME/.local/bin:$PATH"'
+description = "~/.local/bin を PATH に追加"
+
+[[snippets]]
+id = "jsonc-config"
+language = "jsonc"
+label = "+ 設定雛形"
+snippet = '''{
+  "version": "1.0.0",
+  "enabled": true
+}'''
+description = "JSONC 設定オブジェクトの基本テンプレート"
+"#;
+
+        #[derive(serde::Deserialize)]
+        struct SnippetsWrapper {
+            snippets: Vec<EditorSnippetDto>,
+        }
+
+        let parsed: SnippetsWrapper = toml::from_str(toml_snippet_text)
+            .expect("TOML parse must succeed for SettingsModal snippet");
+        assert_eq!(parsed.snippets.len(), 2);
+
+        let jsonc = parsed
+            .snippets
+            .iter()
+            .find(|s| s.id == "jsonc-config")
+            .expect("jsonc-config must exist");
+        assert_eq!(jsonc.language, "jsonc");
+
+        // Verify that snippet content is a valid, parseable JSON object
+        let parsed_json: serde_json::Value = serde_json::from_str(&jsonc.snippet)
+            .expect("Snippet content must be a valid JSON object without raw escaped backslashes");
+        assert_eq!(parsed_json["version"], "1.0.0");
+        assert_eq!(parsed_json["enabled"], true);
+
+        // Also verify SettingsModal.tsx directly if available
+        let modal_path = std::path::Path::new("../src/components/SettingsModal.tsx");
+        if modal_path.exists() {
+            let src = std::fs::read_to_string(modal_path).expect("Read SettingsModal.tsx");
+            assert!(
+                src.contains("snippet = '''{"),
+                "SettingsModal.tsx must use multi-line literal string ''' for JSONC snippets"
+            );
+            assert!(
+                !src.contains(r#"snippet = '{\\n"#),
+                "SettingsModal.tsx must not contain invalid literal escaped string '{{\\n"
+            );
+        }
+    }
 }

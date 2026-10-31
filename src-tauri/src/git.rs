@@ -111,8 +111,22 @@ pub fn get_git_status(path_base64: String) -> Result<GitStatusDto, AppErrorDto> 
         .args(["rev-parse", "--show-toplevel"])
         .output();
 
-    let repo_root = match rev_parse_output {
-        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_string(),
+    let (repo_root_display, repo_root_path) = match rev_parse_output {
+        Ok(out) if out.status.success() => {
+            let raw_bytes = out.stdout.strip_suffix(b"\n").unwrap_or(&out.stdout);
+            let raw_bytes = raw_bytes.strip_suffix(b"\r").unwrap_or(raw_bytes);
+            #[cfg(unix)]
+            let path = {
+                use std::ffi::OsStr;
+                use std::os::unix::ffi::OsStrExt;
+                PathBuf::from(OsStr::from_bytes(raw_bytes))
+            };
+            #[cfg(not(unix))]
+            let path = PathBuf::from(String::from_utf8_lossy(raw_bytes).to_string());
+
+            let display = String::from_utf8_lossy(raw_bytes).trim().to_string();
+            (display, path)
+        }
         Ok(_) => {
             // Not a git repository
             return Ok(GitStatusDto {
@@ -132,14 +146,14 @@ pub fn get_git_status(path_base64: String) -> Result<GitStatusDto, AppErrorDto> 
 
     let mut status_dto = GitStatusDto {
         is_repo: true,
-        repo_root: Some(repo_root.clone()),
+        repo_root: Some(repo_root_display),
         ..GitStatusDto::default()
     };
 
     // 2. Query git status using porcelain v2 with branch information and NUL termination (-z)
     let status_output = Command::new("git")
         .arg("-C")
-        .arg(&repo_root)
+        .arg(&repo_root_path)
         .args(["status", "--porcelain=v2", "-z", "--branch"])
         .output();
 
@@ -164,7 +178,7 @@ pub fn get_git_status(path_base64: String) -> Result<GitStatusDto, AppErrorDto> 
     // 3. Query latest commit info (git log -1)
     let log_output = Command::new("git")
         .arg("-C")
-        .arg(&repo_root)
+        .arg(&repo_root_path)
         .args(["log", "-1", "--pretty=format:%h%x09%s%x09%an%x09%ar"])
         .output();
 
@@ -542,6 +556,43 @@ u UU N... 100644 100644 100644 100644 5555 6666 7777 conflict.txt
             "Current workspace should be recognized as git repo"
         );
         assert!(res.branch.is_some(), "Current branch should be detected");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_get_git_status_non_utf8_repo_path() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let home = dirs::home_dir().expect("Home must exist");
+        let non_utf8_name = [b'c', b'u', b'd', b'd', b'l', b'e', b'_', 0xff, 0xfe];
+        let test_dir = home.join(OsStr::from_bytes(&non_utf8_name));
+        let _ = std::fs::remove_dir_all(&test_dir);
+        std::fs::create_dir_all(&test_dir).unwrap();
+
+        // Initialize a git repo inside the non-UTF-8 directory
+        let init_status = Command::new("git")
+            .arg("-C")
+            .arg(&test_dir)
+            .args(["init", "-q"])
+            .status();
+
+        if let Ok(st) = init_status {
+            if st.success() {
+                // Encode directory path to base64
+                let b64 = base64::engine::general_purpose::STANDARD
+                    .encode(test_dir.as_os_str().as_bytes());
+
+                let res = get_git_status(b64).unwrap();
+                assert!(
+                    res.is_repo,
+                    "Repository in non-UTF-8 path should be successfully detected"
+                );
+                assert!(res.error_message.is_none());
+            }
+        }
+
+        let _ = std::fs::remove_dir_all(&test_dir);
     }
 
     #[test]

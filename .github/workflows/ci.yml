@@ -48,6 +48,23 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny@0.20.2
+
+      - name: Cargo license check (cargo-deny)
+        run: |
+          cargo deny --version
+          cargo deny --manifest-path src-tauri/Cargo.toml check licenses
+          cargo deny --manifest-path src-tauri/Cargo.toml check
+
+      - name: Frontend dependency license check (Node audit)
+        run: pnpm run check:licenses
+
+      - name: Frontend license check verification (license-checker-rseidelsohn)
+        run: pnpm dlx license-checker-rseidelsohn@4.4.2 --excludePrivatePackages --onlyAllow "MIT;Apache-2.0;ISC;BSD-2-Clause;BSD-3-Clause;0BSD;BlueOak-1.0.0;CC0-1.0;MIT-0;MPL-2.0"
+
       - name: Rust formatting check (cargo fmt)
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 

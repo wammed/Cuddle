@@ -1,6 +1,8 @@
 [package]
 name = "fileworkbench"
 version = "0.1.0"
+license = "MIT"
+publish = false
 description = "A safe Linux file workbench that hugs your originals tight."
 authors = ["susie"]
 edition = "2021"

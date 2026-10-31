@@ -95,6 +95,7 @@ pnpm run tauri build
 * **[FileWorkbench-Design-ver0.9.ja.md](FileWorkbench-Design-ver0.9.ja.md)** / **[FileWorkbench-Design-ver0.9.en.md](FileWorkbench-Design-ver0.9.en.md)**: 統合基本設計書（残課題解決・バイリンガル仕様確定版）
 * **[FileWorkbench-Handover.ja.md](FileWorkbench-Handover.ja.md)** / **[FileWorkbench-Handover.en.md](FileWorkbench-Handover.en.md)**: 開発引き継ぎ書・実装進捗詳細記録
 * **[IP_COMPLIANCE.ja.md](IP_COMPLIANCE.ja.md)** / **[IP_COMPLIANCE.md](IP_COMPLIANCE.md)**: ブランドアイコン・知的財産コンプライアンス記録
+* **[THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)**: サードパーティ依存関係・ライセンス監査証跡
 
 ---
 
@@ -102,3 +103,7 @@ pnpm run tauri build
 
 本ソフトウェアは [MIT License](LICENSE) の下で公開されています。  
 Copyright (c) 2026 wammed and Cuddle Contributors.
+
+サードパーティの依存関係およびアセットには、それぞれのライセンスが適用されます。詳細は [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) を参照してください。
+
+Cuddle はソースコード公開を基本方針としています。コンパイル済みバイナリパッケージはプロジェクトとして配布していません。

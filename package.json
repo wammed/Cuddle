@@ -1,6 +1,7 @@
 {
   "name": "cuddle",
   "private": true,
+  "license": "MIT",
   "version": "0.1.0",
   "description": "File Workbench",
   "type": "module",
@@ -9,6 +10,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "check:licenses": "node scripts/check-frontend-licenses.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

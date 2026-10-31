@@ -95,10 +95,15 @@ For complete compilation instructions, Linux system prerequisites, external CLI 
 * **[FileWorkbench-Design-ver0.9.en.md](FileWorkbench-Design-ver0.9.en.md)** / **[FileWorkbench-Design-ver0.9.ja.md](FileWorkbench-Design-ver0.9.ja.md)**: Comprehensive architectural design specifications.
 * **[FileWorkbench-Handover.en.md](FileWorkbench-Handover.en.md)** / **[FileWorkbench-Handover.ja.md](FileWorkbench-Handover.ja.md)**: Engineering handover and implementation progress logs.
 * **[IP_COMPLIANCE.md](IP_COMPLIANCE.md)**: Trademark, brand icon, and asset compliance verification.
+* **[THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)**: Third-party dependency licenses and attribution audit record.
 
 ---
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+Cuddle is licensed under the [MIT License](LICENSE).
 Copyright (c) 2026 wammed and Cuddle Contributors.
+
+Third-party dependencies and assets remain subject to their respective licenses. See [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) for details.
+
+Cuddle is distributed as source code. Precompiled binary packages are not distributed as part of this project.

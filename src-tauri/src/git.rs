@@ -1,3 +1,4 @@
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Command;
@@ -12,6 +13,10 @@ pub struct GitFileItemDto {
     pub status_code: String,
     pub status_label: String,
     pub original_path: Option<String>,
+    #[serde(default)]
+    pub raw_bytes_base64: Option<String>,
+    #[serde(default)]
+    pub original_raw_bytes_base64: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -141,8 +146,7 @@ pub fn get_git_status(path_base64: String) -> Result<GitStatusDto, AppErrorDto> 
     match status_output {
         Ok(out) => {
             if out.status.success() {
-                let output_str = String::from_utf8_lossy(&out.stdout);
-                parse_porcelain_v2(&output_str, &mut status_dto);
+                parse_porcelain_v2_bytes(&out.stdout, &mut status_dto);
             } else {
                 let stderr_msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
                 status_dto.error_message = Some(if stderr_msg.is_empty() {
@@ -201,134 +205,180 @@ fn map_status_label(code: char) -> &'static str {
     }
 }
 
-/// Parse `git status --porcelain=v2 -z --branch` output.
+/// Helper to split a byte slice into at most `count` slices on `delimiter`.
+fn split_bytes_n(slice: &[u8], delimiter: u8, count: usize) -> Vec<&[u8]> {
+    let mut result = Vec::with_capacity(count);
+    let mut remainder = slice;
+    while result.len() + 1 < count {
+        if let Some(pos) = remainder.iter().position(|&b| b == delimiter) {
+            result.push(&remainder[..pos]);
+            remainder = &remainder[pos + 1..];
+        } else {
+            break;
+        }
+    }
+    result.push(remainder);
+    result
+}
+
+/// Parse `git status --porcelain=v2 -z --branch` raw byte stream.
 /// Supports both NUL-separated (-z) streams and newline-separated fallback.
-/// Note: Preserves leading and trailing whitespace in file paths.
-pub fn parse_porcelain_v2(output: &str, status: &mut GitStatusDto) {
-    let is_nul_separated = output.contains('\0');
-    let records: Vec<&str> = if is_nul_separated {
-        output.split('\0').collect()
+/// Preserves raw byte representation of paths (including non-UTF-8 paths) in `raw_bytes_base64`.
+pub fn parse_porcelain_v2_bytes(output: &[u8], status: &mut GitStatusDto) {
+    let is_nul_separated = output.contains(&0);
+    let records: Vec<&[u8]> = if is_nul_separated {
+        output.split(|&b| b == 0).collect()
     } else {
-        output.lines().collect()
+        output.split(|&b| b == b'\n').collect()
     };
 
     let mut it = records.into_iter().peekable();
     while let Some(raw_record) = it.next() {
-        // Strip trailing CR (\r) ONLY for newline-separated fallback to handle Windows line endings.
-        // For NUL-separated (-z) streams, trailing \r in filenames is legitimate and must NOT be stripped!
         let line = if is_nul_separated {
             raw_record
         } else {
-            raw_record.trim_end_matches('\r')
+            raw_record.strip_suffix(b"\r").unwrap_or(raw_record)
         };
         if line.is_empty() {
             continue;
         }
 
-        if let Some(rest) = line.strip_prefix("# branch.head ") {
-            status.branch = Some(rest.trim().to_string());
-        } else if let Some(rest) = line.strip_prefix("# branch.upstream ") {
-            status.upstream = Some(rest.trim().to_string());
-        } else if let Some(rest) = line.strip_prefix("# branch.ab ") {
-            for part in rest.split_whitespace() {
+        if let Some(rest) = line.strip_prefix(b"# branch.head ") {
+            status.branch = Some(String::from_utf8_lossy(rest).trim().to_string());
+        } else if let Some(rest) = line.strip_prefix(b"# branch.upstream ") {
+            status.upstream = Some(String::from_utf8_lossy(rest).trim().to_string());
+        } else if let Some(rest) = line.strip_prefix(b"# branch.ab ") {
+            let rest_str = String::from_utf8_lossy(rest);
+            for part in rest_str.split_whitespace() {
                 if let Some(ahead_str) = part.strip_prefix('+') {
                     status.ahead = ahead_str.parse().unwrap_or(0);
                 } else if let Some(behind_str) = part.strip_prefix('-') {
                     status.behind = behind_str.parse().unwrap_or(0);
                 }
             }
-        } else if let Some(rest) = line.strip_prefix("1 ") {
+        } else if let Some(rest) = line.strip_prefix(b"1 ") {
             // Ordinary change entry: 1 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <path>
-            // 8 fields before path: splitn(8, ' ') leaves exactly the raw <path> in index 7
-            let parts: Vec<&str> = rest.splitn(8, ' ').collect();
+            // 8 fields: splitn(8, ' ') leaves <path> in index 7
+            let parts = split_bytes_n(rest, b' ', 8);
             if parts.len() == 8 {
-                let xy = parts[0];
-                let path = parts[7].to_string();
+                let xy = String::from_utf8_lossy(parts[0]);
+                let path_bytes = parts[7];
+                let path_str = String::from_utf8_lossy(path_bytes).to_string();
+                let raw_b64 = Some(base64::engine::general_purpose::STANDARD.encode(path_bytes));
                 let x_staged = xy.chars().next().unwrap_or('.');
                 let y_unstaged = xy.chars().nth(1).unwrap_or('.');
 
                 if x_staged != '.' {
                     status.staged_files.push(GitFileItemDto {
-                        path: path.clone(),
+                        path: path_str.clone(),
                         status_code: x_staged.to_string(),
                         status_label: map_status_label(x_staged).to_string(),
                         original_path: None,
+                        raw_bytes_base64: raw_b64.clone(),
+                        original_raw_bytes_base64: None,
                     });
                 }
                 if y_unstaged != '.' {
                     status.unstaged_files.push(GitFileItemDto {
-                        path,
+                        path: path_str,
                         status_code: y_unstaged.to_string(),
                         status_label: map_status_label(y_unstaged).to_string(),
                         original_path: None,
+                        raw_bytes_base64: raw_b64,
+                        original_raw_bytes_base64: None,
                     });
                 }
             }
-        } else if let Some(rest) = line.strip_prefix("2 ") {
+        } else if let Some(rest) = line.strip_prefix(b"2 ") {
             // Renamed/copied entry:
             // 2 <XY> <sub> <mH> <mI> <mW> <hH> <hI> <Xscore> <path>
-            // 9 fields before path: splitn(9, ' ') leaves <path> in index 8
+            // 9 fields: splitn(9, ' ') leaves <path> in index 8
             // With -z, next entry is <origPath>. With tab, path\torigPath
-            let parts: Vec<&str> = rest.splitn(9, ' ').collect();
+            let parts = split_bytes_n(rest, b' ', 9);
             if parts.len() == 9 {
-                let xy = parts[0];
+                let xy = String::from_utf8_lossy(parts[0]);
                 let path_field = parts[8];
-                let (path, orig_path) = if let Some((p, o)) = path_field.split_once('\t') {
-                    (p.to_string(), Some(o.to_string()))
-                } else if let Some(orig) = it.next() {
-                    let clean_orig = if is_nul_separated {
-                        orig.to_string()
+
+                let (path_bytes, orig_bytes) =
+                    if let Some(pos) = path_field.iter().position(|&b| b == b'\t') {
+                        (&path_field[..pos], Some(&path_field[pos + 1..]))
+                    } else if let Some(orig) = it.next() {
+                        let clean_orig = if is_nul_separated {
+                            orig
+                        } else {
+                            orig.strip_suffix(b"\r").unwrap_or(orig)
+                        };
+                        (path_field, Some(clean_orig))
                     } else {
-                        orig.trim_end_matches('\r').to_string()
+                        (path_field, None)
                     };
-                    (path_field.to_string(), Some(clean_orig))
-                } else {
-                    (path_field.to_string(), None)
-                };
+
+                let path_str = String::from_utf8_lossy(path_bytes).to_string();
+                let raw_b64 = Some(base64::engine::general_purpose::STANDARD.encode(path_bytes));
+                let orig_str = orig_bytes.map(|b| String::from_utf8_lossy(b).to_string());
+                let orig_b64 =
+                    orig_bytes.map(|b| base64::engine::general_purpose::STANDARD.encode(b));
 
                 let x_staged = xy.chars().next().unwrap_or('.');
                 let y_unstaged = xy.chars().nth(1).unwrap_or('.');
 
                 if x_staged != '.' {
                     status.staged_files.push(GitFileItemDto {
-                        path: path.clone(),
+                        path: path_str.clone(),
                         status_code: x_staged.to_string(),
                         status_label: map_status_label(x_staged).to_string(),
-                        original_path: orig_path.clone(),
+                        original_path: orig_str.clone(),
+                        raw_bytes_base64: raw_b64.clone(),
+                        original_raw_bytes_base64: orig_b64.clone(),
                     });
                 }
                 if y_unstaged != '.' {
                     status.unstaged_files.push(GitFileItemDto {
-                        path,
+                        path: path_str,
                         status_code: y_unstaged.to_string(),
                         status_label: map_status_label(y_unstaged).to_string(),
-                        original_path: orig_path,
+                        original_path: orig_str,
+                        raw_bytes_base64: raw_b64,
+                        original_raw_bytes_base64: orig_b64,
                     });
                 }
             }
-        } else if let Some(rest) = line.strip_prefix("u ") {
+        } else if let Some(rest) = line.strip_prefix(b"u ") {
             // Unmerged / conflict entry: u <XY> ... <path>
             // 10 fields before path: splitn(10, ' ') leaves <path> in index 9
-            let parts: Vec<&str> = rest.splitn(10, ' ').collect();
+            let parts = split_bytes_n(rest, b' ', 10);
             if parts.len() == 10 {
-                let path = parts[9].to_string();
+                let path_bytes = parts[9];
+                let path_str = String::from_utf8_lossy(path_bytes).to_string();
+                let raw_b64 = Some(base64::engine::general_purpose::STANDARD.encode(path_bytes));
                 status.conflict_files.push(GitFileItemDto {
-                    path,
+                    path: path_str,
                     status_code: "U".to_string(),
                     status_label: "Conflict / Unmerged".to_string(),
                     original_path: None,
+                    raw_bytes_base64: raw_b64,
+                    original_raw_bytes_base64: None,
                 });
             }
-        } else if let Some(path) = line.strip_prefix("? ") {
+        } else if let Some(path_bytes) = line.strip_prefix(b"? ") {
             // Untracked entry: ? <path>
+            let path_str = String::from_utf8_lossy(path_bytes).to_string();
+            let raw_b64 = Some(base64::engine::general_purpose::STANDARD.encode(path_bytes));
             status.untracked_files.push(GitFileItemDto {
-                path: path.to_string(),
+                path: path_str,
                 status_code: "?".to_string(),
                 status_label: "Untracked".to_string(),
                 original_path: None,
+                raw_bytes_base64: raw_b64,
+                original_raw_bytes_base64: None,
             });
         }
     }
+}
+
+/// Parse `git status --porcelain=v2 -z --branch` string output (delegates to raw byte parser).
+pub fn parse_porcelain_v2(output: &str, status: &mut GitStatusDto) {
+    parse_porcelain_v2_bytes(output.as_bytes(), status);
 }
 
 #[cfg(test)]
@@ -446,6 +496,33 @@ u UU N... 100644 100644 100644 100644 5555 6666 7777 conflict.txt
 
         assert_eq!(status.untracked_files.len(), 1);
         assert_eq!(status.untracked_files[0].path, "memo draft.txt");
+    }
+
+    #[test]
+    fn test_parse_porcelain_v2_with_non_utf8_filename() {
+        use base64::Engine;
+        // Non-UTF8 byte sequence (e.g. invalid bytes 0xFF, 0xFE, 0xFD or Shift-JIS bytes)
+        let non_utf8_path = vec![
+            b's', b'r', b'c', b'/', 0xff, 0xfe, 0xfd, b'.', b't', b'x', b't',
+        ];
+        let mut raw_stream = Vec::new();
+        raw_stream.extend_from_slice(b"# branch.head main\0");
+        raw_stream.extend_from_slice(b"1 M. N... 100644 100644 100644 1111 2222 ");
+        raw_stream.extend_from_slice(&non_utf8_path);
+        raw_stream.push(0);
+
+        let mut status = GitStatusDto::default();
+        parse_porcelain_v2_bytes(&raw_stream, &mut status);
+
+        assert_eq!(status.staged_files.len(), 1);
+        let item = &status.staged_files[0];
+        assert_eq!(item.status_code, "M");
+        assert!(item.raw_bytes_base64.is_some());
+
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(item.raw_bytes_base64.as_ref().unwrap())
+            .unwrap();
+        assert_eq!(decoded, non_utf8_path);
     }
 
     #[test]

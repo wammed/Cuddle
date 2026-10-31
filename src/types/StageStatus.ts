@@ -3,4 +3,4 @@
 /**
  * Current status of the staged working copy.
  */
-export type StageStatus = "Staged" | "Modified" | "Reflected" | "Conflict";
+export type StageStatus = "Staged" | "Modified" | "Applying" | "Reflected" | "Conflict";

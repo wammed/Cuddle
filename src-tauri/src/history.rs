@@ -335,6 +335,7 @@ impl HistoryManager {
         let status_str = match item.status {
             StageStatus::Staged => "Staged",
             StageStatus::Modified => "Modified",
+            StageStatus::Applying => "Applying",
             StageStatus::Reflected => "Reflected",
             StageStatus::Conflict => "Conflict",
         };
@@ -426,6 +427,7 @@ impl HistoryManager {
                 let status_str = match item.status {
                     StageStatus::Staged => "Staged",
                     StageStatus::Modified => "Modified",
+                    StageStatus::Applying => "Applying",
                     StageStatus::Reflected => "Reflected",
                     StageStatus::Conflict => "Conflict",
                 };
@@ -521,6 +523,7 @@ impl HistoryManager {
                 let status_str = match item.status {
                     StageStatus::Staged => "Staged",
                     StageStatus::Modified => "Modified",
+                    StageStatus::Applying => "Applying",
                     StageStatus::Reflected => "Reflected",
                     StageStatus::Conflict => "Conflict",
                 };
@@ -608,6 +611,7 @@ impl HistoryManager {
                 };
                 let status = match status_str.as_str() {
                     "Modified" => StageStatus::Modified,
+                    "Applying" => StageStatus::Applying,
                     "Reflected" => StageStatus::Reflected,
                     "Conflict" => StageStatus::Conflict,
                     _ => StageStatus::Staged,

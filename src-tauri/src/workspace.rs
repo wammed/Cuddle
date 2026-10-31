@@ -1,7 +1,7 @@
 use crate::models::{decode_path_from_base64, encode_path_to_base64, FileItem, ModelError};
 use crate::policy::{
-    canonicalize_path, check_disk_space, is_external_or_mount_boundary, OperationPolicy,
-    OriginalSnapshotDto, PolicyError,
+    canonicalize_path, check_disk_space, compute_file_sha256, is_external_or_mount_boundary,
+    OperationPolicy, OriginalSnapshotDto, PolicyError,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -122,6 +122,27 @@ pub mod test_hooks {
     thread_local! {
         static POST_SWAP_HOOK: RefCell<Option<HookFn>> = const { RefCell::new(None) };
         static POST_VERIFY_HOOK: RefCell<Option<HookFn>> = const { RefCell::new(None) };
+        static POST_STAGE_CLONE_HOOK: RefCell<Option<HookFn>> = const { RefCell::new(None) };
+    }
+
+    pub fn set_post_stage_clone_hook<F: Fn(&Path) + 'static>(f: F) {
+        POST_STAGE_CLONE_HOOK.with(|h| {
+            *h.borrow_mut() = Some(Box::new(f));
+        });
+    }
+
+    pub fn clear_post_stage_clone_hook() {
+        POST_STAGE_CLONE_HOOK.with(|h| {
+            *h.borrow_mut() = None;
+        });
+    }
+
+    pub fn trigger_post_stage_clone_hook(path: &Path) {
+        POST_STAGE_CLONE_HOOK.with(|h| {
+            if let Some(ref hook) = *h.borrow() {
+                hook(path);
+            }
+        });
     }
 
     pub fn set_post_swap_hook<F: Fn(&Path) + 'static>(f: F) {
@@ -183,6 +204,8 @@ pub enum StageStatus {
     Staged,
     /// Working copy has been mutated in workspace-temp
     Modified,
+    /// Changes are currently being reflected to the original file (WAL journal state)
+    Applying,
     /// Changes have been safely reflected back to the original
     Reflected,
     /// Original file was modified externally after staging (Conflict detected on session restore)
@@ -323,6 +346,28 @@ impl WorkspaceManager {
 
         // 5. Perform safe cloning (Reflink CoW preferred, standard stream fallback)
         let clone_method = clone_file(&canonical_src, &staged_target_path)?;
+
+        #[cfg(test)]
+        test_hooks::trigger_post_stage_clone_hook(&canonical_src);
+
+        // 5.1 TOCTOU Defense: Verify original file was not modified during cloning
+        if let Err(e) = OperationPolicy::verify_conflict_on_path(&canonical_src, &snapshot, true) {
+            let _ = fs::remove_file(&staged_target_path);
+            return Err(WorkspaceError::Policy(e));
+        }
+
+        // 5.2 Verify staged copy integrity against original snapshot
+        let staged_item = FileItem::from_path(&staged_target_path)?;
+        let staged_snapshot = OperationPolicy::create_snapshot(&staged_item, true)?;
+        if staged_snapshot.sha256 != snapshot.sha256 {
+            let _ = fs::remove_file(&staged_target_path);
+            return Err(WorkspaceError::Policy(PolicyError::ConflictDetected(
+                format!(
+                    "Original file '{}' content changed concurrently during staging copy",
+                    canonical_src.display()
+                ),
+            )));
+        }
 
         let now_ms = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -631,9 +676,35 @@ impl WorkspaceManager {
             return Err(WorkspaceError::Io(e));
         }
 
+        // --- Write-Ahead Log (WAL) Journal State ---
+        // Transition staged item to `StageStatus::Applying` and persist to SQLite BEFORE initiating physical exchange.
+        // If crash or power failure occurs during or immediately after atomic_exchange_files,
+        // restore_session() will detect `Applying` state and automatically roll forward or roll back safely.
+        let previous_status = staged.status;
+        staged.status = StageStatus::Applying;
+        let hist_mgr = crate::history::get_history_manager();
+        hist_mgr.save_session_item(staged).map_err(|e| {
+            let _ = fs::remove_file(&tmp_reflect_path);
+            staged.status = previous_status;
+            WorkspaceError::Io(std::io::Error::other(e))
+        })?;
+
         // --- TOCTOU Prevention: Atomic Exchange & Quarantined Verification ---
         // Atomically swap candidate into place and quarantine the original file in tmp_reflect_path.
         // Then verify the quarantined original file in isolation against the snapshot.
+        //
+        // --- Technical Note on POSIX Open File Descriptor & Inode Semantics ---
+        // Under POSIX semantics, open file descriptors are bound directly to the underlying inode,
+        // not the directory pathname. When `atomic_exchange_files` exchanges path references:
+        // 1. Any external process with an open FD to `orig_path` continues writing to the quarantined
+        //    inode at `tmp_reflect_path` without interruption.
+        // 2. We verify `tmp_reflect_path` post-swap to detect such concurrent writes and safely
+        //    preserve them as `.concurrent_write` backups rather than unlinking.
+        // 3. Without cooperative advisory locks or mandatory kernel locks (which risk system-wide deadlocks
+        //    and are disabled on modern Linux), no userspace program can close the sub-microsecond gap
+        //    between a final check and the `unlink` syscall if an external process writes to the open FD.
+        // Cuddle's multi-tier verification and fail-closed preservation provide the strongest practical
+        // original data protection permitted by the POSIX filesystem architecture.
         let mut backup_origin_path: Option<PathBuf> = None;
         let mut concurrent_write_path: Option<PathBuf> = None;
 
@@ -701,6 +772,8 @@ impl WorkspaceManager {
                                         rb_err
                                     );
                                     // CRITICAL: NEVER remove tmp_reflect_path when exchange fails, as it contains the original data!
+                                    staged.status = StageStatus::Conflict;
+                                    let _ = hist_mgr.save_session_item(staged);
                                     return Err(WorkspaceError::ReflectRollbackFailed {
                                         stage_id: staged.stage_id.clone(),
                                         path: orig_path.clone(),
@@ -713,6 +786,8 @@ impl WorkspaceManager {
                                 }
                                 // Rollback exchange succeeded: orig_path has the original back, tmp_reflect_path has staging candidate
                                 let _ = fs::remove_file(&tmp_reflect_path);
+                                staged.status = previous_status;
+                                let _ = hist_mgr.save_session_item(staged);
                                 return Err(WorkspaceError::Io(e));
                             }
                             backup_origin_path = Some(backup_target);
@@ -820,8 +895,11 @@ impl WorkspaceManager {
                 }
             }
             Err(swap_err) => {
-                // Remove temporary staging candidate
+                // Remove temporary staging candidate and revert WAL status
                 let _ = fs::remove_file(&tmp_reflect_path);
+                staged.status = previous_status;
+                let hist_mgr = crate::history::get_history_manager();
+                let _ = hist_mgr.save_session_item(staged);
 
                 // Classify atomic_exchange_files error
                 let raw_err = swap_err.raw_os_error();
@@ -866,6 +944,9 @@ impl WorkspaceManager {
                     let _ = fs::rename(&orig_path, &tmp_reflect_path);
                     let _ = fs::rename(bkp, &orig_path);
                     let _ = fs::remove_file(&tmp_reflect_path);
+                    staged.status = previous_status;
+                    let hist_mgr = crate::history::get_history_manager();
+                    let _ = hist_mgr.save_session_item(staged);
                 }
                 return Err(WorkspaceError::Model(e));
             }
@@ -1168,7 +1249,90 @@ impl WorkspaceManager {
             }
 
             // Verify original file and detect conflict
-            let orig_path = Path::new(&item.original_snapshot.canonical_path);
+            let orig_path = PathBuf::from(&item.original_snapshot.canonical_path);
+
+            // Handle WAL Journal State (StageStatus::Applying):
+            // An interrupted reflection was recorded in WAL journal state!
+            if item.status == StageStatus::Applying {
+                let mut resolved = false;
+
+                if orig_path.exists() && staged_path.exists() {
+                    let orig_hash = compute_file_sha256(&orig_path).ok();
+                    let staged_hash = compute_file_sha256(staged_path).ok();
+
+                    if let (Some(ref oh), Some(ref sh)) = (&orig_hash, &staged_hash) {
+                        if oh == sh {
+                            // CASE A: orig_path hash matches staged copy hash!
+                            // Physical reflection completed successfully prior to SQLite commit.
+                            // Idempotently roll-forward to Reflected status and refresh snapshot.
+                            if let Ok(updated_item) = FileItem::from_path(&orig_path) {
+                                if let Ok(new_snapshot) =
+                                    OperationPolicy::create_snapshot(&updated_item, true)
+                                {
+                                    item.original_snapshot = new_snapshot;
+                                    item.status = StageStatus::Reflected;
+                                    let _ = hist_mgr.save_session_item(&item);
+                                    let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
+                                        operation_id: Uuid::new_v4().to_string(),
+                                        operation_type: "RecoveryRollForward".to_string(),
+                                        display_name: item.display_name.clone(),
+                                        original_path: Some(item.original_snapshot.canonical_path.clone()),
+                                        staged_path: Some(item.staged_path.clone()),
+                                        inode: Some(updated_item.inode as i64),
+                                        status: "Success".to_string(),
+                                        can_undo: false,
+                                        details: Some("Interrupted reflection auto-recovered and rolled forward to Reflected".to_string()),
+                                    });
+                                    // Remove any leftover quarantine candidate .cuddle_reflect_{stage_id}_*.tmp
+                                    if let Some(parent) = orig_path.parent() {
+                                        if let Ok(entries) = fs::read_dir(parent) {
+                                            let marker =
+                                                format!(".cuddle_reflect_{}", item.stage_id);
+                                            for entry in entries.flatten() {
+                                                if entry
+                                                    .file_name()
+                                                    .to_string_lossy()
+                                                    .contains(&marker)
+                                                {
+                                                    let _ = fs::remove_file(entry.path());
+                                                }
+                                            }
+                                        }
+                                    }
+                                    resolved = true;
+                                }
+                            }
+                        } else if item.original_snapshot.sha256.as_ref() == Some(oh) {
+                            // CASE B: orig_path still matches pre-reflection snapshot (swap was not completed or rolled back).
+                            // Safely roll back to Modified status.
+                            item.status = StageStatus::Modified;
+                            let _ = hist_mgr.save_session_item(&item);
+                            // Clean up leftover staging candidate tmp file if present
+                            if let Some(parent) = orig_path.parent() {
+                                if let Ok(entries) = fs::read_dir(parent) {
+                                    let marker = format!(".cuddle_reflect_{}", item.stage_id);
+                                    for entry in entries.flatten() {
+                                        if entry.file_name().to_string_lossy().contains(&marker) {
+                                            let _ = fs::remove_file(entry.path());
+                                        }
+                                    }
+                                }
+                            }
+                            resolved = true;
+                        }
+                    }
+                }
+
+                if !resolved {
+                    // Cannot confirm clean roll-forward or clean rollback -> mark Conflict for safety
+                    item.status = StageStatus::Conflict;
+                    let _ = hist_mgr.save_session_item(&item);
+                }
+
+                map.insert(item.stage_id.clone(), item.clone());
+                restored.push(item);
+                continue;
+            }
 
             // Check if an interrupted reflection or failed rollback left a quarantined original file (.cuddle_reflect_{stage_id}_*.tmp)
             if let Some(orig_parent) = orig_path.parent() {
@@ -1344,17 +1508,58 @@ pub fn generate_lost_write_backup_path(orig_path: &Path) -> PathBuf {
 }
 
 /// Cleans up stale unstage trash and temporary files from the staging directory.
+/// CRITICAL SAFETY GUARANTEES:
+/// 1. Queries active DB sessions and NEVER removes artifacts belonging to active sessions (by stage_id).
+/// 2. Only deletes orphan artifacts whose last modification time is older than 24 hours (86,400s).
 pub fn cleanup_stale_staging_artifacts() {
+    cleanup_stale_staging_artifacts_with_threshold(24 * 60 * 60);
+}
+
+/// Helper for cleanup with a custom stale age threshold (in seconds).
+pub fn cleanup_stale_staging_artifacts_with_threshold(threshold_secs: u64) {
     let global_staging = get_global_staging_directory();
     if !global_staging.exists() {
         return;
     }
 
+    let hist_mgr = crate::history::get_history_manager();
+    let active_stage_ids: std::collections::HashSet<String> = hist_mgr
+        .load_all_session_items()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|item| item.stage_id)
+        .collect();
+
+    let now = SystemTime::now();
+
     if let Ok(entries) = fs::read_dir(&global_staging) {
         for entry in entries.flatten() {
             let fname = entry.file_name().to_string_lossy().to_string();
-            if fname.contains("unstage_trash_") || fname.starts_with(".tmp_") {
-                let _ = fs::remove_file(entry.path());
+            let is_candidate = fname.contains("unstage_trash_")
+                || fname.starts_with(".tmp_")
+                || fname.starts_with(".cuddle_");
+
+            if !is_candidate {
+                continue;
+            }
+
+            // Never delete an artifact belonging to any active session item
+            let belongs_to_active_session = active_stage_ids
+                .iter()
+                .any(|stage_id| fname.contains(stage_id));
+            if belongs_to_active_session {
+                continue;
+            }
+
+            // Check file modification time: only remove if older than the threshold
+            if let Ok(metadata) = entry.metadata() {
+                if let Ok(modified) = metadata.modified() {
+                    if let Ok(age) = now.duration_since(modified) {
+                        if age.as_secs() >= threshold_secs {
+                            let _ = fs::remove_file(entry.path());
+                        }
+                    }
+                }
             }
         }
     }
@@ -2216,6 +2421,180 @@ mod tests {
             );
         }
 
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_workspace_stage_file_detects_concurrent_modification_during_copy() {
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_stage_toctou_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("concurrent_test.txt");
+        fs::write(&orig_file, b"Original file content before clone").unwrap();
+
+        let mgr = WorkspaceManager::new();
+
+        // Simulate external modification to original file during copy
+        let orig_file_clone = orig_file.clone();
+        test_hooks::set_post_stage_clone_hook(move |_path| {
+            let _ = fs::write(
+                &orig_file_clone,
+                b"Externally mutated content during clone!",
+            );
+        });
+
+        let stage_res = mgr.stage_file(&orig_file);
+        test_hooks::clear_post_stage_clone_hook();
+
+        assert!(
+            stage_res.is_err(),
+            "Must reject stage if original file was concurrently modified"
+        );
+        let err = stage_res.unwrap_err();
+        assert_eq!(err.error_code(), "ERR_CONFLICT_DETECTED");
+
+        // Verify no orphan staged files leaked into staging
+        let staging_dir = resolve_staging_directory(&orig_file);
+        if staging_dir.exists() {
+            let entries: Vec<_> = fs::read_dir(&staging_dir)
+                .unwrap()
+                .flatten()
+                .filter(|e| {
+                    e.file_name()
+                        .to_string_lossy()
+                        .contains("concurrent_test.txt")
+                })
+                .collect();
+            assert!(
+                entries.is_empty(),
+                "Staged file candidate must be removed on conflict detection"
+            );
+        }
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_workspace_session_restore_auto_recovers_applying_journal_state() {
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_wal_rec_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file_a = test_dir.join("file_a.txt");
+        let orig_file_b = test_dir.join("file_b.txt");
+        fs::write(&orig_file_a, b"Original A initial").unwrap();
+        fs::write(&orig_file_b, b"Original B initial").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged_a = mgr.stage_file(&orig_file_a).unwrap();
+        let staged_b = mgr.stage_file(&orig_file_b).unwrap();
+
+        let hist_mgr = crate::history::get_history_manager();
+
+        // Scenario 1: Physical swap completed, but DB crashed in `Applying` state.
+        // Orig file on disk now matches the staged copy.
+        fs::write(&staged_a.staged_path, b"Reflected A content").unwrap();
+        fs::write(&orig_file_a, b"Reflected A content").unwrap();
+        let mut item_a = staged_a.clone();
+        item_a.status = StageStatus::Applying;
+        hist_mgr.save_session_item(&item_a).unwrap();
+
+        // Scenario 2: Physical swap failed or did not run, DB left in `Applying` state.
+        // Orig file on disk still matches original snapshot.
+        fs::write(&staged_b.staged_path, b"Candidate B content").unwrap();
+        // orig_file_b remains b"Original B initial"
+        let mut item_b = staged_b.clone();
+        item_b.status = StageStatus::Applying;
+        hist_mgr.save_session_item(&item_b).unwrap();
+
+        // Restore session
+        let restored = mgr.restore_session().unwrap();
+
+        let restored_a = restored
+            .iter()
+            .find(|i| i.stage_id == staged_a.stage_id)
+            .unwrap();
+        assert_eq!(
+            restored_a.status,
+            StageStatus::Reflected,
+            "Item A must auto-roll-forward to Reflected because disk content matches staged copy"
+        );
+        assert_eq!(
+            restored_a.original_snapshot.sha256,
+            Some(compute_file_sha256(&orig_file_a).unwrap()),
+            "Snapshot must be refreshed on roll forward"
+        );
+
+        let restored_b = restored
+            .iter()
+            .find(|i| i.stage_id == staged_b.stage_id)
+            .unwrap();
+        assert_eq!(
+            restored_b.status,
+            StageStatus::Modified,
+            "Item B must auto-roll-back to Modified because original file was untouched on disk"
+        );
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_workspace_cleanup_stale_artifacts_protects_active_sessions() {
+        let global_staging = get_global_staging_directory();
+        let _ = fs::create_dir_all(&global_staging);
+
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_cleanup_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("active_session_file.txt");
+        fs::write(&orig_file, b"Active session data").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+
+        // 1. Create artifact containing active session's stage_id
+        let active_artifact =
+            global_staging.join(format!("active.unstage_trash_{}", staged.stage_id));
+        fs::write(&active_artifact, b"Active session recovery trash").unwrap();
+
+        // 2. Create orphan artifact with unknown stage_id
+        let orphan_artifact =
+            global_staging.join("orphan.unstage_trash_00000000-0000-0000-0000-000000000000");
+        fs::write(&orphan_artifact, b"Stale orphan trash").unwrap();
+
+        // Run cleanup with 0-second threshold
+        cleanup_stale_staging_artifacts_with_threshold(0);
+
+        // Active session artifact MUST NOT be deleted even with threshold 0!
+        assert!(
+            active_artifact.exists(),
+            "Artifact belonging to active session must NEVER be deleted"
+        );
+
+        // Orphan artifact MUST be deleted because it exceeded the 0-second threshold
+        assert!(
+            !orphan_artifact.exists(),
+            "Orphan artifact older than threshold must be cleaned up"
+        );
+
+        // 3. Create a fresh orphan artifact and test 24h threshold
+        let fresh_orphan =
+            global_staging.join("fresh.unstage_trash_11111111-1111-1111-1111-111111111111");
+        fs::write(&fresh_orphan, b"Fresh orphan trash").unwrap();
+
+        // Run standard cleanup with 24h threshold (86400s)
+        cleanup_stale_staging_artifacts_with_threshold(24 * 60 * 60);
+
+        assert!(
+            fresh_orphan.exists(),
+            "Fresh orphan (<24h) must NOT be deleted by standard cleanup threshold"
+        );
+
+        // Clean up test files
+        let _ = fs::remove_file(&active_artifact);
+        let _ = fs::remove_file(&fresh_orphan);
         let _ = fs::remove_dir_all(&test_dir);
     }
 

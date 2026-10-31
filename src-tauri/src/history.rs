@@ -170,7 +170,16 @@ impl HistoryManager {
                 created_at_ms INTEGER NOT NULL,
                 UNIQUE(path_base64, action)
             );
-            CREATE INDEX IF NOT EXISTS idx_repair_queue_created ON index_repair_queue(created_at_ms);",
+            CREATE INDEX IF NOT EXISTS idx_repair_queue_created ON index_repair_queue(created_at_ms);
+
+            CREATE TABLE IF NOT EXISTS cleanup_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                path TEXT NOT NULL UNIQUE,
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT,
+                created_at_ms INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_cleanup_queue_created ON cleanup_queue(created_at_ms);",
         )
         .map_err(|e| format!("Failed to initialize SQLite schemas: {}", e))?;
 
@@ -179,14 +188,17 @@ impl HistoryManager {
 
     /// Records a new operation, automatically trimming to the last 50 items
     pub fn record_operation(&self, entry: &NewHistoryEntry) -> Result<i64, String> {
-        let conn = self.conn.lock().unwrap();
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Failed to begin transaction for operation history: {}", e))?;
 
         let now_ms = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
 
-        conn.execute(
+        tx.execute(
             "INSERT INTO operation_history (
                 operation_id, timestamp_ms, operation_type, display_name,
                 original_path, staged_path, inode, status, can_undo, details
@@ -206,16 +218,19 @@ impl HistoryManager {
         )
         .map_err(|e| format!("Failed to insert operation history: {}", e))?;
 
-        let inserted_id = conn.last_insert_rowid();
+        let inserted_id = tx.last_insert_rowid();
 
         // Auto-trim to max_history_limit (50 items)
-        conn.execute(
+        tx.execute(
             "DELETE FROM operation_history WHERE id NOT IN (
                 SELECT id FROM operation_history ORDER BY timestamp_ms DESC LIMIT ?1
             );",
             params![self.max_history_limit as i64],
         )
         .map_err(|e| format!("Failed to trim operation history: {}", e))?;
+
+        tx.commit()
+            .map_err(|e| format!("Failed to commit operation history transaction: {}", e))?;
 
         Ok(inserted_id)
     }
@@ -855,6 +870,117 @@ impl HistoryManager {
         .map_err(|e| format!("Failed to increment repair retry for {}: {}", id, e))?;
         Ok(())
     }
+
+    /// Enqueues a failed-cleanup artifact path for background retry and maintenance.
+    pub fn queue_cleanup_path(&self, path: &str, error: Option<&str>) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        let now_ms = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+
+        conn.execute(
+            "INSERT INTO cleanup_queue (path, retry_count, last_error, created_at_ms)
+             VALUES (?1, 0, ?2, ?3)
+             ON CONFLICT(path) DO UPDATE SET
+                 last_error = excluded.last_error,
+                 retry_count = cleanup_queue.retry_count + 1,
+                 created_at_ms = excluded.created_at_ms;",
+            params![path, error, now_ms],
+        )
+        .map_err(|e| format!("Failed to enqueue cleanup path {}: {}", path, e))?;
+
+        Ok(())
+    }
+
+    /// Lists pending items in the cleanup queue.
+    pub fn list_cleanup_queue(&self) -> Result<Vec<(i64, String, u32)>, String> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, path, retry_count
+                 FROM cleanup_queue
+                 ORDER BY created_at_ms ASC;",
+            )
+            .map_err(|e| format!("Failed to prepare list_cleanup_queue: {}", e))?;
+
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .map_err(|e| format!("Failed to query cleanup queue: {}", e))?;
+
+        let mut items = Vec::new();
+        for item in rows.flatten() {
+            items.push(item);
+        }
+        Ok(items)
+    }
+
+    /// Deletes a successfully cleaned-up path from the queue.
+    pub fn remove_cleanup_queue_item(&self, id: i64) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM cleanup_queue WHERE id = ?1;", params![id])
+            .map_err(|e| format!("Failed to delete cleanup queue item {}: {}", id, e))?;
+        Ok(())
+    }
+
+    /// Updates error and increments retry count for a failed cleanup attempt.
+    pub fn update_cleanup_queue_error(&self, id: i64, err: &str) -> Result<(), String> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE cleanup_queue
+             SET retry_count = retry_count + 1, last_error = ?2
+             WHERE id = ?1;",
+            params![id, err],
+        )
+        .map_err(|e| format!("Failed to update cleanup queue retry for {}: {}", id, e))?;
+        Ok(())
+    }
+
+    /// Gathers all known staging directories from active sessions, cleanup queue, and recent history.
+    pub fn get_known_staging_directories(&self) -> Result<Vec<PathBuf>, String> {
+        let conn = self.conn.lock().unwrap();
+        let mut dirs = std::collections::HashSet::new();
+
+        // 1. Collect from active session_items
+        if let Ok(mut stmt) = conn.prepare("SELECT staged_path FROM session_items;") {
+            if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
+                for path_str in rows.flatten() {
+                    let p = PathBuf::from(path_str);
+                    if let Some(parent) = p.parent() {
+                        dirs.insert(parent.to_path_buf());
+                    }
+                }
+            }
+        }
+
+        // 2. Collect from cleanup_queue
+        if let Ok(mut stmt) = conn.prepare("SELECT path FROM cleanup_queue;") {
+            if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
+                for path_str in rows.flatten() {
+                    let p = PathBuf::from(path_str);
+                    if let Some(parent) = p.parent() {
+                        dirs.insert(parent.to_path_buf());
+                    }
+                }
+            }
+        }
+
+        // 3. Collect from recent operation_history
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT staged_path FROM operation_history WHERE staged_path IS NOT NULL LIMIT 50;",
+        ) {
+            if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
+                for path_str in rows.flatten() {
+                    let p = PathBuf::from(path_str);
+                    if let Some(parent) = p.parent() {
+                        dirs.insert(parent.to_path_buf());
+                    }
+                }
+            }
+        }
+
+        Ok(dirs.into_iter().collect())
+    }
 }
 
 pub fn get_history_manager() -> &'static HistoryManager {
@@ -1044,6 +1170,44 @@ mod tests {
         mgr.save_session_items_batch(&[item1, item2]).unwrap();
         let list = mgr.load_all_session_items().unwrap();
         assert_eq!(list.len(), 2);
+    }
+
+    #[test]
+    fn test_cleanup_queue_lifecycle_and_known_staging_dirs() {
+        let mgr = HistoryManager::new_in_memory().unwrap();
+
+        // 1. Enqueue paths
+        let path1 = "/tmp/cuddle_staging/.tmp_stage_123_file.txt";
+        let path2 = "/var/tmp/.cuddle-temp/.tmp_stage_456_doc.txt";
+        mgr.queue_cleanup_path(path1, Some("Permission denied"))
+            .unwrap();
+        mgr.queue_cleanup_path(path2, None).unwrap();
+
+        let queue = mgr.list_cleanup_queue().unwrap();
+        assert_eq!(queue.len(), 2);
+        assert_eq!(queue[0].1, path1);
+        assert_eq!(queue[0].2, 0); // retry count
+
+        // 2. Update error & increment retry
+        mgr.update_cleanup_queue_error(queue[0].0, "Still locked")
+            .unwrap();
+        let updated_queue = mgr.list_cleanup_queue().unwrap();
+        assert_eq!(updated_queue[0].2, 1);
+
+        // 3. Known staging directories
+        let known = mgr.get_known_staging_directories().unwrap();
+        assert!(known
+            .iter()
+            .any(|d| d == &PathBuf::from("/tmp/cuddle_staging")));
+        assert!(known
+            .iter()
+            .any(|d| d == &PathBuf::from("/var/tmp/.cuddle-temp")));
+
+        // 4. Remove processed item
+        mgr.remove_cleanup_queue_item(queue[0].0).unwrap();
+        let remaining = mgr.list_cleanup_queue().unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].1, path2);
     }
 
     #[test]

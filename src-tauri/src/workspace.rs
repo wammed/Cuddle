@@ -124,6 +124,15 @@ pub mod test_hooks {
         static POST_VERIFY_HOOK: RefCell<Option<HookFn>> = const { RefCell::new(None) };
         static POST_STAGE_CLONE_HOOK: RefCell<Option<HookFn>> = const { RefCell::new(None) };
         static FAIL_STAGE_DB: Cell<bool> = const { Cell::new(false) };
+        static FAIL_RESTORE_DB: Cell<bool> = const { Cell::new(false) };
+    }
+
+    pub fn set_fail_restore_db(fail: bool) {
+        FAIL_RESTORE_DB.with(|c| c.set(fail));
+    }
+
+    pub fn is_fail_restore_db() -> bool {
+        FAIL_RESTORE_DB.with(|c| c.get())
     }
 
     pub fn set_fail_stage_db(fail: bool) {
@@ -351,25 +360,29 @@ impl WorkspaceManager {
         // 4. Generate unique staged filename preserving original name
         let stage_id = Uuid::new_v4().to_string();
         let staged_filename = format!("{}_{}", stage_id, item.display_name);
-        let staged_target_path = staging_dir.join(staged_filename);
+        let staged_target_path = staging_dir.join(&staged_filename);
 
-        // 5. Perform safe cloning (Reflink CoW preferred, standard stream fallback)
-        let clone_method = clone_file(&canonical_src, &staged_target_path)?;
+        // Pre-commit temporary filename with .tmp_stage_ prefix for safe orphan detection and GC
+        let tmp_stage_filename = format!(".tmp_stage_{}_{}", stage_id, item.display_name);
+        let tmp_stage_target_path = staging_dir.join(&tmp_stage_filename);
+
+        // 5. Perform safe cloning into pre-commit temporary copy (Reflink CoW preferred, standard stream fallback)
+        let clone_method = clone_file(&canonical_src, &tmp_stage_target_path)?;
 
         #[cfg(test)]
         test_hooks::trigger_post_stage_clone_hook(&canonical_src);
 
         // 5.1 TOCTOU Defense: Verify original file was not modified during cloning
         if let Err(e) = OperationPolicy::verify_conflict_on_path(&canonical_src, &snapshot, true) {
-            let _ = fs::remove_file(&staged_target_path);
+            let _ = fs::remove_file(&tmp_stage_target_path);
             return Err(WorkspaceError::Policy(e));
         }
 
         // 5.2 Verify staged copy integrity against original snapshot
-        let staged_item = FileItem::from_path(&staged_target_path)?;
+        let staged_item = FileItem::from_path(&tmp_stage_target_path)?;
         let staged_snapshot = OperationPolicy::create_snapshot(&staged_item, true)?;
         if staged_snapshot.sha256 != snapshot.sha256 {
-            let _ = fs::remove_file(&staged_target_path);
+            let _ = fs::remove_file(&tmp_stage_target_path);
             return Err(WorkspaceError::Policy(PolicyError::ConflictDetected(
                 format!(
                     "Original file '{}' content changed concurrently during staging copy",
@@ -435,22 +448,46 @@ impl WorkspaceManager {
         };
 
         if let Err(e) = db_res {
-            if let Err(rm_err) = fs::remove_file(&staged_target_path) {
+            if let Err(rm_err) = fs::remove_file(&tmp_stage_target_path) {
                 eprintln!(
-                    "[WARN] Staging DB persistence failed ({}) and failed to clean up staged working copy at '{}': {}. The orphaned artifact will be cleaned up by background maintenance.",
+                    "[WARN] Staging DB persistence failed ({}) and failed to clean up temporary staged working copy at '{}': {}. The orphaned artifact has been queued for background maintenance.",
                     e,
-                    staged_target_path.display(),
+                    tmp_stage_target_path.display(),
                     rm_err
                 );
+                let hist_mgr = crate::history::get_history_manager();
+                let _ = hist_mgr.queue_cleanup_path(
+                    &tmp_stage_target_path.to_string_lossy(),
+                    Some(&rm_err.to_string()),
+                );
                 return Err(WorkspaceError::Io(std::io::Error::other(format!(
-                    "Failed to persist stage session/history to SQLite: {}. Cleanup of staged copy also failed: {}",
+                    "Failed to persist stage session/history to SQLite: {}. Cleanup of temporary staged copy also failed: {}",
                     e, rm_err
                 ))));
             }
             return Err(WorkspaceError::Io(std::io::Error::other(e)));
         }
 
-        // 7. Record in active staging registry only after SQLite persistence succeeded
+        // Commit stage copy atomically: rename .tmp_stage_* to final staged_target_path
+        if let Err(rn_err) = fs::rename(&tmp_stage_target_path, &staged_target_path) {
+            eprintln!(
+                "[ERROR] Failed to commit staged copy from '{}' to '{}': {}. Rolling back session.",
+                tmp_stage_target_path.display(),
+                staged_target_path.display(),
+                rn_err
+            );
+            let hist_mgr = crate::history::get_history_manager();
+            let _ = hist_mgr.remove_session_item(&stage_id);
+            if let Err(rm_err) = fs::remove_file(&tmp_stage_target_path) {
+                let _ = hist_mgr.queue_cleanup_path(
+                    &tmp_stage_target_path.to_string_lossy(),
+                    Some(&rm_err.to_string()),
+                );
+            }
+            return Err(WorkspaceError::Io(rn_err));
+        }
+
+        // 7. Record in active staging registry only after SQLite persistence and atomic file commit succeeded
         let mut map = self.staged_items.lock().unwrap();
         map.insert(stage_id, staged_dto.clone());
 
@@ -1317,7 +1354,18 @@ impl WorkspaceManager {
                                     item.status = StageStatus::Reflected;
 
                                     // P1: Strict DB transaction - verify DB write succeeds before file inspection/cleanup!
-                                    if let Err(db_err) = hist_mgr.save_session_item(&item) {
+                                    #[cfg(test)]
+                                    let db_save_res = if test_hooks::is_fail_restore_db() {
+                                        Err("Simulated restore SQLite persistence failure"
+                                            .to_string())
+                                    } else {
+                                        hist_mgr.save_session_item(&item)
+                                    };
+
+                                    #[cfg(not(test))]
+                                    let db_save_res = hist_mgr.save_session_item(&item);
+
+                                    if let Err(db_err) = db_save_res {
                                         eprintln!(
                                             "[ERROR] Failed to save Reflected status in session DB for stage '{}': {}. Retaining all recovery files.",
                                             item.stage_id, db_err
@@ -1636,19 +1684,48 @@ pub fn generate_lost_write_backup_path(orig_path: &Path) -> PathBuf {
     candidate
 }
 
-/// Cleans up stale unstage trash and temporary files from the staging directory.
+/// Cleans up stale unstage trash and temporary files from all known staging directories.
 /// CRITICAL SAFETY GUARANTEES:
-/// 1. Queries active DB sessions and NEVER removes artifacts belonging to active sessions (by stage_id).
-/// 2. Only deletes orphan artifacts whose last modification time is older than 24 hours (86,400s).
+/// 1. Processes and retries persisted failed-cleanup artifacts from SQLite cleanup_queue.
+/// 2. Gathers both global and same-volume local staging directories (.cuddle-temp).
+/// 3. Queries active DB sessions and NEVER removes artifacts belonging to active sessions (by stage_id).
+/// 4. Only deletes orphan artifacts whose last modification time is older than 24 hours (86,400s).
 pub fn cleanup_stale_staging_artifacts() {
-    let global_staging = get_global_staging_directory();
-    cleanup_stale_staging_artifacts_with_dir_and_threshold(&global_staging, 24 * 60 * 60);
+    cleanup_stale_staging_artifacts_with_threshold(24 * 60 * 60);
 }
 
-/// Helper for cleanup with a custom stale age threshold (in seconds) against the global staging directory.
+/// Helper for cleanup with a custom stale age threshold (in seconds) against all known staging directories.
 pub fn cleanup_stale_staging_artifacts_with_threshold(threshold_secs: u64) {
-    let global_staging = get_global_staging_directory();
-    cleanup_stale_staging_artifacts_with_dir_and_threshold(&global_staging, threshold_secs);
+    let hist_mgr = crate::history::get_history_manager();
+
+    // 1. Process persisted retry cleanup queue
+    if let Ok(queue) = hist_mgr.list_cleanup_queue() {
+        for (id, path_str, _retries) in queue {
+            let path = Path::new(&path_str);
+            if !path.exists() || fs::remove_file(path).is_ok() {
+                let _ = hist_mgr.remove_cleanup_queue_item(id);
+            } else if let Err(e) = hist_mgr
+                .update_cleanup_queue_error(id, "Failed to remove file during maintenance retry")
+            {
+                eprintln!("[WARN] Failed to update cleanup queue error: {}", e);
+            }
+        }
+    }
+
+    // 2. Gather all known staging directories (global + local .cuddle-temp directories)
+    let mut target_dirs = vec![get_global_staging_directory()];
+    if let Ok(known_dirs) = hist_mgr.get_known_staging_directories() {
+        for dir in known_dirs {
+            if !target_dirs.iter().any(|d| d == &dir) {
+                target_dirs.push(dir);
+            }
+        }
+    }
+
+    // 3. Perform maintenance against each staging directory
+    for dir in target_dirs {
+        cleanup_stale_staging_artifacts_with_dir_and_threshold(&dir, threshold_secs);
+    }
 }
 
 /// Helper for cleanup with an explicit staging directory and custom stale age threshold (in seconds).
@@ -1744,6 +1821,13 @@ pub fn generate_alternate_copy_path(orig_path: &Path, suffix: Option<&str>) -> P
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::Mutex;
+
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn lock_test_mutex() -> std::sync::MutexGuard<'static, ()> {
+        TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner())
+    }
 
     #[test]
     fn test_clone_file_standard_and_reflink_fallback() {
@@ -1769,6 +1853,7 @@ mod tests {
 
     #[test]
     fn test_workspace_manager_staging_lifecycle() {
+        let _guard = lock_test_mutex();
         let temp_dir = std::env::temp_dir().join(format!("cuddle_ws_mgr_{}", Uuid::new_v4()));
         fs::create_dir_all(&temp_dir).unwrap();
 
@@ -1804,6 +1889,7 @@ mod tests {
 
     #[test]
     fn test_stage_non_utf8_filename() {
+        let _guard = lock_test_mutex();
         use std::ffi::OsString;
         use std::os::unix::ffi::OsStringExt;
 
@@ -1927,6 +2013,7 @@ mod tests {
 
     #[test]
     fn test_workspace_session_restore_and_conflict_detection() {
+        let _guard = lock_test_mutex();
         let home = dirs::home_dir().expect("Home must exist");
         let test_dir = home.join(format!(".cuddle_test_session_{}", Uuid::new_v4()));
         fs::create_dir_all(&test_dir).unwrap();
@@ -2615,6 +2702,7 @@ mod tests {
 
     #[test]
     fn test_workspace_session_restore_auto_recovers_applying_journal_state() {
+        let _guard = lock_test_mutex();
         let home = dirs::home_dir().expect("Home must exist");
         let test_dir = home.join(format!(".cuddle_test_wal_rec_{}", Uuid::new_v4()));
         fs::create_dir_all(&test_dir).unwrap();
@@ -2679,6 +2767,7 @@ mod tests {
 
     #[test]
     fn test_workspace_cleanup_stale_artifacts_protects_active_sessions() {
+        let _guard = lock_test_mutex();
         let home = dirs::home_dir().expect("Home must exist");
         let test_dir = home.join(format!(".cuddle_test_cleanup_{}", Uuid::new_v4()));
         fs::create_dir_all(&test_dir).unwrap();
@@ -2742,6 +2831,7 @@ mod tests {
 
     #[test]
     fn test_workspace_session_restore_preserves_concurrent_writes_in_quarantine_file() {
+        let _guard = lock_test_mutex();
         let home = dirs::home_dir().expect("Home must exist");
         let test_dir = home.join(format!(".cuddle_test_wal_preserve_{}", Uuid::new_v4()));
         fs::create_dir_all(&test_dir).unwrap();
@@ -2820,6 +2910,7 @@ mod tests {
     #[test]
     fn test_workspace_session_restore_quarantine_preserve_failure_retains_file_and_marks_conflict()
     {
+        let _guard = lock_test_mutex();
         use std::os::unix::fs::PermissionsExt;
 
         let home = dirs::home_dir().expect("Home must exist");
@@ -2920,6 +3011,254 @@ mod tests {
                 .count();
             assert_eq!(count, 0, "No orphan staged copy must remain on disk");
         }
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_workspace_session_restore_quarantine_hash_failure_preserves_file() {
+        let _guard = lock_test_mutex();
+        use std::os::unix::fs::PermissionsExt;
+
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_wal_unreadable_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("unreadable.txt");
+        fs::write(&orig_file, b"Original V1").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        let hist_mgr = crate::history::get_history_manager();
+
+        fs::write(&orig_file, b"Reflected Content V2").unwrap();
+        fs::write(&staged.staged_path, b"Reflected Content V2").unwrap();
+
+        let quarantine_file = test_dir.join(format!(
+            ".cuddle_reflect_{}_{}.tmp",
+            staged.stage_id,
+            Uuid::new_v4()
+        ));
+        fs::write(&quarantine_file, b"Unreadable original data").unwrap();
+
+        // Make quarantine file unreadable so SHA-256 computation fails (returns None)
+        let _ = fs::set_permissions(&quarantine_file, fs::Permissions::from_mode(0o000));
+
+        let mut item = staged.clone();
+        item.status = StageStatus::Applying;
+        hist_mgr.save_session_item(&item).unwrap();
+
+        let _restored = mgr.restore_session().unwrap();
+
+        // Restore permissions for assertion and cleanup
+        let _ = fs::set_permissions(&quarantine_file, fs::Permissions::from_mode(0o644));
+
+        // When SHA-256 cannot be verified, it must NEVER be deleted!
+        // It must either be preserved as .concurrent_write or kept as quarantine file with Conflict.
+        let has_quarantine_or_backup = quarantine_file.exists()
+            || fs::read_dir(&test_dir).unwrap().flatten().any(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .contains(".concurrent_write")
+            });
+        assert!(
+            has_quarantine_or_backup,
+            "Unverifiable quarantine file must NEVER be unconditionally deleted"
+        );
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_workspace_session_restore_concurrent_write_path_collision_avoids_overwrite() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_wal_collision_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("collision.txt");
+        fs::write(&orig_file, b"Original V1").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        let hist_mgr = crate::history::get_history_manager();
+
+        fs::write(&orig_file, b"Reflected Content V2").unwrap();
+        fs::write(&staged.staged_path, b"Reflected Content V2").unwrap();
+
+        // Pre-create the first expected .concurrent_write file to force collision resolution
+        let expected_backup_path = generate_lost_write_backup_path(&orig_file);
+        fs::write(
+            &expected_backup_path,
+            b"Pre-existing backup from earlier run",
+        )
+        .unwrap();
+
+        let quarantine_file = test_dir.join(format!(
+            ".cuddle_reflect_{}_{}.tmp",
+            staged.stage_id,
+            Uuid::new_v4()
+        ));
+        let concurrent_write_content = b"New concurrent write during crash";
+        fs::write(&quarantine_file, concurrent_write_content).unwrap();
+
+        let mut item = staged.clone();
+        item.status = StageStatus::Applying;
+        hist_mgr.save_session_item(&item).unwrap();
+
+        let _restored = mgr.restore_session().unwrap();
+
+        // Pre-existing backup must NOT be overwritten!
+        assert_eq!(
+            fs::read(&expected_backup_path).unwrap(),
+            b"Pre-existing backup from earlier run",
+            "Pre-existing backup must not be overwritten"
+        );
+
+        // A second backup with numbered suffix must have been created
+        let backup_files: Vec<_> = fs::read_dir(&test_dir)
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .contains(".concurrent_write")
+            })
+            .collect();
+        assert_eq!(
+            backup_files.len(),
+            2,
+            "Both pre-existing and newly preserved backups must exist"
+        );
+
+        let has_new_content = backup_files.iter().any(|e| {
+            fs::read(e.path())
+                .map(|b| b == concurrent_write_content)
+                .unwrap_or(false)
+        });
+        assert!(
+            has_new_content,
+            "New concurrent write content must be preserved under collision-free name"
+        );
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_workspace_session_restore_db_failure_retains_quarantine_file() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_wal_db_fail_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("db_fail.txt");
+        fs::write(&orig_file, b"Original V1").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        let hist_mgr = crate::history::get_history_manager();
+
+        fs::write(&orig_file, b"Reflected Content V2").unwrap();
+        fs::write(&staged.staged_path, b"Reflected Content V2").unwrap();
+
+        let quarantine_file = test_dir.join(format!(
+            ".cuddle_reflect_{}_{}.tmp",
+            staged.stage_id,
+            Uuid::new_v4()
+        ));
+        fs::write(&quarantine_file, b"Quarantine content").unwrap();
+
+        let mut item = staged.clone();
+        item.status = StageStatus::Applying;
+        hist_mgr.save_session_item(&item).unwrap();
+
+        // Simulate SQLite failure during restore
+        test_hooks::set_fail_restore_db(true);
+        let _restored = mgr.restore_session();
+        test_hooks::set_fail_restore_db(false);
+
+        // When DB save fails, quarantine file must be completely untouched and retained for next restart!
+        assert!(
+            quarantine_file.exists(),
+            "Quarantine file must be preserved when DB persistence fails during recovery"
+        );
+
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_workspace_session_restore_multiple_quarantine_files_safely_processed() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_wal_multi_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("multi.txt");
+        fs::write(&orig_file, b"Original V1").unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        let hist_mgr = crate::history::get_history_manager();
+
+        fs::write(&orig_file, b"Reflected Content V2").unwrap();
+        fs::write(&staged.staged_path, b"Reflected Content V2").unwrap();
+
+        // File 1: identical to pre-reflection snapshot (clean - safe to remove)
+        let q_clean = test_dir.join(format!(
+            ".cuddle_reflect_{}_{}.tmp",
+            staged.stage_id,
+            Uuid::new_v4()
+        ));
+        fs::write(&q_clean, b"Original V1").unwrap();
+
+        // File 2: concurrent write A (must preserve)
+        let q_mod_a = test_dir.join(format!(
+            ".cuddle_reflect_{}_{}.tmp",
+            staged.stage_id,
+            Uuid::new_v4()
+        ));
+        fs::write(&q_mod_a, b"External write payload A").unwrap();
+
+        // File 3: concurrent write B (must preserve)
+        let q_mod_b = test_dir.join(format!(
+            ".cuddle_reflect_{}_{}.tmp",
+            staged.stage_id,
+            Uuid::new_v4()
+        ));
+        fs::write(&q_mod_b, b"External write payload B").unwrap();
+
+        let mut item = staged.clone();
+        item.status = StageStatus::Applying;
+        hist_mgr.save_session_item(&item).unwrap();
+
+        let restored = mgr.restore_session().unwrap();
+        let restored_item = restored
+            .iter()
+            .find(|i| i.stage_id == staged.stage_id)
+            .unwrap();
+        assert_eq!(restored_item.status, StageStatus::Reflected);
+
+        // Clean quarantine file should be removed
+        assert!(
+            !q_clean.exists(),
+            "Clean quarantine file should be unlinked"
+        );
+
+        // Both modified quarantine files must be preserved as .concurrent_write backups
+        let backups: Vec<_> = fs::read_dir(&test_dir)
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .contains(".concurrent_write")
+            })
+            .collect();
+        assert_eq!(
+            backups.len(),
+            2,
+            "Both external writes A and B must be safely preserved"
+        );
 
         let _ = fs::remove_dir_all(&test_dir);
     }

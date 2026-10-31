@@ -689,6 +689,41 @@ impl HistoryManager {
         Ok(())
     }
 
+    /// Rolls back a stage operation when physical commit (rename) fails:
+    /// Atomically deletes the session_items entry and updates operation_history to "Failed" / can_undo = 0.
+    pub fn rollback_stage_operation_and_session(
+        &self,
+        stage_id: &str,
+        error_msg: &str,
+    ) -> Result<(), String> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Failed to begin rollback transaction: {}", e))?;
+
+        // 1. Remove from session_items
+        tx.execute(
+            "DELETE FROM session_items WHERE stage_id = ?1;",
+            params![stage_id],
+        )
+        .map_err(|e| format!("Failed to delete session item during rollback: {}", e))?;
+
+        // 2. Update operation_history status to Failed, disable can_undo, and record error details
+        let details = format!("Physical commit failed and rolled back: {}", error_msg);
+        tx.execute(
+            "UPDATE operation_history
+             SET status = 'Failed', can_undo = 0, details = ?2
+             WHERE operation_id = ?1;",
+            params![stage_id, details],
+        )
+        .map_err(|e| format!("Failed to update operation history during rollback: {}", e))?;
+
+        tx.commit()
+            .map_err(|e| format!("Failed to commit rollback transaction: {}", e))?;
+
+        Ok(())
+    }
+
     /// Clears all session items
     pub fn clear_session_items(&self) -> Result<(), String> {
         let conn = self.conn.lock().unwrap();
@@ -936,55 +971,61 @@ impl HistoryManager {
         Ok(())
     }
 
-    /// Gathers all known staging directories from active sessions, cleanup queue, and recent history.
-    /// Only recognizes directories matching official staging conventions (.cuddle-temp or staging).
+    /// Gathers all strictly validated staging directories from active sessions.
+    /// Only recognizes directories that strictly match:
+    /// 1. The official global staging directory (get_global_staging_directory()), or
+    /// 2. An official same-volume local .cuddle-temp directory belonging directly to the original file:
+    ///    canonical_path.parent().join(".cuddle-temp") == staged_path.parent()
     pub fn get_known_staging_directories(&self) -> Result<Vec<PathBuf>, String> {
         let conn = self.conn.lock().unwrap();
         let mut dirs = std::collections::HashSet::new();
 
-        let is_valid_staging_dir = |p: &std::path::Path| -> bool {
-            let name = p.file_name().and_then(|f| f.to_str()).unwrap_or("");
-            name == ".cuddle-temp" || name == "staging"
+        let global_dir = crate::workspace::get_global_staging_directory();
+        let global_canonical = global_dir.canonicalize().ok();
+
+        let is_global = |p: &std::path::Path| -> bool {
+            p == global_dir
+                || global_canonical
+                    .as_ref()
+                    .map(|gc| p.canonicalize().ok().as_ref() == Some(gc))
+                    .unwrap_or(false)
         };
 
-        // 1. Collect from active session_items
-        if let Ok(mut stmt) = conn.prepare("SELECT staged_path FROM session_items;") {
-            if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
-                for path_str in rows.flatten() {
-                    let p = PathBuf::from(path_str);
-                    if let Some(parent) = p.parent() {
-                        if is_valid_staging_dir(parent) {
-                            dirs.insert(parent.to_path_buf());
-                        }
-                    }
-                }
-            }
-        }
+        // Collect and validate strictly from active session_items
+        if let Ok(mut stmt) = conn.prepare("SELECT canonical_path, staged_path FROM session_items;")
+        {
+            if let Ok(rows) = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            }) {
+                for (canonical_str, staged_str) in rows.flatten() {
+                    let staged_path = PathBuf::from(staged_str);
+                    let Some(staged_parent) = staged_path.parent() else {
+                        continue;
+                    };
 
-        // 2. Collect from cleanup_queue (only if parent is an official staging dir)
-        if let Ok(mut stmt) = conn.prepare("SELECT path FROM cleanup_queue;") {
-            if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
-                for path_str in rows.flatten() {
-                    let p = PathBuf::from(path_str);
-                    if let Some(parent) = p.parent() {
-                        if is_valid_staging_dir(parent) {
-                            dirs.insert(parent.to_path_buf());
-                        }
+                    if is_global(staged_parent) {
+                        dirs.insert(staged_parent.to_path_buf());
+                        continue;
                     }
-                }
-            }
-        }
 
-        // 3. Collect from recent operation_history
-        if let Ok(mut stmt) = conn.prepare(
-            "SELECT staged_path FROM operation_history WHERE staged_path IS NOT NULL LIMIT 50;",
-        ) {
-            if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
-                for path_str in rows.flatten() {
-                    let p = PathBuf::from(path_str);
-                    if let Some(parent) = p.parent() {
-                        if is_valid_staging_dir(parent) {
-                            dirs.insert(parent.to_path_buf());
+                    // Strict verification of local .cuddle-temp:
+                    // Must strictly be the .cuddle-temp folder inside canonical_path's parent directory!
+                    let orig_path = PathBuf::from(canonical_str);
+                    if let Some(orig_parent) = orig_path.parent() {
+                        let expected_temp = orig_parent.join(".cuddle-temp");
+                        let is_valid_local = staged_parent == expected_temp
+                            || (staged_parent.canonicalize().ok().is_some()
+                                && staged_parent.canonicalize().ok()
+                                    == expected_temp.canonicalize().ok());
+
+                        if is_valid_local {
+                            dirs.insert(staged_parent.to_path_buf());
+                        } else {
+                            eprintln!(
+                                "[SECURITY WARNING] Rejected unauthorized staging directory candidate '{}' for item '{}'",
+                                staged_parent.display(),
+                                orig_path.display()
+                            );
                         }
                     }
                 }
@@ -1206,18 +1247,180 @@ mod tests {
         let updated_queue = mgr.list_cleanup_queue().unwrap();
         assert_eq!(updated_queue[0].2, 1);
 
-        // 3. Known staging directories
+        // 3. Known staging directories from session_items with strict location validation
+        let global_staging = crate::workspace::get_global_staging_directory();
+        let valid_global_item = StagedItemDto {
+            stage_id: "test-global-stage".to_string(),
+            original_item_id: "orig-g".to_string(),
+            raw_base64: "L2RvYy50eHQ=".to_string(),
+            display_name: "doc.txt".to_string(),
+            staged_raw_base64: "".to_string(),
+            staged_path: global_staging
+                .join("stage_doc.txt")
+                .to_string_lossy()
+                .to_string(),
+            size: 100,
+            clone_method: CloneMethod::StandardCopy,
+            status: StageStatus::Staged,
+            staged_at_ms: 1000,
+            original_snapshot: OriginalSnapshotDto {
+                item_id: "orig-g".to_string(),
+                raw_base64: "L2RvYy50eHQ=".to_string(),
+                display_name: "doc.txt".to_string(),
+                canonical_path: "/home/user/doc.txt".to_string(),
+                inode: 1,
+                dev: 1,
+                size: 100,
+                mtime_ms: 1000,
+                sha256: None,
+            },
+        };
+
+        // Valid local .cuddle-temp matching original's parent
+        let valid_local_item = StagedItemDto {
+            stage_id: "test-local-stage".to_string(),
+            original_item_id: "orig-l".to_string(),
+            raw_base64: "L3Byb2ovZmlsZS50eHQ=".to_string(),
+            display_name: "file.txt".to_string(),
+            staged_raw_base64: "".to_string(),
+            staged_path: "/home/user/proj/.cuddle-temp/stage_file.txt".to_string(),
+            size: 100,
+            clone_method: CloneMethod::StandardCopy,
+            status: StageStatus::Staged,
+            staged_at_ms: 1000,
+            original_snapshot: OriginalSnapshotDto {
+                item_id: "orig-l".to_string(),
+                raw_base64: "L3Byb2ovZmlsZS50eHQ=".to_string(),
+                display_name: "file.txt".to_string(),
+                canonical_path: "/home/user/proj/file.txt".to_string(),
+                inode: 2,
+                dev: 1,
+                size: 100,
+                mtime_ms: 1000,
+                sha256: None,
+            },
+        };
+
+        // Unauthorized directory (e.g. /home/user/other/.cuddle-temp but canonical is /home/user/proj/foo.txt)
+        let unauthorized_item = StagedItemDto {
+            stage_id: "test-unauth-stage".to_string(),
+            original_item_id: "orig-u".to_string(),
+            raw_base64: "L3Byb2ovZm9vLnR4dA==".to_string(),
+            display_name: "foo.txt".to_string(),
+            staged_raw_base64: "".to_string(),
+            staged_path: "/home/user/other/.cuddle-temp/stage_foo.txt".to_string(),
+            size: 100,
+            clone_method: CloneMethod::StandardCopy,
+            status: StageStatus::Staged,
+            staged_at_ms: 1000,
+            original_snapshot: OriginalSnapshotDto {
+                item_id: "orig-u".to_string(),
+                raw_base64: "L3Byb2ovZm9vLnR4dA==".to_string(),
+                display_name: "foo.txt".to_string(),
+                canonical_path: "/home/user/proj/foo.txt".to_string(),
+                inode: 3,
+                dev: 1,
+                size: 100,
+                mtime_ms: 1000,
+                sha256: None,
+            },
+        };
+
+        mgr.save_session_item(&valid_global_item).unwrap();
+        mgr.save_session_item(&valid_local_item).unwrap();
+        mgr.save_session_item(&unauthorized_item).unwrap();
+
         let known = mgr.get_known_staging_directories().unwrap();
-        assert!(known.iter().any(|d| d == &PathBuf::from("/tmp/staging")));
+        // Global and valid local temp directories must be recognized
+        assert!(known.iter().any(|d| d == &global_staging));
         assert!(known
             .iter()
-            .any(|d| d == &PathBuf::from("/var/tmp/.cuddle-temp")));
+            .any(|d| d == &PathBuf::from("/home/user/proj/.cuddle-temp")));
+        // Unauthorized directory must be strictly REJECTED
+        assert!(!known
+            .iter()
+            .any(|d| d == &PathBuf::from("/home/user/other/.cuddle-temp")));
 
         // 4. Remove processed item
         mgr.remove_cleanup_queue_item(queue[0].0).unwrap();
         let remaining = mgr.list_cleanup_queue().unwrap();
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].1, path2);
+    }
+
+    #[test]
+    fn test_rollback_stage_operation_and_session() {
+        let mgr = HistoryManager::new_in_memory().unwrap();
+
+        let stage_id = "test-stage-rollback-123";
+        let entry = NewHistoryEntry {
+            operation_id: stage_id.to_string(),
+            operation_type: "Stage".to_string(),
+            display_name: "doc.txt".to_string(),
+            original_path: Some("/home/user/doc.txt".to_string()),
+            staged_path: Some("/home/user/.cuddle-temp/doc.txt".to_string()),
+            inode: Some(42),
+            status: "Success".to_string(),
+            can_undo: true,
+            details: None,
+        };
+
+        let staged = StagedItemDto {
+            stage_id: stage_id.to_string(),
+            original_item_id: "orig-rb".to_string(),
+            raw_base64: "L2RvYy50eHQ=".to_string(),
+            display_name: "doc.txt".to_string(),
+            staged_raw_base64: "".to_string(),
+            staged_path: "/home/user/.cuddle-temp/doc.txt".to_string(),
+            size: 100,
+            clone_method: CloneMethod::StandardCopy,
+            status: StageStatus::Staged,
+            staged_at_ms: 1000,
+            original_snapshot: OriginalSnapshotDto {
+                item_id: "orig-rb".to_string(),
+                raw_base64: "L2RvYy50eHQ=".to_string(),
+                display_name: "doc.txt".to_string(),
+                canonical_path: "/home/user/doc.txt".to_string(),
+                inode: 42,
+                dev: 1,
+                size: 100,
+                mtime_ms: 1000,
+                sha256: None,
+            },
+        };
+
+        // Record Stage successfully
+        mgr.record_stage_operation_and_session(&entry, &staged)
+            .unwrap();
+
+        let session_items = mgr.load_all_session_items().unwrap();
+        assert_eq!(session_items.len(), 1);
+
+        let history = mgr.list_history(10).unwrap();
+        assert_eq!(history[0].status, "Success");
+        assert!(history[0].can_undo);
+
+        // Execute rollback (e.g. rename failed)
+        mgr.rollback_stage_operation_and_session(stage_id, "Cross-device link error")
+            .unwrap();
+
+        // 1. Session item must be completely deleted
+        let session_after = mgr.load_all_session_items().unwrap();
+        assert!(
+            session_after.is_empty(),
+            "Session item must be deleted on rollback"
+        );
+
+        // 2. History status must be updated to Failed and can_undo set to false
+        let history_after = mgr.list_history(10).unwrap();
+        assert_eq!(history_after.len(), 1);
+        assert_eq!(history_after[0].status, "Failed");
+        assert!(!history_after[0].can_undo);
+        assert!(history_after[0]
+            .details
+            .as_ref()
+            .unwrap()
+            .contains("Cross-device link error"));
     }
 
     #[test]

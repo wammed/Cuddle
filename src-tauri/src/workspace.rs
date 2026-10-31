@@ -471,13 +471,20 @@ impl WorkspaceManager {
         // Commit stage copy atomically: rename .tmp_stage_* to final staged_target_path
         if let Err(rn_err) = fs::rename(&tmp_stage_target_path, &staged_target_path) {
             eprintln!(
-                "[ERROR] Failed to commit staged copy from '{}' to '{}': {}. Rolling back session.",
+                "[ERROR] Failed to commit staged copy from '{}' to '{}': {}. Rolling back session and history.",
                 tmp_stage_target_path.display(),
                 staged_target_path.display(),
                 rn_err
             );
             let hist_mgr = crate::history::get_history_manager();
-            let _ = hist_mgr.remove_session_item(&stage_id);
+            if let Err(rb_err) =
+                hist_mgr.rollback_stage_operation_and_session(&stage_id, &rn_err.to_string())
+            {
+                eprintln!(
+                    "[CRITICAL ERROR] Failed to roll back stage session/history in SQLite for '{}': {}",
+                    stage_id, rb_err
+                );
+            }
             if let Err(rm_err) = fs::remove_file(&tmp_stage_target_path) {
                 let _ = hist_mgr.queue_cleanup_path(
                     &tmp_stage_target_path.to_string_lossy(),
@@ -1730,6 +1737,43 @@ pub fn generate_lost_write_backup_path(orig_path: &Path) -> PathBuf {
     candidate
 }
 
+/// Validates whether a filename strictly conforms to Cuddle's generated staging artifact naming conventions,
+/// including structural UUID verification to prevent accidental deletion of user or third-party files.
+pub fn is_cuddle_staging_artifact_name(fname: &str) -> bool {
+    // 1. .tmp_stage_{UUID}_{display_name}
+    if let Some(rest) = fname.strip_prefix(".tmp_stage_") {
+        if let Some(idx) = rest.find('_') {
+            let uuid_part = &rest[..idx];
+            return Uuid::parse_str(uuid_part).is_ok();
+        }
+    }
+
+    // 2. .cuddle_reflect_{UUID}_{UUID}.tmp
+    if fname.starts_with(".cuddle_reflect_") && fname.ends_with(".tmp") {
+        let core = &fname[".cuddle_reflect_".len()..fname.len() - ".tmp".len()];
+        let mut parts = core.split('_');
+        if let Some(first_uuid) = parts.next() {
+            return Uuid::parse_str(first_uuid).is_ok();
+        }
+    }
+
+    // 3. {prefix}.unstage_trash_{UUID}_{UUID} or unstage_trash_{UUID}_...
+    if let Some(idx) = fname.find("unstage_trash_") {
+        let rest = &fname[idx + "unstage_trash_".len()..];
+        let mut parts = rest.split('_');
+        if let Some(first_uuid) = parts.next() {
+            return Uuid::parse_str(first_uuid).is_ok();
+        }
+    }
+
+    // 4. .probe_{UUID}
+    if let Some(uuid_part) = fname.strip_prefix(".probe_") {
+        return Uuid::parse_str(uuid_part).is_ok();
+    }
+
+    false
+}
+
 /// Cleans up stale unstage trash and temporary files from all known staging directories.
 /// CRITICAL SAFETY GUARANTEES:
 /// 1. Processes and retries persisted failed-cleanup artifacts from SQLite cleanup_queue.
@@ -1795,9 +1839,7 @@ pub fn cleanup_stale_staging_artifacts_with_threshold(threshold_secs: u64) {
 
             // Guardrail 2: Filename must match safe temporary/orphan naming conventions
             let fname = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
-            let is_allowed_artifact = fname.starts_with(".tmp_")
-                || fname.starts_with(".cuddle_")
-                || fname.contains("unstage_trash_");
+            let is_allowed_artifact = is_cuddle_staging_artifact_name(fname);
 
             if !is_allowed_artifact {
                 eprintln!(
@@ -1870,9 +1912,7 @@ pub fn cleanup_stale_staging_artifacts_with_dir_and_threshold(
     if let Ok(entries) = fs::read_dir(staging_dir) {
         for entry in entries.flatten() {
             let fname = entry.file_name().to_string_lossy().to_string();
-            let is_candidate = fname.contains("unstage_trash_")
-                || fname.starts_with(".tmp_")
-                || fname.starts_with(".cuddle_");
+            let is_candidate = is_cuddle_staging_artifact_name(&fname);
 
             if !is_candidate {
                 continue;
@@ -3566,7 +3606,7 @@ mod tests {
             .unwrap();
 
         // 3. Valid orphan artifact (inside staging dir, allowed pattern, not in active session)
-        let orphan_file = staging_dir.join(".tmp_stage_orphan_valid.txt");
+        let orphan_file = staging_dir.join(format!(".tmp_stage_{}_valid.txt", Uuid::new_v4()));
         fs::write(&orphan_file, b"Safe to clean up").unwrap();
         hist_mgr
             .queue_cleanup_path(&orphan_file.to_string_lossy(), None)
@@ -3609,6 +3649,125 @@ mod tests {
         let _ = fs::remove_file(&outside_file);
         let _ = fs::remove_file(&disallowed_file);
         let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_is_cuddle_staging_artifact_name_strict_uuid() {
+        let u1 = Uuid::new_v4().to_string();
+        let u2 = Uuid::new_v4().to_string();
+
+        // 1. .tmp_stage_{UUID}_{display_name}
+        assert!(is_cuddle_staging_artifact_name(&format!(
+            ".tmp_stage_{}_file.txt",
+            u1
+        )));
+        assert!(!is_cuddle_staging_artifact_name(
+            ".tmp_stage_not-a-uuid_file.txt"
+        ));
+        assert!(!is_cuddle_staging_artifact_name(".tmp_stage_"));
+
+        // 2. .cuddle_reflect_{UUID}_{UUID}.tmp
+        assert!(is_cuddle_staging_artifact_name(&format!(
+            ".cuddle_reflect_{}_{}.tmp",
+            u1, u2
+        )));
+        assert!(!is_cuddle_staging_artifact_name(
+            ".cuddle_reflect_not-a-uuid.tmp"
+        ));
+        assert!(!is_cuddle_staging_artifact_name(".cuddle_notes.txt"));
+        assert!(!is_cuddle_staging_artifact_name(".cuddle_"));
+
+        // 3. {prefix}.unstage_trash_{UUID}_{UUID} or unstage_trash_{UUID}_...
+        assert!(is_cuddle_staging_artifact_name(&format!(
+            "prefix.unstage_trash_{}_{}",
+            u1, u2
+        )));
+        assert!(is_cuddle_staging_artifact_name(&format!(
+            "unstage_trash_{}",
+            u1
+        )));
+        assert!(!is_cuddle_staging_artifact_name("unstage_trash_not-a-uuid"));
+        assert!(!is_cuddle_staging_artifact_name(
+            "random_unstage_trash_file.txt"
+        ));
+
+        // 4. .probe_{UUID}
+        assert!(is_cuddle_staging_artifact_name(&format!(".probe_{}", u1)));
+        assert!(!is_cuddle_staging_artifact_name(".probe_test"));
+        assert!(!is_cuddle_staging_artifact_name(".probe_"));
+
+        // Non-matching normal files
+        assert!(!is_cuddle_staging_artifact_name("normal_document.txt"));
+        assert!(!is_cuddle_staging_artifact_name(".bashrc"));
+    }
+
+    #[test]
+    fn test_stage_file_commit_rename_failure_rolls_back_history() {
+        let _guard = lock_test_mutex();
+        use std::os::unix::fs::PermissionsExt;
+
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_rename_fail_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("rename_fail.txt");
+        fs::write(&orig_file, b"Content for rename failure test").unwrap();
+
+        let staging_dir = resolve_staging_directory(&orig_file);
+        fs::create_dir_all(&staging_dir).unwrap();
+
+        // When stage_file creates the temporary copy, restrict permissions on staging_dir to 0o555,
+        // so that the final rename to formal staged path fails with EACCES.
+        let staging_dir_clone = staging_dir.clone();
+        test_hooks::set_post_stage_clone_hook(move |_path| {
+            let _ = fs::set_permissions(&staging_dir_clone, fs::Permissions::from_mode(0o555));
+        });
+
+        let mgr = WorkspaceManager::new();
+        let stage_res = mgr.stage_file(&orig_file);
+        test_hooks::clear_post_stage_clone_hook();
+
+        // Restore permissions for inspection and cleanup
+        let _ = fs::set_permissions(&staging_dir, fs::Permissions::from_mode(0o755));
+
+        assert!(stage_res.is_err(), "stage_file must fail when rename fails");
+
+        // Verify session item is deleted
+        let hist_mgr = crate::history::get_history_manager();
+        let session_items = hist_mgr.load_all_session_items().unwrap_or_default();
+        let has_session = session_items
+            .iter()
+            .any(|item| item.display_name == "rename_fail.txt");
+        assert!(!has_session, "Session item must be rolled back and deleted");
+
+        // Verify history record is rolled back to Failed status with can_undo = 0
+        let history = hist_mgr.list_history(50).unwrap_or_default();
+        let history_entry = history.iter().find(|h| h.display_name == "rename_fail.txt");
+        assert!(history_entry.is_some(), "History entry must exist");
+        let entry = history_entry.unwrap();
+        assert_eq!(
+            entry.status, "Failed",
+            "History entry status must be rolled back to Failed"
+        );
+        assert!(
+            !entry.can_undo,
+            "Rolled back history entry must not be undoable"
+        );
+        assert!(entry.details.is_some(), "Error details must be recorded");
+
+        // Verify cleanup queue received the temporary file that failed to remove
+        let queue = hist_mgr.list_cleanup_queue().unwrap_or_default();
+        let has_queued = queue
+            .iter()
+            .any(|q| q.1.contains(".tmp_stage_") && q.1.contains("rename_fail.txt"));
+        assert!(
+            has_queued,
+            "Temporary stage copy must be scheduled in cleanup queue"
+        );
+
+        // Cleanup
+        let _ = fs::remove_dir_all(&test_dir);
+        let _ = fs::remove_dir_all(&staging_dir);
     }
 
     #[test]

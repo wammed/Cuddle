@@ -991,7 +991,7 @@ impl HistoryManager {
                     .unwrap_or(false)
         };
 
-        // Collect and validate strictly from active session_items
+        // 1. Collect and validate strictly from active session_items
         if let Ok(mut stmt) = conn.prepare("SELECT canonical_path, staged_path FROM session_items;")
         {
             if let Ok(rows) = stmt.query_map([], |row| {
@@ -1026,6 +1026,55 @@ impl HistoryManager {
                                 staged_parent.display(),
                                 orig_path.display()
                             );
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Collect from cleanup_queue with strict validation:
+        // When a stage operation fails before DB commit or during cleanup, session_items won't have the entry.
+        // We validate that:
+        // a) The path's filename strictly conforms to Cuddle staging artifact naming rules (is_cuddle_staging_artifact_name)
+        // b) The parent directory is either the official global staging directory, OR
+        //    a valid local `.cuddle-temp` directory located directly inside an existing parent directory.
+        if let Ok(mut stmt) = conn.prepare("SELECT path FROM cleanup_queue;") {
+            if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
+                for path_str in rows.flatten() {
+                    let p = PathBuf::from(&path_str);
+                    let Some(parent) = p.parent() else {
+                        continue;
+                    };
+                    let fname = p.file_name().and_then(|f| f.to_str()).unwrap_or("");
+
+                    // Verify naming convention
+                    if !crate::workspace::is_cuddle_staging_artifact_name(fname) {
+                        continue;
+                    }
+
+                    if is_global(parent) {
+                        dirs.insert(parent.to_path_buf());
+                        continue;
+                    }
+
+                    // Strict verification of local .cuddle-temp:
+                    // Directory name must be exactly ".cuddle-temp"
+                    let dir_name = parent.file_name().and_then(|f| f.to_str()).unwrap_or("");
+                    if dir_name == ".cuddle-temp" {
+                        if let Some(grandparent) = parent.parent() {
+                            let expected_temp = grandparent.join(".cuddle-temp");
+                            let is_valid_local = parent == expected_temp
+                                || (parent.canonicalize().ok().is_some()
+                                    && parent.canonicalize().ok()
+                                        == expected_temp.canonicalize().ok());
+                            if is_valid_local {
+                                dirs.insert(parent.to_path_buf());
+                            } else {
+                                eprintln!(
+                                    "[SECURITY WARNING] Rejected unauthorized cleanup_queue directory candidate '{}'",
+                                    parent.display()
+                                );
+                            }
                         }
                     }
                 }

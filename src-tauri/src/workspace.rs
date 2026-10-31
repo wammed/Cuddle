@@ -1488,7 +1488,20 @@ impl WorkspaceManager {
                                                         ".cuddle_reflect_{}",
                                                         item.stage_id
                                                     );
-                                                    for entry in entries.flatten() {
+                                                    for entry_res in entries {
+                                                        let entry = match entry_res {
+                                                            Ok(e) => e,
+                                                            Err(e) => {
+                                                                eprintln!(
+                                                                    "[ERROR] WAL recovery: Error reading directory entry in '{}' for stage '{}': {}. Marking Conflict for safety.",
+                                                                    parent.display(),
+                                                                    item.stage_id,
+                                                                    e
+                                                                );
+                                                                quarantine_failure = true;
+                                                                break;
+                                                            }
+                                                        };
                                                         let entry_name = entry
                                                             .file_name()
                                                             .to_string_lossy()
@@ -1556,7 +1569,7 @@ impl WorkspaceManager {
                                                                         lost_write_target.display()
                                                                     );
                                                                     // Record preserved write in history for user visibility
-                                                                    let _ = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
+                                                                    if let Err(rec_err) = hist_mgr.record_operation(&crate::history::NewHistoryEntry {
                                                                         operation_id: Uuid::new_v4().to_string(),
                                                                         operation_type: "QuarantinePreserved".to_string(),
                                                                         display_name: item.display_name.clone(),
@@ -1569,7 +1582,12 @@ impl WorkspaceManager {
                                                                             "Concurrent external write detected during WAL restore and preserved to '{}'",
                                                                             lost_write_target.display()
                                                                         )),
-                                                                    });
+                                                                    }) {
+                                                                        eprintln!(
+                                                                            "[WARN] Failed to record QuarantinePreserved in history for stage '{}': {}",
+                                                                            item.stage_id, rec_err
+                                                                        );
+                                                                    }
                                                                 }
                                                             }
                                                         }
@@ -1593,7 +1611,15 @@ impl WorkspaceManager {
                                             resolved = true;
                                         } else {
                                             item.status = StageStatus::Conflict;
-                                            let _ = hist_mgr.save_session_item(&item);
+                                            if let Err(e) = hist_mgr.save_session_item(&item) {
+                                                eprintln!(
+                                                    "[ERROR] WAL recovery: Failed to save Conflict status to session DB for stage '{}': {}. Reverting to Applying so subsequent restarts retry recovery.",
+                                                    item.stage_id, e
+                                                );
+                                                let mut retry_item = item.clone();
+                                                retry_item.status = StageStatus::Applying;
+                                                let _ = hist_mgr.save_session_item(&retry_item);
+                                            }
                                         }
                                     }
                                 }
@@ -1644,24 +1670,52 @@ impl WorkspaceManager {
 
             // Check if an interrupted reflection or failed rollback left a quarantined original file (.cuddle_reflect_{stage_id}_*.tmp)
             if let Some(orig_parent) = orig_path.parent() {
-                if let Ok(entries) = fs::read_dir(orig_parent) {
-                    let reflect_marker = format!(".cuddle_reflect_{}", item.stage_id);
-                    for entry in entries.flatten() {
-                        let entry_name = entry.file_name().to_string_lossy().to_string();
-                        if entry_name.contains(&reflect_marker) {
-                            eprintln!(
-                                "[CRITICAL RECOVERY] Found uncompleted reflection quarantine file '{}' for stage '{}'. Retaining original data and marking Conflict.",
-                                entry.path().display(),
-                                item.stage_id
-                            );
-                            item.status = StageStatus::Conflict;
-                            if let Err(e) = hist_mgr.save_session_item(&item) {
-                                eprintln!(
-                                    "[ERROR] Failed to save Conflict status to session DB for stage '{}' with leftover quarantine file: {}",
-                                    item.stage_id, e
-                                );
+                match fs::read_dir(orig_parent) {
+                    Ok(entries) => {
+                        let reflect_marker = format!(".cuddle_reflect_{}", item.stage_id);
+                        for entry_res in entries {
+                            match entry_res {
+                                Ok(entry) => {
+                                    let entry_name =
+                                        entry.file_name().to_string_lossy().to_string();
+                                    if entry_name.contains(&reflect_marker) {
+                                        eprintln!(
+                                            "[CRITICAL RECOVERY] Found uncompleted reflection quarantine file '{}' for stage '{}'. Retaining original data and marking Conflict.",
+                                            entry.path().display(),
+                                            item.stage_id
+                                        );
+                                        item.status = StageStatus::Conflict;
+                                        if let Err(e) = hist_mgr.save_session_item(&item) {
+                                            eprintln!(
+                                                "[ERROR] Failed to save Conflict status to session DB for stage '{}' with leftover quarantine file: {}",
+                                                item.stage_id, e
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "[WARN] Failed to read directory entry in '{}' while checking quarantine files for stage '{}': {}. Marking Conflict for safety.",
+                                        orig_parent.display(),
+                                        item.stage_id,
+                                        e
+                                    );
+                                    item.status = StageStatus::Conflict;
+                                    let _ = hist_mgr.save_session_item(&item);
+                                    break;
+                                }
                             }
                         }
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[WARN] Failed to read parent directory '{}' for stage '{}': {}. Marking Conflict for safety.",
+                            orig_parent.display(),
+                            item.stage_id,
+                            e
+                        );
+                        item.status = StageStatus::Conflict;
+                        let _ = hist_mgr.save_session_item(&item);
                     }
                 }
             }
@@ -1966,13 +2020,28 @@ pub fn cleanup_stale_staging_artifacts_with_threshold(threshold_secs: u64) {
                 continue;
             }
 
-            // Guardrail 1: Path must reside strictly inside one of the managed staging directories
+            // Guardrail 1: Path must reside strictly inside one of the managed staging directories,
+            // or be a validated local .cuddle-temp directory located directly under an existing parent directory.
             let is_in_managed_dir = path
                 .parent()
                 .map(|p| {
-                    target_dirs
+                    if target_dirs
                         .iter()
                         .any(|td| p == td || p.canonicalize().ok() == td.canonicalize().ok())
+                    {
+                        return true;
+                    }
+                    // Defense-in-depth: validate local .cuddle-temp
+                    let dir_name = p.file_name().and_then(|f| f.to_str()).unwrap_or("");
+                    if dir_name == ".cuddle-temp" {
+                        if let Some(grandparent) = p.parent() {
+                            let expected_temp = grandparent.join(".cuddle-temp");
+                            return p == expected_temp
+                                || (p.canonicalize().ok().is_some()
+                                    && p.canonicalize().ok() == expected_temp.canonicalize().ok());
+                        }
+                    }
+                    false
                 })
                 .unwrap_or(false);
 
@@ -4112,6 +4181,68 @@ mod tests {
         );
 
         let _ = mgr.unstage_file(&staged.stage_id);
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_cleanup_queue_collects_local_staging_dir_when_session_items_empty() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_local_queue_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let local_staging = test_dir.join(".cuddle-temp");
+        fs::create_dir_all(&local_staging).unwrap();
+
+        let hist_mgr = crate::history::get_history_manager();
+
+        // Ensure session_items is completely empty for this test
+        let _ = hist_mgr.clear_session_items();
+
+        // 1. Create a valid local staging orphan file (e.g. from DB save failure during stage_file)
+        let orphan_id = Uuid::new_v4().to_string();
+        let orphan_file = local_staging.join(format!(".tmp_stage_{}_orphan.txt", orphan_id));
+        fs::write(&orphan_file, b"Orphaned temporary stage data").unwrap();
+
+        // Register in cleanup_queue
+        hist_mgr
+            .queue_cleanup_path(&orphan_file.to_string_lossy(), None)
+            .unwrap();
+
+        // 2. Also register an unauthorized attack path in cleanup_queue (outside staging)
+        let outside_file =
+            test_dir.join(".tmp_stage_00000000-0000-0000-0000-000000000000_attack.txt");
+        fs::write(&outside_file, b"Do not delete me outside!").unwrap();
+        hist_mgr
+            .queue_cleanup_path(&outside_file.to_string_lossy(), None)
+            .unwrap();
+
+        // 3. Verify get_known_staging_directories collects local_staging from cleanup_queue
+        let known_dirs = hist_mgr.get_known_staging_directories().unwrap();
+        let has_local_staging = known_dirs.iter().any(|d| d == &local_staging);
+        assert!(
+            has_local_staging,
+            "Validated local .cuddle-temp from cleanup_queue must be collected even when session_items is empty"
+        );
+
+        // 4. Run cleanup
+        cleanup_stale_staging_artifacts_with_threshold(0);
+
+        // P2 CRITICAL DEFENSE & RECOVERY VERIFICATION:
+        // The orphaned local staging file MUST be successfully deleted!
+        assert!(
+            !orphan_file.exists(),
+            "Orphaned local staging file in cleanup_queue must be recovered and removed"
+        );
+
+        // Outside attack file MUST NOT be deleted!
+        assert!(
+            outside_file.exists(),
+            "File outside managed staging directory must not be deleted"
+        );
+
+        // Cleanup
+        let _ = fs::remove_file(&outside_file);
         let _ = fs::remove_dir_all(&test_dir);
     }
 

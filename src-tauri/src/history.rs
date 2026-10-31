@@ -937,9 +937,15 @@ impl HistoryManager {
     }
 
     /// Gathers all known staging directories from active sessions, cleanup queue, and recent history.
+    /// Only recognizes directories matching official staging conventions (.cuddle-temp or staging).
     pub fn get_known_staging_directories(&self) -> Result<Vec<PathBuf>, String> {
         let conn = self.conn.lock().unwrap();
         let mut dirs = std::collections::HashSet::new();
+
+        let is_valid_staging_dir = |p: &std::path::Path| -> bool {
+            let name = p.file_name().and_then(|f| f.to_str()).unwrap_or("");
+            name == ".cuddle-temp" || name == "staging"
+        };
 
         // 1. Collect from active session_items
         if let Ok(mut stmt) = conn.prepare("SELECT staged_path FROM session_items;") {
@@ -947,19 +953,23 @@ impl HistoryManager {
                 for path_str in rows.flatten() {
                     let p = PathBuf::from(path_str);
                     if let Some(parent) = p.parent() {
-                        dirs.insert(parent.to_path_buf());
+                        if is_valid_staging_dir(parent) {
+                            dirs.insert(parent.to_path_buf());
+                        }
                     }
                 }
             }
         }
 
-        // 2. Collect from cleanup_queue
+        // 2. Collect from cleanup_queue (only if parent is an official staging dir)
         if let Ok(mut stmt) = conn.prepare("SELECT path FROM cleanup_queue;") {
             if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
                 for path_str in rows.flatten() {
                     let p = PathBuf::from(path_str);
                     if let Some(parent) = p.parent() {
-                        dirs.insert(parent.to_path_buf());
+                        if is_valid_staging_dir(parent) {
+                            dirs.insert(parent.to_path_buf());
+                        }
                     }
                 }
             }
@@ -973,7 +983,9 @@ impl HistoryManager {
                 for path_str in rows.flatten() {
                     let p = PathBuf::from(path_str);
                     if let Some(parent) = p.parent() {
-                        dirs.insert(parent.to_path_buf());
+                        if is_valid_staging_dir(parent) {
+                            dirs.insert(parent.to_path_buf());
+                        }
                     }
                 }
             }
@@ -1177,7 +1189,7 @@ mod tests {
         let mgr = HistoryManager::new_in_memory().unwrap();
 
         // 1. Enqueue paths
-        let path1 = "/tmp/cuddle_staging/.tmp_stage_123_file.txt";
+        let path1 = "/tmp/staging/.tmp_stage_123_file.txt";
         let path2 = "/var/tmp/.cuddle-temp/.tmp_stage_456_doc.txt";
         mgr.queue_cleanup_path(path1, Some("Permission denied"))
             .unwrap();
@@ -1196,9 +1208,7 @@ mod tests {
 
         // 3. Known staging directories
         let known = mgr.get_known_staging_directories().unwrap();
-        assert!(known
-            .iter()
-            .any(|d| d == &PathBuf::from("/tmp/cuddle_staging")));
+        assert!(known.iter().any(|d| d == &PathBuf::from("/tmp/staging")));
         assert!(known
             .iter()
             .any(|d| d == &PathBuf::from("/var/tmp/.cuddle-temp")));

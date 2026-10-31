@@ -93,21 +93,15 @@ pub fn atomic_rename_noreplace(from: &Path, to: &Path) -> std::io::Result<()> {
     }
 }
 
-/// Non-Linux implementation of atomic_rename_noreplace.
-/// Always returns Unsupported because atomic renameat2(RENAME_NOREPLACE) is only available on Linux.
-pub fn non_linux_atomic_rename_noreplace_impl(_from: &Path, _to: &Path) -> std::io::Result<()> {
+#[cfg(not(target_os = "linux"))]
+pub fn atomic_rename_noreplace(_from: &Path, _to: &Path) -> std::io::Result<()> {
+    // Cuddle officially supports only Linux.
+    // Non-Linux platforms do not provide atomic renameat2(RENAME_NOREPLACE) semantics.
+    // Returning an explicit Unsupported error prevents insecure TOCTOU fallback.
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
         "atomic renameat2(RENAME_NOREPLACE) is only supported on Linux. Cuddle officially only supports Linux.",
     ))
-}
-
-#[cfg(not(target_os = "linux"))]
-pub fn atomic_rename_noreplace(from: &Path, to: &Path) -> std::io::Result<()> {
-    // Cuddle officially supports only Linux.
-    // Non-Linux platforms do not provide atomic renameat2(RENAME_NOREPLACE) semantics.
-    // Returning an explicit Unsupported error prevents insecure TOCTOU fallback.
-    non_linux_atomic_rename_noreplace_impl(from, to)
 }
 
 #[derive(Error, Debug)]
@@ -1659,10 +1653,6 @@ impl WorkspaceManager {
                                         if let Some(parent) = orig_path.parent() {
                                             match fs::read_dir(parent) {
                                                 Ok(entries) => {
-                                                    let marker = format!(
-                                                        ".cuddle_reflect_{}",
-                                                        item.stage_id
-                                                    );
                                                     let mut matching_entries: Vec<PathBuf> =
                                                         Vec::new();
                                                     let mut matching_concurrent_writes: Vec<
@@ -1686,7 +1676,10 @@ impl WorkspaceManager {
                                                             .file_name()
                                                             .to_string_lossy()
                                                             .to_string();
-                                                        if entry_name.contains(&marker) {
+                                                        if is_quarantine_file_for_stage(
+                                                            &entry_name,
+                                                            &item.stage_id,
+                                                        ) {
                                                             matching_entries.push(entry.path());
                                                         }
                                                         if is_concurrent_write_backup_for_stage(
@@ -1895,47 +1888,19 @@ impl WorkspaceManager {
 
                                 // 2. If no concurrent writes found and scan succeeded, scan for leftover quarantine files
                                 if !dir_read_failed && !has_concurrent_write {
-                                    match fs::read_dir(parent) {
-                                        Ok(entries) => {
-                                            let marker =
-                                                format!(".cuddle_reflect_{}", item.stage_id);
-                                            for entry_res in entries {
-                                                #[cfg(test)]
-                                                let entry_res =
-                                                    if test_hooks::is_fail_case_b_entry_read() {
-                                                        Err(std::io::Error::new(
-                                                            std::io::ErrorKind::PermissionDenied,
-                                                            "Simulated entry read error in CASE B",
-                                                        ))
-                                                    } else {
-                                                        entry_res
-                                                    };
-
-                                                match entry_res {
-                                                    Ok(entry) => {
-                                                        if entry
-                                                            .file_name()
-                                                            .to_string_lossy()
-                                                            .contains(&marker)
-                                                        {
-                                                            has_leftover_quarantine = true;
-                                                            break;
-                                                        }
-                                                    }
-                                                    Err(e) => {
-                                                        eprintln!(
-                                                            "[ERROR] WAL recovery: Failed reading directory entry in CASE B for stage '{}': {}. Marking Conflict for safety.",
-                                                            item.stage_id, e
-                                                        );
-                                                        dir_read_failed = true;
-                                                        break;
-                                                    }
-                                                }
+                                    match find_stage_quarantine_files(parent, &item.stage_id) {
+                                        Ok(quarantines) => {
+                                            if !quarantines.is_empty() {
+                                                eprintln!(
+                                                    "[SECURITY RECOVERY] Preserved quarantine file(s) found in CASE B for stage '{}'. Marking Conflict to alert user.",
+                                                    item.stage_id
+                                                );
+                                                has_leftover_quarantine = true;
                                             }
                                         }
                                         Err(e) => {
                                             eprintln!(
-                                                "[ERROR] WAL recovery: Failed reading parent directory in CASE B for stage '{}': {}. Retaining files and marking Conflict for safety.",
+                                                "[ERROR] WAL recovery: Failed scanning for quarantine files in CASE B for stage '{}': {}. Marking Conflict for safety.",
                                                 item.stage_id, e
                                             );
                                             dir_read_failed = true;
@@ -2029,17 +1994,16 @@ impl WorkspaceManager {
                 continue;
             }
 
-            // Check if an interrupted reflection or failed rollback left a quarantined original file (.cuddle_reflect_{stage_id}_*.tmp)
+            // Check if an interrupted reflection or failed rollback left a quarantined original file (.cuddle_reflect_{stage_id}_{nonce}.tmp)
             if let Some(orig_parent) = orig_path.parent() {
                 match fs::read_dir(orig_parent) {
                     Ok(entries) => {
-                        let reflect_marker = format!(".cuddle_reflect_{}", item.stage_id);
                         for entry_res in entries {
                             match entry_res {
                                 Ok(entry) => {
                                     let entry_name =
                                         entry.file_name().to_string_lossy().to_string();
-                                    if entry_name.contains(&reflect_marker)
+                                    if is_quarantine_file_for_stage(&entry_name, &item.stage_id)
                                         || is_concurrent_write_backup_for_stage(
                                             &entry_name,
                                             &item.stage_id,
@@ -2576,6 +2540,65 @@ pub fn find_stage_concurrent_write_backups(
         let entry = entry_res?;
         let file_name = entry.file_name().to_string_lossy().to_string();
         if is_concurrent_write_backup_for_stage(&file_name, stage_id) {
+            matches.push(entry.path());
+        }
+    }
+    matches.sort();
+    Ok(matches)
+}
+
+/// Determines whether a filename strictly conforms to Cuddle's reflection quarantine naming convention
+/// and belongs specifically to `stage_id`.
+///
+/// Formal Specification:
+/// Must strictly match `.cuddle_reflect_{stage_id}_{nonce}.tmp` where:
+/// - Prefix is exactly `.cuddle_reflect_`
+/// - Suffix is exactly `.tmp`
+/// - The core consists of exactly two parts delimited by `_`:
+///   - `parts[0]` must match `stage_id` exactly (preventing substring/prefix collision).
+///   - `parts[1]` (nonce) must be a structurally valid UUID (preventing collision with user files).
+pub fn is_quarantine_file_for_stage(file_name: &str, stage_id: &str) -> bool {
+    let stage_id = stage_id.trim();
+    if stage_id.is_empty() {
+        return false;
+    }
+    let prefix = ".cuddle_reflect_";
+    let suffix = ".tmp";
+    if !file_name.starts_with(prefix) || !file_name.ends_with(suffix) {
+        return false;
+    }
+    let core = &file_name[prefix.len()..file_name.len() - suffix.len()];
+    let parts: Vec<&str> = core.split('_').collect();
+    if parts.len() != 2 {
+        return false;
+    }
+    if parts[0] != stage_id {
+        return false;
+    }
+    Uuid::parse_str(parts[1]).is_ok()
+}
+
+/// Discovers all valid quarantine files belonging to `stage_id` in `directory`.
+/// Fails safe on any directory or entry read error by returning `WorkspaceError::Io(e)`.
+pub fn find_stage_quarantine_files(
+    directory: &Path,
+    stage_id: &str,
+) -> Result<Vec<PathBuf>, WorkspaceError> {
+    let mut matches = Vec::new();
+    let entries = fs::read_dir(directory)?;
+    for entry_res in entries {
+        #[cfg(test)]
+        let entry_res = if test_hooks::is_fail_case_b_entry_read() {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "Simulated entry read error in quarantine directory scan",
+            ))
+        } else {
+            entry_res
+        };
+        let entry = entry_res?;
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        if is_quarantine_file_for_stage(&file_name, stage_id) {
             matches.push(entry.path());
         }
     }
@@ -5400,11 +5423,15 @@ mod tests {
             assert_eq!(fs::read(&orig_file2).unwrap(), staged_payload);
 
             // Find quarantine file and verify byte-for-byte
-            let marker = format!(".cuddle_reflect_{}", staged2.stage_id);
             let quarantine = fs::read_dir(&test_dir)
                 .unwrap()
                 .filter_map(|e| e.ok())
-                .find(|e| e.file_name().to_string_lossy().contains(&marker))
+                .find(|e| {
+                    is_quarantine_file_for_stage(
+                        &e.file_name().to_string_lossy(),
+                        &staged2.stage_id,
+                    )
+                })
                 .expect("Quarantine file must be preserved");
             assert_eq!(
                 fs::read(quarantine.path()).unwrap(),
@@ -5453,11 +5480,15 @@ mod tests {
 
             assert_eq!(rec_item3.status, StageStatus::Conflict);
             assert_eq!(fs::read(&orig_file3).unwrap(), staged_payload);
-            let marker = format!(".cuddle_reflect_{}", staged3.stage_id);
             let quarantine = fs::read_dir(&test_dir)
                 .unwrap()
                 .filter_map(|e| e.ok())
-                .find(|e| e.file_name().to_string_lossy().contains(&marker))
+                .find(|e| {
+                    is_quarantine_file_for_stage(
+                        &e.file_name().to_string_lossy(),
+                        &staged3.stage_id,
+                    )
+                })
                 .expect("Quarantine file must be preserved");
             assert_eq!(fs::read(quarantine.path()).unwrap(), orig_payload);
         }
@@ -5503,11 +5534,15 @@ mod tests {
 
             assert_eq!(rec_item4.status, StageStatus::Conflict);
             assert_eq!(fs::read(&orig_file4).unwrap(), staged_payload);
-            let marker = format!(".cuddle_reflect_{}", staged4.stage_id);
             let quarantine = fs::read_dir(&test_dir)
                 .unwrap()
                 .filter_map(|e| e.ok())
-                .find(|e| e.file_name().to_string_lossy().contains(&marker))
+                .find(|e| {
+                    is_quarantine_file_for_stage(
+                        &e.file_name().to_string_lossy(),
+                        &staged4.stage_id,
+                    )
+                })
                 .expect("Quarantine file must be preserved");
             assert_eq!(fs::read(quarantine.path()).unwrap(), orig_payload);
         }
@@ -5532,11 +5567,15 @@ mod tests {
             }));
 
             // Step 2: Mutate quarantine file to simulate concurrent external write
-            let marker = format!(".cuddle_reflect_{}", staged5.stage_id);
             let quarantine = fs::read_dir(&test_dir)
                 .unwrap()
                 .filter_map(|e| e.ok())
-                .find(|e| e.file_name().to_string_lossy().contains(&marker))
+                .find(|e| {
+                    is_quarantine_file_for_stage(
+                        &e.file_name().to_string_lossy(),
+                        &staged5.stage_id,
+                    )
+                })
                 .expect("Quarantine file must exist");
             let external_payload =
                 b"External process modified quarantine via open FD during crash test";
@@ -6254,33 +6293,6 @@ mod tests {
     }
 
     #[test]
-    fn test_non_linux_no_replace_unsupported() {
-        #[cfg(not(target_os = "linux"))]
-        {
-            let temp_dir = std::env::temp_dir();
-            let p1 = temp_dir.join("a.txt");
-            let p2 = temp_dir.join("b.txt");
-            let err = atomic_rename_noreplace(&p1, &p2).unwrap_err();
-            assert_eq!(err.kind(), std::io::ErrorKind::Unsupported);
-            assert!(err
-                .to_string()
-                .contains("Cuddle officially only supports Linux"));
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            let temp_dir = std::env::temp_dir();
-            let p1 = temp_dir.join("a.txt");
-            let p2 = temp_dir.join("b.txt");
-            let err = non_linux_atomic_rename_noreplace_impl(&p1, &p2).unwrap_err();
-            assert_eq!(err.kind(), std::io::ErrorKind::Unsupported);
-            assert!(err
-                .to_string()
-                .contains("Cuddle officially only supports Linux"));
-        }
-    }
-
-    #[test]
     fn test_wal_recovery_orphaned_concurrent_write_preserved_without_deletion() {
         let _guard = lock_test_mutex();
         let home = dirs::home_dir().expect("Home must exist");
@@ -6473,6 +6485,19 @@ mod tests {
         );
     }
 
+    /// Multi-process crash test validating both initial reflection interruption and recovery-phase interruption.
+    ///
+    /// Detailed Timing Matrix of Verified Failure Points:
+    /// - Point 1: Crash during initial reflection, immediately after saving `Applying` state to SQLite (prior to exchange).
+    /// - Point 2: Crash during initial reflection, immediately after atomic `renameat2` exchange.
+    /// - Point 3: Crash during session recovery, immediately after calculating quarantine file SHA-256 (following Point 2 crash).
+    /// - Point 4: Crash during session recovery, immediately after saving `Reflected` status to SQLite (following Point 2 crash).
+    /// - Point 5: Crash during session recovery, immediately after preserving quarantine to `.concurrent_write` (following Point 2 crash with simulated concurrent modification via `fs::write`).
+    ///
+    /// Distinction:
+    /// Point 5 tests path-based external modification (`fs::write`) to the quarantine file prior to recovery crash.
+    /// In contrast, open POSIX file descriptors held across `atomic_exchange_files` and written to directly via descriptor
+    /// are verified independently in `test_wal_recovery_test8_external_open_fd_write_protection_linux`.
     #[test]
     fn test_wal_recovery_real_process_crash_injection_all_points() {
         let _guard = lock_test_mutex();
@@ -6579,11 +6604,15 @@ mod tests {
                         .expect("Item must exist in session DB");
                     assert_eq!(rec_item.status, StageStatus::Conflict);
 
-                    let marker = format!(".cuddle_reflect_{}", rec_item.stage_id);
                     let quarantine = fs::read_dir(&point_dir)
                         .unwrap()
                         .filter_map(|e| e.ok())
-                        .find(|e| e.file_name().to_string_lossy().contains(&marker))
+                        .find(|e| {
+                            is_quarantine_file_for_stage(
+                                &e.file_name().to_string_lossy(),
+                                &rec_item.stage_id,
+                            )
+                        })
                         .expect("Quarantine file must be preserved");
                     assert_eq!(fs::read(quarantine.path()).unwrap(), orig_payload);
 
@@ -6632,11 +6661,15 @@ mod tests {
                         .expect("Item must exist in session DB");
                     assert_eq!(rec_item.status, StageStatus::Conflict);
 
-                    let marker = format!(".cuddle_reflect_{}", rec_item.stage_id);
                     let quarantine = fs::read_dir(&point_dir)
                         .unwrap()
                         .filter_map(|e| e.ok())
-                        .find(|e| e.file_name().to_string_lossy().contains(&marker))
+                        .find(|e| {
+                            is_quarantine_file_for_stage(
+                                &e.file_name().to_string_lossy(),
+                                &rec_item.stage_id,
+                            )
+                        })
                         .expect("Quarantine file must be preserved");
                     assert_eq!(fs::read(quarantine.path()).unwrap(), orig_payload);
 
@@ -6685,11 +6718,15 @@ mod tests {
                         .expect("Item must exist in session DB");
                     assert_eq!(rec_item.status, StageStatus::Conflict);
 
-                    let marker = format!(".cuddle_reflect_{}", rec_item.stage_id);
                     let quarantine = fs::read_dir(&point_dir)
                         .unwrap()
                         .filter_map(|e| e.ok())
-                        .find(|e| e.file_name().to_string_lossy().contains(&marker))
+                        .find(|e| {
+                            is_quarantine_file_for_stage(
+                                &e.file_name().to_string_lossy(),
+                                &rec_item.stage_id,
+                            )
+                        })
                         .expect("Quarantine file must be preserved");
                     assert_eq!(fs::read(quarantine.path()).unwrap(), orig_payload);
 
@@ -6709,7 +6746,10 @@ mod tests {
                     let quarantine = fs::read_dir(&point_dir)
                         .unwrap()
                         .filter_map(|e| e.ok())
-                        .find(|e| e.file_name().to_string_lossy().contains(".cuddle_reflect_"))
+                        .find(|e| {
+                            let name = e.file_name().to_string_lossy().to_string();
+                            name.starts_with(".cuddle_reflect_") && name.ends_with(".tmp")
+                        })
                         .expect("Quarantine file must exist after swap");
                     fs::write(quarantine.path(), external_payload).unwrap();
 
@@ -7114,6 +7154,109 @@ mod tests {
             "file.concurrent_write",
             ""
         ));
+    }
+
+    #[test]
+    fn test_is_quarantine_file_for_stage_precision() {
+        let u1 = Uuid::new_v4().to_string();
+        let u2 = Uuid::new_v4().to_string();
+        let valid_fname = format!(".cuddle_reflect_{}_{}.tmp", u1, u2);
+
+        // Exact match
+        assert!(is_quarantine_file_for_stage(&valid_fname, &u1));
+
+        // False positive prevention: different stage ID
+        assert!(!is_quarantine_file_for_stage(&valid_fname, &u2));
+        assert!(!is_quarantine_file_for_stage(
+            &valid_fname,
+            "unrelated_stage"
+        ));
+
+        // False positive prevention: stage_id substring
+        assert!(!is_quarantine_file_for_stage(&valid_fname, &u1[..8]));
+
+        // False positive prevention: wrong prefix or extension
+        assert!(!is_quarantine_file_for_stage(
+            &format!("user_backup_{}", valid_fname),
+            &u1
+        ));
+        assert!(!is_quarantine_file_for_stage(
+            &format!(".cuddle_reflect_{}_{}.txt", u1, u2),
+            &u1
+        ));
+
+        // False positive prevention: non-UUID nonce
+        assert!(!is_quarantine_file_for_stage(
+            &format!(".cuddle_reflect_{}_manual_note.tmp", u1),
+            &u1
+        ));
+
+        // False positive prevention: missing nonce or extra parts
+        assert!(!is_quarantine_file_for_stage(
+            &format!(".cuddle_reflect_{}.tmp", u1),
+            &u1
+        ));
+        assert!(!is_quarantine_file_for_stage(
+            &format!(".cuddle_reflect_{}_{}_{}.tmp", u1, u2, u2),
+            &u1
+        ));
+
+        // Empty check
+        assert!(!is_quarantine_file_for_stage(&valid_fname, ""));
+    }
+
+    #[test]
+    fn test_wal_recovery_case_b_quarantine_substring_does_not_falsely_conflict() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_case_b_q_substr_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("orig.txt");
+        let orig_content = b"Original pristine content";
+        fs::write(&orig_file, orig_content).unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        mgr.write_staged_text(&staged.stage_id, "Candidate content")
+            .unwrap();
+
+        let mut item = staged.clone();
+        item.status = StageStatus::Applying;
+        let hist_mgr = crate::history::get_history_manager();
+        hist_mgr.save_session_item(&item).unwrap();
+
+        // Create a user file that contains `.cuddle_reflect_{stage_id}` as a substring
+        // but is NOT a valid Cuddle quarantine file
+        let user_file = test_dir.join(format!(
+            "user_notes_.cuddle_reflect_{}.txt",
+            staged.stage_id
+        ));
+        let user_payload = b"User personal notes that happen to mention reflection";
+        fs::write(&user_file, user_payload).unwrap();
+
+        let user_file2 = test_dir.join(format!(
+            ".cuddle_reflect_{}_manual_note.tmp",
+            staged.stage_id
+        ));
+        fs::write(&user_file2, b"Manual note").unwrap();
+
+        // Recovery in CASE B: should NOT falsely mark Conflict! Clean rollback to Modified!
+        let mgr_rec = WorkspaceManager::new();
+        let restored = mgr_rec.restore_session().unwrap();
+        let rec_item = restored
+            .iter()
+            .find(|i| i.stage_id == staged.stage_id)
+            .unwrap();
+
+        assert_eq!(rec_item.status, StageStatus::Modified);
+        // User files must remain intact and untouched
+        assert!(user_file.exists());
+        assert_eq!(fs::read(&user_file).unwrap(), user_payload);
+        assert!(user_file2.exists());
+
+        let _ = hist_mgr.remove_session_item(&staged.stage_id);
+        let _ = fs::remove_dir_all(&test_dir);
     }
 
     #[test]

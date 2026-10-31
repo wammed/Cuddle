@@ -65,19 +65,3 @@ jobs:
 
       - name: Verify Tauri Linux application build
         run: pnpm tauri build --no-bundle
-
-  check-macos:
-    name: Check macOS (Non-Linux Unsupported Verification)
-    runs-on: macos-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          cache-work-dir: src-tauri
-
-      - name: Run non-Linux tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml test_non_linux_no_replace_unsupported

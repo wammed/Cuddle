@@ -93,15 +93,21 @@ pub fn atomic_rename_noreplace(from: &Path, to: &Path) -> std::io::Result<()> {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
-pub fn atomic_rename_noreplace(_from: &Path, _to: &Path) -> std::io::Result<()> {
-    // Cuddle officially supports only Linux.
-    // Non-Linux platforms do not provide atomic renameat2(RENAME_NOREPLACE) semantics.
-    // Returning an explicit Unsupported error prevents insecure TOCTOU fallback.
+/// Non-Linux implementation of atomic_rename_noreplace.
+/// Always returns Unsupported because atomic renameat2(RENAME_NOREPLACE) is only available on Linux.
+pub fn non_linux_atomic_rename_noreplace_impl(_from: &Path, _to: &Path) -> std::io::Result<()> {
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
         "atomic renameat2(RENAME_NOREPLACE) is only supported on Linux. Cuddle officially only supports Linux.",
     ))
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn atomic_rename_noreplace(from: &Path, to: &Path) -> std::io::Result<()> {
+    // Cuddle officially supports only Linux.
+    // Non-Linux platforms do not provide atomic renameat2(RENAME_NOREPLACE) semantics.
+    // Returning an explicit Unsupported error prevents insecure TOCTOU fallback.
+    non_linux_atomic_rename_noreplace_impl(from, to)
 }
 
 #[derive(Error, Debug)]
@@ -1683,10 +1689,10 @@ impl WorkspaceManager {
                                                         if entry_name.contains(&marker) {
                                                             matching_entries.push(entry.path());
                                                         }
-                                                        if entry_name.contains(&item.stage_id)
-                                                            && entry_name
-                                                                .contains(".concurrent_write")
-                                                        {
+                                                        if is_concurrent_write_backup_for_stage(
+                                                            &entry_name,
+                                                            &item.stage_id,
+                                                        ) {
                                                             matching_concurrent_writes
                                                                 .push(entry.path());
                                                         }
@@ -1863,64 +1869,90 @@ impl WorkspaceManager {
                         } else if item.original_snapshot.sha256.as_ref() == Some(oh) {
                             // CASE B: orig_path still matches pre-reflection snapshot (swap was not completed or rolled back).
                             let mut has_leftover_quarantine = false;
+                            let mut has_concurrent_write = false;
                             let mut dir_read_failed = false;
 
                             if let Some(parent) = orig_path.parent() {
-                                match fs::read_dir(parent) {
-                                    Ok(entries) => {
-                                        let marker = format!(".cuddle_reflect_{}", item.stage_id);
-                                        for entry_res in entries {
-                                            #[cfg(test)]
-                                            let entry_res =
-                                                if test_hooks::is_fail_case_b_entry_read() {
-                                                    Err(std::io::Error::new(
-                                                        std::io::ErrorKind::PermissionDenied,
-                                                        "Simulated entry read error in CASE B",
-                                                    ))
-                                                } else {
-                                                    entry_res
-                                                };
-
-                                            match entry_res {
-                                                Ok(entry) => {
-                                                    if entry
-                                                        .file_name()
-                                                        .to_string_lossy()
-                                                        .contains(&marker)
-                                                    {
-                                                        has_leftover_quarantine = true;
-                                                        break;
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    eprintln!(
-                                                        "[ERROR] WAL recovery: Failed reading directory entry in CASE B for stage '{}': {}. Marking Conflict for safety.",
-                                                        item.stage_id, e
-                                                    );
-                                                    dir_read_failed = true;
-                                                    break;
-                                                }
-                                            }
+                                // 1. Scan for matching .concurrent_write backups for this stage ID
+                                match find_stage_concurrent_write_backups(parent, &item.stage_id) {
+                                    Ok(backups) => {
+                                        if !backups.is_empty() {
+                                            eprintln!(
+                                                "[SECURITY RECOVERY] Preserved concurrent write backup(s) found in CASE B for stage '{}'. Marking Conflict to alert user.",
+                                                item.stage_id
+                                            );
+                                            has_concurrent_write = true;
                                         }
                                     }
                                     Err(e) => {
                                         eprintln!(
-                                            "[ERROR] WAL recovery: Failed reading parent directory in CASE B for stage '{}': {}. Retaining files and marking Conflict for safety.",
+                                            "[ERROR] WAL recovery: Failed scanning for concurrent write backups in CASE B for stage '{}': {}. Marking Conflict for safety.",
                                             item.stage_id, e
                                         );
                                         dir_read_failed = true;
+                                    }
+                                }
+
+                                // 2. If no concurrent writes found and scan succeeded, scan for leftover quarantine files
+                                if !dir_read_failed && !has_concurrent_write {
+                                    match fs::read_dir(parent) {
+                                        Ok(entries) => {
+                                            let marker =
+                                                format!(".cuddle_reflect_{}", item.stage_id);
+                                            for entry_res in entries {
+                                                #[cfg(test)]
+                                                let entry_res =
+                                                    if test_hooks::is_fail_case_b_entry_read() {
+                                                        Err(std::io::Error::new(
+                                                            std::io::ErrorKind::PermissionDenied,
+                                                            "Simulated entry read error in CASE B",
+                                                        ))
+                                                    } else {
+                                                        entry_res
+                                                    };
+
+                                                match entry_res {
+                                                    Ok(entry) => {
+                                                        if entry
+                                                            .file_name()
+                                                            .to_string_lossy()
+                                                            .contains(&marker)
+                                                        {
+                                                            has_leftover_quarantine = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        eprintln!(
+                                                            "[ERROR] WAL recovery: Failed reading directory entry in CASE B for stage '{}': {}. Marking Conflict for safety.",
+                                                            item.stage_id, e
+                                                        );
+                                                        dir_read_failed = true;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            eprintln!(
+                                                "[ERROR] WAL recovery: Failed reading parent directory in CASE B for stage '{}': {}. Retaining files and marking Conflict for safety.",
+                                                item.stage_id, e
+                                            );
+                                            dir_read_failed = true;
+                                        }
                                     }
                                 }
                             } else {
                                 dir_read_failed = true;
                             }
 
-                            if dir_read_failed || has_leftover_quarantine {
-                                // CRITICAL SAFETY (Quarantine Safety Fix for CASE B):
-                                // If quarantine files exist or dir scan failed, do NOT delete them!
-                                // Safety cannot be proven -> retain files and mark Conflict! Rollback to Modified is strictly forbidden.
+                            if dir_read_failed || has_leftover_quarantine || has_concurrent_write {
+                                // CRITICAL SAFETY (Quarantine & Backup Safety Fix for CASE B):
+                                // If quarantine files exist, matching concurrent write backup exists, or dir scan failed,
+                                // do NOT delete or move them! Safety cannot be proven -> retain files and mark Conflict!
+                                // Rollback to Modified is strictly forbidden.
                                 eprintln!(
-                                    "[SECURITY RECOVERY] Leftover quarantine/reflection file exists or directory scan failed in CASE B for stage '{}'. Retaining all files and marking Conflict for safety.",
+                                    "[SECURITY RECOVERY] Leftover quarantine/concurrent write file exists or directory scan failed in CASE B for stage '{}'. Retaining all files and marking Conflict for safety.",
                                     item.stage_id
                                 );
                                 item.status = StageStatus::Conflict;
@@ -2008,8 +2040,10 @@ impl WorkspaceManager {
                                     let entry_name =
                                         entry.file_name().to_string_lossy().to_string();
                                     if entry_name.contains(&reflect_marker)
-                                        || (entry_name.contains(&item.stage_id)
-                                            && entry_name.contains(".concurrent_write"))
+                                        || is_concurrent_write_backup_for_stage(
+                                            &entry_name,
+                                            &item.stage_id,
+                                        )
                                     {
                                         eprintln!(
                                             "[CRITICAL RECOVERY] Found uncompleted reflection quarantine or concurrent write backup file '{}' for stage '{}'. Retaining original data and marking Conflict.",
@@ -2476,6 +2510,77 @@ pub fn generate_lost_write_backup_path_with_stage(
         counter += 1;
     }
     candidate
+}
+
+/// Determines whether a filename represents a `.concurrent_write` backup associated with `stage_id`.
+/// Prevents false positives by ensuring explicit delimiter boundaries (`_` or `.`) and checking for
+/// optional retry counter suffix (`_{counter}`).
+pub fn is_concurrent_write_backup_for_stage(file_name: &str, stage_id: &str) -> bool {
+    let stage_id = stage_id.trim();
+    if stage_id.is_empty() {
+        return false;
+    }
+    let cw_token = ".concurrent_write";
+    let Some(idx) = file_name.find(cw_token) else {
+        return false;
+    };
+    let after_cw = &file_name[idx + cw_token.len()..];
+    if !after_cw.is_empty() && !after_cw.starts_with('.') {
+        return false;
+    }
+    let prefix = &file_name[..idx];
+
+    // Direct match: prefix == stage_id, prefix ends with _{stage_id}, or prefix ends with .{stage_id}
+    if prefix == stage_id
+        || prefix.ends_with(&format!("_{}", stage_id))
+        || prefix.ends_with(&format!(".{}", stage_id))
+    {
+        return true;
+    }
+
+    // Match with retry counter suffix (e.g. _{stage_id}_{counter})
+    if let Some(last_underscore) = prefix.rfind('_') {
+        let (rest, counter_part) = prefix.split_at(last_underscore);
+        let counter_str = &counter_part[1..];
+        if !counter_str.is_empty()
+            && counter_str.chars().all(|c| c.is_ascii_digit())
+            && (rest == stage_id
+                || rest.ends_with(&format!("_{}", stage_id))
+                || rest.ends_with(&format!(".{}", stage_id)))
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Discovers all `.concurrent_write` backups belonging to `stage_id` in `directory`.
+/// Fails safe on any directory or entry read error by returning `WorkspaceError::Io(e)`.
+pub fn find_stage_concurrent_write_backups(
+    directory: &Path,
+    stage_id: &str,
+) -> Result<Vec<PathBuf>, WorkspaceError> {
+    let mut matches = Vec::new();
+    let entries = fs::read_dir(directory)?;
+    for entry_res in entries {
+        #[cfg(test)]
+        let entry_res = if test_hooks::is_fail_case_b_entry_read() {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "Simulated entry read error in directory scan",
+            ))
+        } else {
+            entry_res
+        };
+        let entry = entry_res?;
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        if is_concurrent_write_backup_for_stage(&file_name, stage_id) {
+            matches.push(entry.path());
+        }
+    }
+    matches.sort();
+    Ok(matches)
 }
 
 /// Validates whether a filename strictly conforms to Cuddle's generated staging artifact naming conventions,
@@ -6159,25 +6264,19 @@ mod tests {
             assert_eq!(err.kind(), std::io::ErrorKind::Unsupported);
             assert!(err
                 .to_string()
-                .contains("Cuddle officially supports Linux only"));
+                .contains("Cuddle officially only supports Linux"));
         }
 
         #[cfg(target_os = "linux")]
         {
-            fn non_linux_atomic_rename_noreplace(_from: &Path, _to: &Path) -> std::io::Result<()> {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::Unsupported,
-                    "atomic_rename_noreplace is only supported on Linux via renameat2(RENAME_NOREPLACE). Cuddle officially supports Linux only.",
-                ))
-            }
             let temp_dir = std::env::temp_dir();
             let p1 = temp_dir.join("a.txt");
             let p2 = temp_dir.join("b.txt");
-            let err = non_linux_atomic_rename_noreplace(&p1, &p2).unwrap_err();
+            let err = non_linux_atomic_rename_noreplace_impl(&p1, &p2).unwrap_err();
             assert_eq!(err.kind(), std::io::ErrorKind::Unsupported);
             assert!(err
                 .to_string()
-                .contains("Cuddle officially supports Linux only"));
+                .contains("Cuddle officially only supports Linux"));
         }
     }
 
@@ -6313,70 +6412,58 @@ mod tests {
         };
         let test_dir_str = std::env::var("CUDDLE_TEST_DIR").expect("CUDDLE_TEST_DIR must be set");
         let test_dir = PathBuf::from(test_dir_str);
-
-        let orig_file = test_dir.join(format!("crash_{}.txt", mode));
-        let mgr = WorkspaceManager::new();
-        let staged = mgr
-            .stage_file(&orig_file)
-            .expect("Worker stage_file failed");
-        mgr.write_staged_text(
-            &staged.stage_id,
-            "Staged candidate content for real crash injection",
-        )
-        .expect("Worker write_staged_text failed");
+        let file_name =
+            std::env::var("CUDDLE_TEST_FILENAME").unwrap_or_else(|_| "crash.txt".to_string());
+        let orig_file = test_dir.join(file_name);
 
         match mode.as_str() {
-            "point1" => {
+            "reflect_point1" => {
+                let mgr = WorkspaceManager::new();
+                let staged = mgr
+                    .stage_file(&orig_file)
+                    .expect("Worker stage_file failed");
+                mgr.write_staged_text(
+                    &staged.stage_id,
+                    "Staged candidate content for real crash injection",
+                )
+                .expect("Worker write_staged_text failed");
                 test_hooks::set_crash_point(test_hooks::CrashPoint::AfterApplyingSaved);
                 let _ = mgr.reflect_staged_file(&staged.stage_id);
             }
-            "point2" => {
+            "reflect_point2" => {
+                let mgr = WorkspaceManager::new();
+                let staged = mgr
+                    .stage_file(&orig_file)
+                    .expect("Worker stage_file failed");
+                mgr.write_staged_text(
+                    &staged.stage_id,
+                    "Staged candidate content for real crash injection",
+                )
+                .expect("Worker write_staged_text failed");
                 test_hooks::set_crash_point(test_hooks::CrashPoint::AfterRenameExchange);
                 let _ = mgr.reflect_staged_file(&staged.stage_id);
             }
-            "point3" => {
-                std::env::remove_var("CUDDLE_PROCESS_ABORT_ON_CRASH");
-                test_hooks::set_crash_point(test_hooks::CrashPoint::AfterRenameExchange);
-                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    mgr.reflect_staged_file(&staged.stage_id)
-                }));
-                std::env::set_var("CUDDLE_PROCESS_ABORT_ON_CRASH", "1");
+            "recover_normal" => {
+                let mgr = WorkspaceManager::new();
+                let _ = mgr
+                    .restore_session()
+                    .expect("Worker restore_session failed");
+                return; // Normal clean exit 0
+            }
+            "recover_point3" => {
                 test_hooks::set_crash_point(test_hooks::CrashPoint::AfterQuarantineSha256);
-                let mgr_rec = WorkspaceManager::new();
-                let _ = mgr_rec.restore_session();
+                let mgr = WorkspaceManager::new();
+                let _ = mgr.restore_session();
             }
-            "point4" => {
-                std::env::remove_var("CUDDLE_PROCESS_ABORT_ON_CRASH");
-                test_hooks::set_crash_point(test_hooks::CrashPoint::AfterRenameExchange);
-                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    mgr.reflect_staged_file(&staged.stage_id)
-                }));
-                std::env::set_var("CUDDLE_PROCESS_ABORT_ON_CRASH", "1");
+            "recover_point4" => {
                 test_hooks::set_crash_point(test_hooks::CrashPoint::AfterRecoveryStatusSaved);
-                let mgr_rec = WorkspaceManager::new();
-                let _ = mgr_rec.restore_session();
+                let mgr = WorkspaceManager::new();
+                let _ = mgr.restore_session();
             }
-            "point5" => {
-                std::env::remove_var("CUDDLE_PROCESS_ABORT_ON_CRASH");
-                test_hooks::set_crash_point(test_hooks::CrashPoint::AfterRenameExchange);
-                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    mgr.reflect_staged_file(&staged.stage_id)
-                }));
-                let marker = format!(".cuddle_reflect_{}", staged.stage_id);
-                let quarantine = fs::read_dir(&test_dir)
-                    .unwrap()
-                    .filter_map(|e| e.ok())
-                    .find(|e| e.file_name().to_string_lossy().contains(&marker))
-                    .expect("Quarantine file must exist in worker");
-                fs::write(
-                    quarantine.path(),
-                    b"External process modified quarantine via open FD during crash test",
-                )
-                .unwrap();
-                std::env::set_var("CUDDLE_PROCESS_ABORT_ON_CRASH", "1");
+            "recover_point5" => {
                 test_hooks::set_crash_point(test_hooks::CrashPoint::AfterQuarantinePreserved);
-                let mgr_rec = WorkspaceManager::new();
-                let _ = mgr_rec.restore_session();
+                let mgr = WorkspaceManager::new();
+                let _ = mgr.restore_session();
             }
             other => panic!("Unknown crash mode: {}", other),
         }
@@ -6400,53 +6487,98 @@ mod tests {
 
         let test_exe = std::env::current_exe().expect("Must locate current test executable");
 
-        for point in &["point1", "point2", "point3", "point4", "point5"] {
-            let point_dir = test_dir.join(point);
-            fs::create_dir_all(&point_dir).unwrap();
-
-            let orig_file = point_dir.join(format!("crash_{}.txt", point));
-            fs::write(&orig_file, orig_payload).unwrap();
-
+        let run_worker = |mode: &str, p_dir: &Path, fname: &str| -> std::process::Output {
             let mut cmd = std::process::Command::new(&test_exe);
             cmd.arg("workspace::tests::test_wal_real_process_crash_worker");
             cmd.arg("--exact");
             cmd.arg("--nocapture");
-            cmd.env("CUDDLE_REAL_PROCESS_CRASH_MODE", point);
-            cmd.env("CUDDLE_TEST_DIR", &point_dir);
+            cmd.env("CUDDLE_REAL_PROCESS_CRASH_MODE", mode);
+            cmd.env("CUDDLE_TEST_DIR", p_dir);
+            cmd.env("CUDDLE_TEST_FILENAME", fname);
             cmd.env("CUDDLE_PROCESS_ABORT_ON_CRASH", "1");
+            cmd.output()
+                .expect("Child process command execution failed")
+        };
 
-            let output = cmd
-                .output()
-                .expect("Child process command execution failed");
-            assert_eq!(
-                output.status.code(),
-                Some(137),
-                "Child process for {} must terminate abnormally via libc::_exit(137), status was: {:?}",
-                point,
-                output.status
-            );
+        for point in &["point1", "point2", "point3", "point4", "point5"] {
+            let point_dir = test_dir.join(point);
+            fs::create_dir_all(&point_dir).unwrap();
 
-            // Parent executes recovery in a fresh WorkspaceManager
-            let mgr_rec = WorkspaceManager::new();
-            let restored = mgr_rec.restore_session().unwrap();
-            let orig_canon = orig_file
-                .canonicalize()
-                .unwrap()
-                .to_string_lossy()
-                .to_string();
-            let rec_item = restored
-                .iter()
-                .find(|i| i.original_snapshot.canonical_path == orig_canon)
-                .expect("Item must be recovered by parent process");
+            let orig_fname = format!("crash_{}.txt", point);
+            let orig_file = point_dir.join(&orig_fname);
+            fs::write(&orig_file, orig_payload).unwrap();
 
             match *point {
                 "point1" => {
-                    assert_eq!(rec_item.status, StageStatus::Conflict);
+                    // Child A: Initial reflection up to Crash Point 1 (AfterApplyingSaved) -> _exit(137)
+                    let out_a = run_worker("reflect_point1", &point_dir, &orig_fname);
+                    assert_eq!(
+                        out_a.status.code(),
+                        Some(137),
+                        "Point 1 Child A must exit 137, got {:?}",
+                        out_a.status
+                    );
+
+                    // Child B: Recovery in a fresh process -> exit 0
+                    let out_b = run_worker("recover_normal", &point_dir, &orig_fname);
+                    assert_eq!(
+                        out_b.status.code(),
+                        Some(0),
+                        "Point 1 Child B must exit 0, got {:?}",
+                        out_b.status
+                    );
+
+                    // Parent verification
                     assert_eq!(fs::read(&orig_file).unwrap(), orig_payload);
-                }
-                "point2" | "point3" | "point4" => {
+                    let hist_mgr = crate::history::get_history_manager();
+                    let items = hist_mgr.load_all_session_items().unwrap();
+                    let orig_canon = orig_file
+                        .canonicalize()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string();
+                    let rec_item = items
+                        .iter()
+                        .find(|i| i.original_snapshot.canonical_path == orig_canon)
+                        .expect("Item must exist in session DB");
                     assert_eq!(rec_item.status, StageStatus::Conflict);
+
+                    let _ = hist_mgr.remove_session_item(&rec_item.stage_id);
+                }
+                "point2" => {
+                    // Child A: Initial reflection up to Crash Point 2 (AfterRenameExchange) -> _exit(137)
+                    let out_a = run_worker("reflect_point2", &point_dir, &orig_fname);
+                    assert_eq!(
+                        out_a.status.code(),
+                        Some(137),
+                        "Point 2 Child A must exit 137, got {:?}",
+                        out_a.status
+                    );
+
+                    // Child B: Recovery in a fresh process -> exit 0
+                    let out_b = run_worker("recover_normal", &point_dir, &orig_fname);
+                    assert_eq!(
+                        out_b.status.code(),
+                        Some(0),
+                        "Point 2 Child B must exit 0, got {:?}",
+                        out_b.status
+                    );
+
+                    // Parent verification
                     assert_eq!(fs::read(&orig_file).unwrap(), staged_payload);
+                    let hist_mgr = crate::history::get_history_manager();
+                    let items = hist_mgr.load_all_session_items().unwrap();
+                    let orig_canon = orig_file
+                        .canonicalize()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string();
+                    let rec_item = items
+                        .iter()
+                        .find(|i| i.original_snapshot.canonical_path == orig_canon)
+                        .expect("Item must exist in session DB");
+                    assert_eq!(rec_item.status, StageStatus::Conflict);
+
                     let marker = format!(".cuddle_reflect_{}", rec_item.stage_id);
                     let quarantine = fs::read_dir(&point_dir)
                         .unwrap()
@@ -6454,17 +6586,172 @@ mod tests {
                         .find(|e| e.file_name().to_string_lossy().contains(&marker))
                         .expect("Quarantine file must be preserved");
                     assert_eq!(fs::read(quarantine.path()).unwrap(), orig_payload);
+
+                    let _ = hist_mgr.remove_session_item(&rec_item.stage_id);
+                }
+                "point3" => {
+                    // Child A: Initial reflection up to Crash Point 2 (AfterRenameExchange) -> _exit(137)
+                    let out_a = run_worker("reflect_point2", &point_dir, &orig_fname);
+                    assert_eq!(
+                        out_a.status.code(),
+                        Some(137),
+                        "Point 3 Child A must exit 137, got {:?}",
+                        out_a.status
+                    );
+
+                    // Child B: Recovery interrupted at Crash Point 3 (AfterQuarantineSha256) -> _exit(137)
+                    let out_b = run_worker("recover_point3", &point_dir, &orig_fname);
+                    assert_eq!(
+                        out_b.status.code(),
+                        Some(137),
+                        "Point 3 Child B must exit 137, got {:?}",
+                        out_b.status
+                    );
+
+                    // Child C: Secondary recovery completing the process -> exit 0
+                    let out_c = run_worker("recover_normal", &point_dir, &orig_fname);
+                    assert_eq!(
+                        out_c.status.code(),
+                        Some(0),
+                        "Point 3 Child C must exit 0, got {:?}",
+                        out_c.status
+                    );
+
+                    // Parent verification
+                    assert_eq!(fs::read(&orig_file).unwrap(), staged_payload);
+                    let hist_mgr = crate::history::get_history_manager();
+                    let items = hist_mgr.load_all_session_items().unwrap();
+                    let orig_canon = orig_file
+                        .canonicalize()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string();
+                    let rec_item = items
+                        .iter()
+                        .find(|i| i.original_snapshot.canonical_path == orig_canon)
+                        .expect("Item must exist in session DB");
+                    assert_eq!(rec_item.status, StageStatus::Conflict);
+
+                    let marker = format!(".cuddle_reflect_{}", rec_item.stage_id);
+                    let quarantine = fs::read_dir(&point_dir)
+                        .unwrap()
+                        .filter_map(|e| e.ok())
+                        .find(|e| e.file_name().to_string_lossy().contains(&marker))
+                        .expect("Quarantine file must be preserved");
+                    assert_eq!(fs::read(quarantine.path()).unwrap(), orig_payload);
+
+                    let _ = hist_mgr.remove_session_item(&rec_item.stage_id);
+                }
+                "point4" => {
+                    // Child A: Initial reflection up to Crash Point 2 (AfterRenameExchange) -> _exit(137)
+                    let out_a = run_worker("reflect_point2", &point_dir, &orig_fname);
+                    assert_eq!(
+                        out_a.status.code(),
+                        Some(137),
+                        "Point 4 Child A must exit 137, got {:?}",
+                        out_a.status
+                    );
+
+                    // Child B: Recovery interrupted at Crash Point 4 (AfterRecoveryStatusSaved) -> _exit(137)
+                    let out_b = run_worker("recover_point4", &point_dir, &orig_fname);
+                    assert_eq!(
+                        out_b.status.code(),
+                        Some(137),
+                        "Point 4 Child B must exit 137, got {:?}",
+                        out_b.status
+                    );
+
+                    // Child C: Secondary recovery completing the process -> exit 0
+                    let out_c = run_worker("recover_normal", &point_dir, &orig_fname);
+                    assert_eq!(
+                        out_c.status.code(),
+                        Some(0),
+                        "Point 4 Child C must exit 0, got {:?}",
+                        out_c.status
+                    );
+
+                    // Parent verification
+                    assert_eq!(fs::read(&orig_file).unwrap(), staged_payload);
+                    let hist_mgr = crate::history::get_history_manager();
+                    let items = hist_mgr.load_all_session_items().unwrap();
+                    let orig_canon = orig_file
+                        .canonicalize()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string();
+                    let rec_item = items
+                        .iter()
+                        .find(|i| i.original_snapshot.canonical_path == orig_canon)
+                        .expect("Item must exist in session DB");
+                    assert_eq!(rec_item.status, StageStatus::Conflict);
+
+                    let marker = format!(".cuddle_reflect_{}", rec_item.stage_id);
+                    let quarantine = fs::read_dir(&point_dir)
+                        .unwrap()
+                        .filter_map(|e| e.ok())
+                        .find(|e| e.file_name().to_string_lossy().contains(&marker))
+                        .expect("Quarantine file must be preserved");
+                    assert_eq!(fs::read(quarantine.path()).unwrap(), orig_payload);
+
+                    let _ = hist_mgr.remove_session_item(&rec_item.stage_id);
                 }
                 "point5" => {
-                    // Strict Conflict requirement for Crash Point 5
-                    assert_eq!(rec_item.status, StageStatus::Conflict);
+                    // Child A: Initial reflection up to Crash Point 2 (AfterRenameExchange) -> _exit(137)
+                    let out_a = run_worker("reflect_point2", &point_dir, &orig_fname);
+                    assert_eq!(
+                        out_a.status.code(),
+                        Some(137),
+                        "Point 5 Child A must exit 137, got {:?}",
+                        out_a.status
+                    );
+
+                    // Parent simulates concurrent write from open FD before recovery starts
+                    let quarantine = fs::read_dir(&point_dir)
+                        .unwrap()
+                        .filter_map(|e| e.ok())
+                        .find(|e| e.file_name().to_string_lossy().contains(".cuddle_reflect_"))
+                        .expect("Quarantine file must exist after swap");
+                    fs::write(quarantine.path(), external_payload).unwrap();
+
+                    // Child B: Recovery up to Crash Point 5 (AfterQuarantinePreserved) -> _exit(137)
+                    let out_b = run_worker("recover_point5", &point_dir, &orig_fname);
+                    assert_eq!(
+                        out_b.status.code(),
+                        Some(137),
+                        "Point 5 Child B must exit 137, got {:?}",
+                        out_b.status
+                    );
+
+                    // Child C: Secondary recovery completing the process -> exit 0
+                    let out_c = run_worker("recover_normal", &point_dir, &orig_fname);
+                    assert_eq!(
+                        out_c.status.code(),
+                        Some(0),
+                        "Point 5 Child C must exit 0, got {:?}",
+                        out_c.status
+                    );
+
+                    // Parent verification
                     assert_eq!(fs::read(&orig_file).unwrap(), staged_payload);
+                    let hist_mgr = crate::history::get_history_manager();
+                    let items = hist_mgr.load_all_session_items().unwrap();
+                    let orig_canon = orig_file
+                        .canonicalize()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string();
+                    let rec_item = items
+                        .iter()
+                        .find(|i| i.original_snapshot.canonical_path == orig_canon)
+                        .expect("Item must exist in session DB");
+                    assert_eq!(rec_item.status, StageStatus::Conflict);
+
                     let backup_file = fs::read_dir(&point_dir)
                         .unwrap()
                         .filter_map(|e| e.ok())
                         .find(|e| {
                             let name = e.file_name().to_string_lossy().to_string();
-                            name.contains(&rec_item.stage_id) && name.contains(".concurrent_write")
+                            is_concurrent_write_backup_for_stage(&name, &rec_item.stage_id)
                         })
                         .expect("Concurrent write backup file associated with stage_id must exist");
                     assert_eq!(fs::read(backup_file.path()).unwrap(), external_payload);
@@ -6478,15 +6765,355 @@ mod tests {
                         .expect("Item must be recovered on second restore");
                     assert_eq!(rec_item2.status, StageStatus::Conflict);
                     assert_eq!(fs::read(backup_file.path()).unwrap(), external_payload);
+
+                    let _ = hist_mgr.remove_session_item(&rec_item.stage_id);
                 }
                 _ => unreachable!(),
             }
-
-            let hist_mgr = crate::history::get_history_manager();
-            let _ = hist_mgr.remove_session_item(&rec_item.stage_id);
         }
 
         let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_wal_recovery_case_b_concurrent_write_backup_marks_conflict() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(
+            ".cuddle_test_case_b_cw_conflict_{}",
+            Uuid::new_v4()
+        ));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("orig.txt");
+        let orig_content = b"Original pristine content";
+        fs::write(&orig_file, orig_content).unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        mgr.write_staged_text(&staged.stage_id, "Candidate content")
+            .unwrap();
+
+        let mut item = staged.clone();
+        item.status = StageStatus::Applying;
+        let hist_mgr = crate::history::get_history_manager();
+        hist_mgr.save_session_item(&item).unwrap();
+
+        // Create a matching .concurrent_write backup for this stage
+        let backup_path = test_dir.join(format!(
+            "orig_{}_20261101_120000_{}.concurrent_write.txt",
+            Uuid::new_v4(),
+            staged.stage_id
+        ));
+        let backup_content = b"External write content preserved";
+        fs::write(&backup_path, backup_content).unwrap();
+
+        // CASE B recovery: orig matches original snapshot, but matching .concurrent_write exists
+        let mgr_rec = WorkspaceManager::new();
+        let restored = mgr_rec.restore_session().unwrap();
+        let rec_item = restored
+            .iter()
+            .find(|i| i.stage_id == staged.stage_id)
+            .unwrap();
+
+        // Must be marked Conflict!
+        assert_eq!(rec_item.status, StageStatus::Conflict);
+        // Backup must NOT be deleted or moved or modified
+        assert!(backup_path.exists());
+        assert_eq!(fs::read(&backup_path).unwrap(), backup_content);
+        // Original must be untouched
+        assert_eq!(fs::read(&orig_file).unwrap(), orig_content);
+
+        let _ = hist_mgr.remove_session_item(&staged.stage_id);
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_wal_recovery_case_b_different_stage_concurrent_write_does_not_falsely_conflict() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_case_b_diff_stage_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("orig.txt");
+        let orig_content = b"Original pristine content";
+        fs::write(&orig_file, orig_content).unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        mgr.write_staged_text(&staged.stage_id, "Candidate content")
+            .unwrap();
+
+        let mut item = staged.clone();
+        item.status = StageStatus::Applying;
+        let hist_mgr = crate::history::get_history_manager();
+        hist_mgr.save_session_item(&item).unwrap();
+
+        // Create a .concurrent_write backup for a completely DIFFERENT stage_id
+        let other_stage_id = format!("different_stage_{}", Uuid::new_v4());
+        let other_backup_path = test_dir.join(format!(
+            "orig_20261101_120000_{}.concurrent_write.txt",
+            other_stage_id
+        ));
+        let other_content = b"Unrelated other stage content";
+        fs::write(&other_backup_path, other_content).unwrap();
+
+        // Also test potential substring false positive: other stage containing current stage as substring
+        let super_stage_id = format!("{}_extra_suffix", staged.stage_id);
+        let super_backup_path = test_dir.join(format!(
+            "orig_20261101_120000_{}.concurrent_write.txt",
+            super_stage_id
+        ));
+        fs::write(&super_backup_path, b"Super string stage content").unwrap();
+
+        // Recovery: orig matches original snapshot, no backups match current stage
+        let mgr_rec = WorkspaceManager::new();
+        let restored = mgr_rec.restore_session().unwrap();
+        let rec_item = restored
+            .iter()
+            .find(|i| i.stage_id == staged.stage_id)
+            .unwrap();
+
+        // Must NOT falsely conflict! Should cleanly roll back to Modified!
+        assert_eq!(rec_item.status, StageStatus::Modified);
+        // The unrelated backups must not be deleted or touched
+        assert!(other_backup_path.exists());
+        assert_eq!(fs::read(&other_backup_path).unwrap(), other_content);
+        assert!(super_backup_path.exists());
+
+        let _ = hist_mgr.remove_session_item(&staged.stage_id);
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_wal_recovery_case_b_multiple_concurrent_write_backups_preserves_all_and_marks_conflict()
+    {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_case_b_multi_cw_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("orig.txt");
+        let orig_content = b"Original pristine content";
+        fs::write(&orig_file, orig_content).unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        mgr.write_staged_text(&staged.stage_id, "Candidate content")
+            .unwrap();
+
+        let mut item = staged.clone();
+        item.status = StageStatus::Applying;
+        let hist_mgr = crate::history::get_history_manager();
+        hist_mgr.save_session_item(&item).unwrap();
+
+        // Create 2 matching .concurrent_write backups for this stage (e.g. counter 0 and counter 1)
+        let b1 = test_dir.join(format!(
+            "orig_20261101_120000_{}.concurrent_write.txt",
+            staged.stage_id
+        ));
+        let b2 = test_dir.join(format!(
+            "orig_20261101_120000_{}_1.concurrent_write.txt",
+            staged.stage_id
+        ));
+        let c1 = b"Backup 1 payload";
+        let c2 = b"Backup 2 payload";
+        fs::write(&b1, c1).unwrap();
+        fs::write(&b2, c2).unwrap();
+
+        let mgr_rec = WorkspaceManager::new();
+        let restored = mgr_rec.restore_session().unwrap();
+        let rec_item = restored
+            .iter()
+            .find(|i| i.stage_id == staged.stage_id)
+            .unwrap();
+
+        // Must be marked Conflict
+        assert_eq!(rec_item.status, StageStatus::Conflict);
+        // Both backups must be preserved intact!
+        assert!(b1.exists());
+        assert_eq!(fs::read(&b1).unwrap(), c1);
+        assert!(b2.exists());
+        assert_eq!(fs::read(&b2).unwrap(), c2);
+
+        let _ = hist_mgr.remove_session_item(&staged.stage_id);
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_wal_recovery_case_b_sqlite_save_failure_keeps_applying() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_case_b_db_fail_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("orig.txt");
+        let orig_content = b"Original pristine content";
+        fs::write(&orig_file, orig_content).unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        mgr.write_staged_text(&staged.stage_id, "Candidate content")
+            .unwrap();
+
+        let mut item = staged.clone();
+        item.status = StageStatus::Applying;
+        let hist_mgr = crate::history::get_history_manager();
+        hist_mgr.save_session_item(&item).unwrap();
+
+        // Create matching concurrent write backup
+        let b = test_dir.join(format!(
+            "orig_20261101_120000_{}.concurrent_write.txt",
+            staged.stage_id
+        ));
+        fs::write(&b, b"Backup payload").unwrap();
+
+        // 1. Simulate DB failure during restore
+        test_hooks::set_fail_restore_db(true);
+        let mgr_fail = WorkspaceManager::new();
+        let _ = mgr_fail.restore_session();
+        test_hooks::set_fail_restore_db(false);
+
+        // Verify status in DB is kept as Applying for retry
+        let loaded = hist_mgr.load_all_session_items().unwrap();
+        let item_db = loaded
+            .iter()
+            .find(|i| i.stage_id == staged.stage_id)
+            .unwrap();
+        assert_eq!(
+            item_db.status,
+            StageStatus::Applying,
+            "Must remain Applying so retry is possible"
+        );
+        assert!(b.exists(), "Backup must not be deleted on DB failure");
+
+        // 2. Restart with DB operational -> successfully resolves as Conflict
+        let mgr_rec = WorkspaceManager::new();
+        let restored = mgr_rec.restore_session().unwrap();
+        let rec_item = restored
+            .iter()
+            .find(|i| i.stage_id == staged.stage_id)
+            .unwrap();
+        assert_eq!(rec_item.status, StageStatus::Conflict);
+        assert!(b.exists());
+
+        let _ = hist_mgr.remove_session_item(&staged.stage_id);
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_wal_recovery_case_b_double_restore_idempotent() {
+        let _guard = lock_test_mutex();
+        let home = dirs::home_dir().expect("Home must exist");
+        let test_dir = home.join(format!(".cuddle_test_case_b_idempotent_{}", Uuid::new_v4()));
+        fs::create_dir_all(&test_dir).unwrap();
+
+        let orig_file = test_dir.join("orig.txt");
+        let orig_content = b"Original pristine content";
+        fs::write(&orig_file, orig_content).unwrap();
+
+        let mgr = WorkspaceManager::new();
+        let staged = mgr.stage_file(&orig_file).unwrap();
+        mgr.write_staged_text(&staged.stage_id, "Candidate content")
+            .unwrap();
+
+        let mut item = staged.clone();
+        item.status = StageStatus::Applying;
+        let hist_mgr = crate::history::get_history_manager();
+        hist_mgr.save_session_item(&item).unwrap();
+
+        let b = test_dir.join(format!(
+            "orig_20261101_120000_{}.concurrent_write.txt",
+            staged.stage_id
+        ));
+        let b_payload = b"Important external payload";
+        fs::write(&b, b_payload).unwrap();
+
+        // First restore: marks Conflict
+        let mgr_1 = WorkspaceManager::new();
+        let r1 = mgr_1.restore_session().unwrap();
+        let item1 = r1.iter().find(|i| i.stage_id == staged.stage_id).unwrap();
+        assert_eq!(item1.status, StageStatus::Conflict);
+        assert_eq!(fs::read(&b).unwrap(), b_payload);
+
+        // Second restore: must be idempotent, remain Conflict, backup intact
+        let mgr_2 = WorkspaceManager::new();
+        let r2 = mgr_2.restore_session().unwrap();
+        let item2 = r2.iter().find(|i| i.stage_id == staged.stage_id).unwrap();
+        assert_eq!(item2.status, StageStatus::Conflict);
+        assert_eq!(fs::read(&b).unwrap(), b_payload);
+
+        let _ = hist_mgr.remove_session_item(&staged.stage_id);
+        let _ = fs::remove_dir_all(&test_dir);
+    }
+
+    #[test]
+    fn test_is_concurrent_write_backup_for_stage_precision() {
+        // Direct matching
+        assert!(is_concurrent_write_backup_for_stage(
+            "file_20261101_120000_stage1.concurrent_write.txt",
+            "stage1"
+        ));
+        assert!(is_concurrent_write_backup_for_stage(
+            "file_20261101_120000_stage1.concurrent_write",
+            "stage1"
+        ));
+        assert!(is_concurrent_write_backup_for_stage(
+            "file.stage1.concurrent_write",
+            "stage1"
+        ));
+        assert!(is_concurrent_write_backup_for_stage(
+            "stage1.concurrent_write",
+            "stage1"
+        ));
+
+        // Retry counter matching
+        assert!(is_concurrent_write_backup_for_stage(
+            "file_20261101_120000_stage1_1.concurrent_write.txt",
+            "stage1"
+        ));
+        assert!(is_concurrent_write_backup_for_stage(
+            "file_20261101_120000_stage1_25.concurrent_write",
+            "stage1"
+        ));
+
+        // False positive prevention: substring stage_id
+        assert!(!is_concurrent_write_backup_for_stage(
+            "file_20261101_120000_stage12.concurrent_write.txt",
+            "stage1"
+        ));
+        assert!(!is_concurrent_write_backup_for_stage(
+            "file_20261101_120000_stage123.concurrent_write",
+            "stage12"
+        ));
+        assert!(is_concurrent_write_backup_for_stage(
+            "file_20261101_120000_stage12.concurrent_write.txt",
+            "stage12"
+        ));
+
+        // False positive prevention: stem containing stage name
+        assert!(!is_concurrent_write_backup_for_stage(
+            "stage1_report_20261101_120000_stage2.concurrent_write.txt",
+            "stage1"
+        ));
+        assert!(is_concurrent_write_backup_for_stage(
+            "stage1_report_20261101_120000_stage2.concurrent_write.txt",
+            "stage2"
+        ));
+
+        // False positive prevention: unrelated files or empty
+        assert!(!is_concurrent_write_backup_for_stage(
+            "regular_file.txt",
+            "stage1"
+        ));
+        assert!(!is_concurrent_write_backup_for_stage(
+            "file_stage1.concurrent_writers",
+            "stage1"
+        ));
+        assert!(!is_concurrent_write_backup_for_stage(
+            "file.concurrent_write",
+            ""
+        ));
     }
 
     #[test]

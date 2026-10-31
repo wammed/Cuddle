@@ -711,6 +711,68 @@ describe("BottomTabPanel & Diff Operations (Phase 4.2)", () => {
     expect(screen.getByText("PNG")).toBeDefined();
     expect(screen.getByAltText("test_diagram.png")).toBeDefined();
   });
+
+  it("retains fixed header bar with markdown view mode toggle and separate scrollable body in preview tab", async () => {
+    await act(async () => {
+      await changeLanguage("ja");
+    });
+
+    const markdownInfo: ExtractedTextDto = {
+      item_id: "md-1",
+      raw_base64: "L2hvbWUvc3VzaWUvUkVBRE1FLm1k",
+      display_name: "README.md",
+      text: "# Project Title\n\nThis is long markdown content.\n\n- item 1\n- item 2\n- item 3\n",
+      encoding_used: "UTF-8",
+      extracted_chars: 85,
+      tier_used: "tier1_direct",
+      truncated: false,
+      warning: null,
+    };
+
+    const { container } = render(
+      <BottomTabPanel
+        selectedItem={null}
+        extractedInfo={markdownInfo}
+        imagePreviewInfo={null}
+        appConfig={null}
+        logs={[]}
+        history={[]}
+        onClose={vi.fn()}
+      />
+    );
+
+    // Verify outer preview content class is applied for zero-padding sticky layout
+    const contentPane = container.querySelector(".bottom-tab-content");
+    expect(contentPane?.classList.contains("is-preview-active")).toBe(true);
+
+    // Verify header bar exists with filename and badges
+    const headerBar = container.querySelector(".rich-preview-bar");
+    expect(headerBar).not.toBeNull();
+    expect(screen.getByText("README.md")).toBeDefined();
+    expect(screen.getByText("MARKDOWN")).toBeDefined();
+
+    // Verify markdown rendering toggle switch is inside the sticky header bar
+    const modeToggle = headerBar?.querySelector(".preview-mode-toggle");
+    expect(modeToggle).not.toBeNull();
+    const modeBtns = modeToggle?.querySelectorAll("button");
+    expect(modeBtns?.length).toBe(2);
+    const renderedToggleBtn = modeBtns?.[0];
+    const sourceToggleBtn = modeBtns?.[1];
+    expect(renderedToggleBtn?.classList.contains("active")).toBe(true);
+
+    // Verify scrollable body exists separately from the sticky header bar
+    const scrollBody = container.querySelector(".rich-preview-body");
+    expect(scrollBody).not.toBeNull();
+    expect(scrollBody?.querySelector(".markdown-rendered-view")).not.toBeNull();
+
+    // Toggle to source mode
+    if (sourceToggleBtn) {
+      fireEvent.click(sourceToggleBtn);
+      expect(sourceToggleBtn.classList.contains("active")).toBe(true);
+      expect(scrollBody?.querySelector(".code-highlighted-view")).not.toBeNull();
+    }
+  });
 });
+
 
 

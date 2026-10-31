@@ -99,6 +99,16 @@ export function App() {
   const [securityWarningTestOpen, setSecurityWarningTestOpen] = useState(false);
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [showHidden, setShowHidden] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("cuddle:show-hidden");
+      return saved !== null ? saved === "true" : true;
+    } catch {
+      return true;
+    }
+  });
+  const showHiddenRef = useRef(showHidden);
+  showHiddenRef.current = showHidden;
 
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [bottomVisible, setBottomVisible] = useState(true);
@@ -190,8 +200,9 @@ export function App() {
 
   // Scans a directory via Tauri IPC
   const scanDirectory = useCallback(
-    async (target: string) => {
+    async (target: string, overrideHidden?: boolean) => {
       setIsScanning(true);
+      const includeHidden = overrideHidden !== undefined ? overrideHidden : showHiddenRef.current;
       try {
         // Resolve target to canonical path, raw_base64 and parent
         const resolved = await invoke<ResolvedPathDto>("resolve_path", { input: target });
@@ -199,7 +210,7 @@ export function App() {
           pathBase64: resolved.raw_base64,
           options: {
             max_depth: 1,
-            include_hidden: false,
+            include_hidden: includeHidden,
             follow_symlinks: false,
           },
         });
@@ -221,6 +232,39 @@ export function App() {
     },
     [addLog]
   );
+
+  const toggleShowHidden = useCallback(() => {
+    setShowHidden((prev) => {
+      const next = !prev;
+      showHiddenRef.current = next;
+      try {
+        localStorage.setItem("cuddle:show-hidden", String(next));
+      } catch {
+        // ignore
+      }
+      if (currentPath) {
+        scanDirectory(currentPath, next);
+      }
+      addLog(`Dot files & directories ${next ? "shown" : "hidden"}`);
+      return next;
+    });
+  }, [currentPath, scanDirectory, addLog]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "h") {
+        const activeEl = document.activeElement;
+        const isInput =
+          activeEl instanceof HTMLInputElement || activeEl instanceof HTMLTextAreaElement;
+        if (!isInput) {
+          e.preventDefault();
+          toggleShowHidden();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [toggleShowHidden]);
 
   const handleNavigateParent = useCallback(() => {
     if (parentPath) {
@@ -1160,6 +1204,8 @@ export function App() {
                   subdirs={subdirs}
                   isScanning={isScanning}
                   onRefresh={() => scanDirectory(currentPath)}
+                  showHidden={showHidden}
+                  onToggleShowHidden={toggleShowHidden}
                 />
               </Panel>
             </Group>
@@ -1202,6 +1248,8 @@ export function App() {
                       isScanning={isScanning}
                       onRefresh={() => scanDirectory(currentPath)}
                       density={density}
+                      showHidden={showHidden}
+                      onToggleShowHidden={toggleShowHidden}
                     />
                   </Panel>
 

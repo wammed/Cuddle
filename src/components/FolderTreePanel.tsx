@@ -1,4 +1,4 @@
-import { Folder, HardDrive, Home, FolderTree, RefreshCw, ArrowUp } from "lucide-react";
+import { Folder, HardDrive, Home, FolderTree, RefreshCw, ArrowUp, Eye, EyeOff } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
 
@@ -11,6 +11,8 @@ interface FolderTreePanelProps {
   subdirs: FileItem[];
   isScanning: boolean;
   onRefresh: () => void;
+  showHidden?: boolean;
+  onToggleShowHidden?: () => void;
 }
 
 export function FolderTreePanel({
@@ -22,6 +24,8 @@ export function FolderTreePanel({
   subdirs,
   isScanning,
   onRefresh,
+  showHidden = false,
+  onToggleShowHidden,
 }: FolderTreePanelProps) {
   const { t } = useTranslation();
 
@@ -33,14 +37,29 @@ export function FolderTreePanel({
           <h3>{t("panels.tree_title")}</h3>
         </div>
 
-        <button
-          type="button"
-          className={`panel-header-btn ${isScanning ? "spinning" : ""}`}
-          onClick={onRefresh}
-          title={t("browser.refresh")}
-        >
-          <RefreshCw size={13} />
-        </button>
+        <div className="panel-header-actions">
+          {onToggleShowHidden && (
+            <button
+              type="button"
+              className={`panel-header-btn toggle-hidden-btn ${showHidden ? "active" : ""}`}
+              onClick={onToggleShowHidden}
+              title={showHidden ? t("tree.hide_hidden") : t("tree.show_hidden")}
+              aria-label={showHidden ? t("tree.hide_hidden") : t("tree.show_hidden")}
+              aria-pressed={showHidden}
+            >
+              {showHidden ? <Eye size={13} /> : <EyeOff size={13} />}
+            </button>
+          )}
+
+          <button
+            type="button"
+            className={`panel-header-btn ${isScanning ? "spinning" : ""}`}
+            onClick={onRefresh}
+            title={t("browser.refresh")}
+          >
+            <RefreshCw size={13} />
+          </button>
+        </div>
       </div>
 
       <div className="tree-quick-section">
@@ -85,17 +104,20 @@ export function FolderTreePanel({
         </div>
 
         <div className="tree-subdirs-scroll">
-          {subdirs.map((dir) => (
-            <div
-              key={dir.item_id}
-              className="tree-node-item"
-              onClick={() => onNavigatePath(dir.raw_base64)}
-              title={dir.display_name}
-            >
-              <Folder size={14} className="node-folder-icon" />
-              <span className="node-name">{dir.display_name}</span>
-            </div>
-          ))}
+          {subdirs.map((dir) => {
+            const isDotDir = dir.display_name.startsWith(".");
+            return (
+              <div
+                key={dir.item_id}
+                className={`tree-node-item ${isDotDir ? "is-dot-dir" : ""}`}
+                onClick={() => onNavigatePath(dir.raw_base64)}
+                title={dir.display_name}
+              >
+                <Folder size={14} className="node-folder-icon" />
+                <span className="node-name">{dir.display_name}</span>
+              </div>
+            );
+          })}
           {subdirs.length === 0 && !isScanning && (
             <p className="tree-empty-note">-</p>
           )}

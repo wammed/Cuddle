@@ -758,7 +758,7 @@ export function BottomTabPanel({
         </button>
       </div>
 
-      <div className="bottom-tab-content">
+      <div className={`bottom-tab-content ${activeTab === "preview" ? "is-preview-active" : ""}`}>
         {activeTab === "preview" && (
           <div className="tab-preview-content">
             {imagePreviewInfo ? (

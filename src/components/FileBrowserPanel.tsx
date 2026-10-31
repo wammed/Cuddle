@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { FolderOpen, RefreshCw, CornerDownRight, ListPlus, ArrowUp, ChevronRight, Edit3 } from "lucide-react";
+import { FolderOpen, RefreshCw, CornerDownRight, ListPlus, ArrowUp, ChevronRight, Edit3, Eye, EyeOff } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { FileItem } from "../types/FileItem";
 import type { Density } from "../types/Density";
@@ -22,6 +22,8 @@ interface FileBrowserPanelProps {
   isScanning: boolean;
   onRefresh: () => void;
   density?: Density;
+  showHidden?: boolean;
+  onToggleShowHidden?: () => void;
 }
 
 export function FileBrowserPanel({
@@ -41,6 +43,8 @@ export function FileBrowserPanel({
   isScanning,
   onRefresh,
   density = "normal",
+  showHidden = false,
+  onToggleShowHidden,
 }: FileBrowserPanelProps) {
   const { t } = useTranslation();
   const [isEditingPath, setIsEditingPath] = useState(false);
@@ -111,6 +115,20 @@ export function FileBrowserPanel({
             <ListPlus size={13} />
             <span>{t("browser.stage_all")}</span>
           </button>
+
+          {onToggleShowHidden && (
+            <button
+              type="button"
+              className={`panel-header-btn-subtle toggle-hidden-btn ${showHidden ? "active" : ""}`}
+              onClick={onToggleShowHidden}
+              title={showHidden ? t("browser.hide_hidden") : t("browser.show_hidden")}
+              aria-label={showHidden ? t("browser.hide_hidden") : t("browser.show_hidden")}
+              aria-pressed={showHidden}
+            >
+              {showHidden ? <Eye size={13} /> : <EyeOff size={13} />}
+              <span>{showHidden ? t("browser.dot_files_active") : t("browser.dot_files")}</span>
+            </button>
+          )}
 
           <button
             type="button"

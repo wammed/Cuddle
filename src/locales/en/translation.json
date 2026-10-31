@@ -233,14 +233,20 @@
     "items_count": "{{count}} item(s)",
     "selected_count": "{{count}} selected",
     "refresh": "Refresh",
-    "click_edit_path": "Click to edit path"
+    "click_edit_path": "Click to edit path",
+    "show_hidden": "Show hidden items (Ctrl+H)",
+    "hide_hidden": "Hide hidden items (Ctrl+H)",
+    "dot_files": "Hidden",
+    "dot_files_active": "Hidden: Shown"
   },
   "tree": {
     "home": "Home (~)",
     "root": "Root (/)",
     "current": "Current (.)",
     "parent_dir": "Parent Dir (..)",
-    "quick_access": "Quick Access"
+    "quick_access": "Quick Access",
+    "show_hidden": "Show hidden directories (Ctrl+H)",
+    "hide_hidden": "Hide hidden directories (Ctrl+H)"
   },
   "details": {
     "no_selection": "No item selected",

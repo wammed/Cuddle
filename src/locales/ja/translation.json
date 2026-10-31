@@ -233,14 +233,20 @@
     "items_count": "{{count}} 項目",
     "selected_count": "{{count}} 項目選択中",
     "refresh": "更新",
-    "click_edit_path": "クリックしてパスを編集"
+    "click_edit_path": "クリックしてパスを編集",
+    "show_hidden": "隠し項目を表示 (Ctrl+H)",
+    "hide_hidden": "隠し項目を非表示 (Ctrl+H)",
+    "dot_files": "隠し項目",
+    "dot_files_active": "隠し項目: 表示中"
   },
   "tree": {
     "home": "ホーム (~)",
     "root": "ルート (/)",
     "current": "カレント (.)",
     "parent_dir": "親ディレクトリ (..)",
-    "quick_access": "クイックアクセス"
+    "quick_access": "クイックアクセス",
+    "show_hidden": "隠しディレクトリを表示 (Ctrl+H)",
+    "hide_hidden": "隠しディレクトリを非表示 (Ctrl+H)"
   },
   "details": {
     "no_selection": "アイテムが選択されていません",

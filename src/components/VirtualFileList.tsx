@@ -181,11 +181,12 @@ export function VirtualFileList({
           const item = items[virtualRow.index];
           const isSelected = item.item_id === selectedId;
           const isNonUtf8 = item.display_name.includes("\uFFFD");
+          const isDotItem = item.display_name.startsWith(".");
 
           return (
             <div
               key={item.item_id}
-              className={`virtual-row-item density-${density} ${isSelected ? "selected" : ""} ${isNonUtf8 ? "has-warning" : ""} ${!isWorkspace && !item.is_dir ? "is-draggable" : ""}`}
+              className={`virtual-row-item density-${density} ${isSelected ? "selected" : ""} ${isNonUtf8 ? "has-warning" : ""} ${isDotItem ? "is-dot-item" : ""} ${!isWorkspace && !item.is_dir ? "is-draggable" : ""}`}
               style={{
                 position: "absolute",
                 top: 0,
@@ -221,7 +222,7 @@ export function VirtualFileList({
 
               <div className="row-main-content">
                 <div className="row-line-primary">
-                  <span className="file-name-text" title={item.display_name}>
+                  <span className={`file-name-text ${isDotItem ? "is-dot-name" : ""}`} title={item.display_name}>
                     {item.display_name}
                   </span>
                   {isNonUtf8 && <span className="warning-pill-sm">Non-UTF-8</span>}

@@ -26,6 +26,7 @@ import {
   saveSnippets,
   getAvailableSnippetLanguages,
   getCommentPrefixForLanguage,
+  normalizeSnippetLanguageKey,
 } from "../utils/snippets";
 import { SnippetManagerModal } from "./SnippetManagerModal";
 
@@ -70,7 +71,9 @@ export function QuickEditorModal({
   }, [stagedItem]);
 
   const currentSnippets = useMemo(() => {
-    return snippets.filter((s) => s.language === selectedSnippetLang);
+    return snippets.filter(
+      (s) => normalizeSnippetLanguageKey(s.language) === selectedSnippetLang
+    );
   }, [snippets, selectedSnippetLang]);
 
   const availableLanguages = useMemo(() => {

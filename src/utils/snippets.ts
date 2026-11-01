@@ -31,6 +31,7 @@ export const KNOWN_LANGUAGES_MAP: Record<
   html: { label: "HTML", badge: "HTML", syntaxLang: "html", commentPrefix: "<!-- " },
   css: { label: "CSS", badge: "CSS", syntaxLang: "css", commentPrefix: "/* " },
   markdown: { label: "Markdown", badge: "MD", syntaxLang: "markdown", commentPrefix: "# " },
+  cpp: { label: "C++", badge: "CPP", syntaxLang: "cpp", commentPrefix: "// " },
 };
 
 export const BASE_SNIPPET_LANGUAGES: SnippetLanguageOption[] = [
@@ -47,43 +48,135 @@ export const BASE_SNIPPET_LANGUAGES: SnippetLanguageOption[] = [
 export const SNIPPET_LANGUAGES = BASE_SNIPPET_LANGUAGES;
 
 /**
+ * Normalizes snippet language keys to canonical forms to avoid duplicate
+ * dropdown entries caused by case variations, spaces, or common aliases.
+ *
+ * Examples:
+ *  - "plain text", "plain_text", "plain-text", "text", "txt" -> "plaintext"
+ *  - "json", "jsonc" -> "jsonc"
+ *  - "c++", "cpp" -> "cpp"
+ *  - "py", "python" -> "python"
+ *  - "rs", "rust" -> "rust"
+ *  - "ts", "typescript" -> "typescript"
+ *  - "js", "javascript" -> "javascript"
+ *  - "md", "markdown" -> "markdown"
+ *  - "sh", "shell", "bash" -> "bash"
+ */
+export function normalizeSnippetLanguageKey(
+  lang: string | null | undefined
+): string {
+  if (!lang) return "plaintext";
+  const trimmed = lang.trim().toLowerCase();
+
+  // Plain text aliases
+  if (
+    trimmed === "plain text" ||
+    trimmed === "plain_text" ||
+    trimmed === "plain-text" ||
+    trimmed === "text" ||
+    trimmed === "txt" ||
+    trimmed === "plaintext"
+  ) {
+    return "plaintext";
+  }
+
+  // JSON / JSONC aliases
+  if (trimmed === "json" || trimmed === "jsonc") {
+    return "jsonc";
+  }
+
+  // C++ aliases
+  if (trimmed === "c++" || trimmed === "cpp") {
+    return "cpp";
+  }
+
+  // Python aliases
+  if (trimmed === "py" || trimmed === "python") {
+    return "python";
+  }
+
+  // Rust aliases
+  if (trimmed === "rs" || trimmed === "rust") {
+    return "rust";
+  }
+
+  // TypeScript aliases
+  if (trimmed === "ts" || trimmed === "typescript") {
+    return "typescript";
+  }
+
+  // JavaScript aliases
+  if (trimmed === "js" || trimmed === "javascript") {
+    return "javascript";
+  }
+
+  // Markdown aliases
+  if (trimmed === "md" || trimmed === "markdown") {
+    return "markdown";
+  }
+
+  // Shell / Bash aliases
+  if (trimmed === "sh" || trimmed === "shell" || trimmed === "bash") {
+    return "bash";
+  }
+
+  return trimmed;
+}
+
+/**
  * Returns available languages dynamically merged from base languages, known languages,
  * and any custom language found in registered snippets (e.g. python, rust, etc.).
+ *
+ * Guarantees no duplicate categories exist by matching canonical keys and lowercased labels.
  */
 export function getAvailableSnippetLanguages(
   snippets: EditorSnippetDto[] = []
 ): SnippetLanguageOption[] {
-  const seen = new Set<string>();
+  const seenKeys = new Set<string>();
+  const seenLabels = new Set<string>();
   const result: SnippetLanguageOption[] = [];
 
   // Always include the 8 base required languages first
   for (const base of BASE_SNIPPET_LANGUAGES) {
-    seen.add(base.key);
-    result.push(base);
+    const normKey = normalizeSnippetLanguageKey(base.key);
+    seenKeys.add(normKey);
+    seenLabels.add(base.label.toLowerCase());
+    result.push({ ...base, key: normKey });
   }
 
   // Include any other languages present in the snippets collection (user-added or config.toml)
   for (const s of snippets) {
-    const key = s.language?.trim().toLowerCase();
-    if (key && !seen.has(key)) {
-      seen.add(key);
-      if (KNOWN_LANGUAGES_MAP[key]) {
-        result.push({
-          key,
-          label: KNOWN_LANGUAGES_MAP[key].label,
-          badge: KNOWN_LANGUAGES_MAP[key].badge,
-          syntaxLang: KNOWN_LANGUAGES_MAP[key].syntaxLang,
-        });
-      } else {
-        const capitalized = key.charAt(0).toUpperCase() + key.slice(1);
-        result.push({
-          key,
-          label: capitalized,
-          badge: key.slice(0, 4).toUpperCase(),
-          syntaxLang: "plaintext",
-        });
-      }
+    const normKey = normalizeSnippetLanguageKey(s.language);
+    if (!normKey || seenKeys.has(normKey)) {
+      continue;
     }
+
+    let option: SnippetLanguageOption;
+    if (KNOWN_LANGUAGES_MAP[normKey]) {
+      option = {
+        key: normKey,
+        label: KNOWN_LANGUAGES_MAP[normKey].label,
+        badge: KNOWN_LANGUAGES_MAP[normKey].badge,
+        syntaxLang: KNOWN_LANGUAGES_MAP[normKey].syntaxLang,
+      };
+    } else {
+      const capitalized = normKey.charAt(0).toUpperCase() + normKey.slice(1);
+      option = {
+        key: normKey,
+        label: capitalized,
+        badge: normKey.slice(0, 4).toUpperCase(),
+        syntaxLang: "plaintext",
+      };
+    }
+
+    // Guard against duplicate display labels (e.g. "Plain text" vs "Plain Text")
+    if (seenLabels.has(option.label.toLowerCase())) {
+      continue;
+    }
+
+    seenKeys.add(normKey);
+    seenLabels.add(option.label.toLowerCase());
+    result.push(option);
   }
 
   return result;
@@ -97,7 +190,7 @@ export function getCommentPrefixForLanguage(langKey: string): {
   check: string;
   regex: RegExp;
 } {
-  const lower = langKey.toLowerCase();
+  const lower = normalizeSnippetLanguageKey(langKey);
   if (lower === "lua" || lower === "sql") {
     return { prefix: "-- ", check: "--", regex: /^(\s*)--\s?/ };
   }
@@ -105,9 +198,16 @@ export function getCommentPrefixForLanguage(langKey: string): {
     lower === "jsonc" ||
     lower === "rust" ||
     lower === "typescript" ||
-    lower === "javascript"
+    lower === "javascript" ||
+    lower === "cpp"
   ) {
     return { prefix: "// ", check: "//", regex: /^(\s*)\/\/\s?/ };
+  }
+  if (lower === "html") {
+    return { prefix: "<!-- ", check: "<!--", regex: /^(\s*)<!--\s?/ };
+  }
+  if (lower === "css") {
+    return { prefix: "/* ", check: "/*", regex: /^(\s*)\/\*\s?/ };
   }
   return { prefix: "# ", check: "#", regex: /^(\s*)#\s?/ };
 }
@@ -459,6 +559,16 @@ export function detectInitialSnippetLanguage(filename: string): SnippetLanguageK
 
   if (lower.endsWith(".lua")) {
     return "lua";
+  }
+
+  if (
+    lower.endsWith(".cpp") ||
+    lower.endsWith(".cc") ||
+    lower.endsWith(".cxx") ||
+    lower.endsWith(".hpp") ||
+    lower.endsWith(".h")
+  ) {
+    return "cpp";
   }
 
   if (lower.endsWith(".py") || lower.endsWith(".pyw")) {

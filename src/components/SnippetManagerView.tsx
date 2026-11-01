@@ -21,6 +21,7 @@ import {
   DEFAULT_EDITOR_SNIPPETS,
   SnippetLanguageKey,
   getAvailableSnippetLanguages,
+  normalizeSnippetLanguageKey,
 } from "../utils/snippets";
 
 export interface SnippetManagerViewProps {
@@ -59,29 +60,40 @@ export function SnippetManagerView({
 
   // Form options: all known languages (Python, Rust, etc.) + custom
   const selectableFormLanguages = useMemo(() => {
-    const seen = new Set<string>();
+    const seenKeys = new Set<string>();
+    const seenLabels = new Set<string>();
     const list: { key: string; label: string }[] = [];
 
     for (const b of BASE_SNIPPET_LANGUAGES) {
-      seen.add(b.key);
-      list.push({ key: b.key, label: b.label });
+      const normKey = normalizeSnippetLanguageKey(b.key);
+      seenKeys.add(normKey);
+      seenLabels.add(b.label.toLowerCase());
+      list.push({ key: normKey, label: b.label });
     }
 
     for (const [k, v] of Object.entries(KNOWN_LANGUAGES_MAP)) {
-      if (!seen.has(k)) {
-        seen.add(k);
-        list.push({ key: k, label: v.label });
+      const normKey = normalizeSnippetLanguageKey(k);
+      if (!seenKeys.has(normKey) && !seenLabels.has(v.label.toLowerCase())) {
+        seenKeys.add(normKey);
+        seenLabels.add(v.label.toLowerCase());
+        list.push({ key: normKey, label: v.label });
       }
     }
 
     for (const s of snippets) {
-      const k = s.language?.trim().toLowerCase();
-      if (k && !seen.has(k)) {
-        seen.add(k);
-        list.push({
-          key: k,
-          label: k.charAt(0).toUpperCase() + k.slice(1),
-        });
+      const normKey = normalizeSnippetLanguageKey(s.language);
+      if (normKey && !seenKeys.has(normKey)) {
+        const label =
+          KNOWN_LANGUAGES_MAP[normKey]?.label ||
+          normKey.charAt(0).toUpperCase() + normKey.slice(1);
+        if (!seenLabels.has(label.toLowerCase())) {
+          seenKeys.add(normKey);
+          seenLabels.add(label.toLowerCase());
+          list.push({
+            key: normKey,
+            label,
+          });
+        }
       }
     }
 
@@ -97,7 +109,9 @@ export function SnippetManagerView({
     description: string;
   }>({
     id: "",
-    language: (initialLanguage && initialLanguage !== "all" ? initialLanguage : "bash") as SnippetLanguageKey,
+    language: (initialLanguage && initialLanguage !== "all"
+      ? normalizeSnippetLanguageKey(initialLanguage)
+      : "bash") as SnippetLanguageKey,
     label: "",
     snippet: "",
     description: "",
@@ -113,8 +127,9 @@ export function SnippetManagerView({
   // Filter snippets by language and search query
   const filteredSnippets = useMemo(() => {
     return snippets.filter((s) => {
+      const sLang = normalizeSnippetLanguageKey(s.language);
       const matchesLang =
-        selectedFilterLang === "all" || s.language === selectedFilterLang;
+        selectedFilterLang === "all" || sLang === selectedFilterLang;
       if (!matchesLang) return false;
 
       if (!searchQuery.trim()) return true;
@@ -131,7 +146,7 @@ export function SnippetManagerView({
   const handleStartAdd = () => {
     const defaultLang =
       selectedFilterLang !== "all"
-        ? (selectedFilterLang as SnippetLanguageKey)
+        ? (normalizeSnippetLanguageKey(selectedFilterLang) as SnippetLanguageKey)
         : "bash";
     setFormData({
       id: `custom-${Date.now()}`,
@@ -148,10 +163,11 @@ export function SnippetManagerView({
 
   // Open Form to Edit Existing Snippet
   const handleStartEdit = (s: EditorSnippetDto) => {
-    const isKnown = selectableFormLanguages.some((l) => l.key === s.language);
+    const normLang = normalizeSnippetLanguageKey(s.language);
+    const isKnown = selectableFormLanguages.some((l) => l.key === normLang);
     setFormData({
       id: s.id,
-      language: (s.language as SnippetLanguageKey) || "bash",
+      language: (normLang as SnippetLanguageKey) || "bash",
       label: s.label,
       snippet: s.snippet,
       description: s.description || "",
@@ -178,9 +194,8 @@ export function SnippetManagerView({
   // Save Add/Edit
   const handleSaveForm = async (e: React.FormEvent) => {
     e.preventDefault();
-    const finalLang = (
-      isCustomLangInput ? customLangText.trim().toLowerCase() : formData.language
-    ) as SnippetLanguageKey;
+    const rawLang = isCustomLangInput ? customLangText : formData.language;
+    const finalLang = normalizeSnippetLanguageKey(rawLang) as SnippetLanguageKey;
 
     if (!finalLang) {
       showStatus("error", t("snippets.validation_lang_required") || "言語/形式を入力してください");
@@ -276,11 +291,16 @@ export function SnippetManagerView({
             onChange={(e) => setSelectedFilterLang(e.target.value)}
           >
             <option value="all">{t("snippets.all_languages") || "全言語 / 全形式 (All)"}</option>
-            {availableFilterLanguages.map((lang) => (
-              <option key={lang.key} value={lang.key}>
-                {lang.label} ({snippets.filter((s) => s.language === lang.key).length})
-              </option>
-            ))}
+            {availableFilterLanguages.map((lang) => {
+              const count = snippets.filter(
+                (s) => normalizeSnippetLanguageKey(s.language) === lang.key
+              ).length;
+              return (
+                <option key={lang.key} value={lang.key}>
+                  {lang.label} ({count})
+                </option>
+              );
+            })}
           </select>
         </div>
 
@@ -486,8 +506,9 @@ export function SnippetManagerView({
         ) : (
           <div className="snippet-grid">
             {filteredSnippets.map((s) => {
-              const langConfig = KNOWN_LANGUAGES_MAP[s.language];
-              const badge = langConfig?.badge || s.language.slice(0, 4).toUpperCase();
+              const normLang = normalizeSnippetLanguageKey(s.language);
+              const langConfig = KNOWN_LANGUAGES_MAP[normLang];
+              const badge = langConfig?.badge || normLang.slice(0, 4).toUpperCase();
               return (
                 <div key={s.id} className="snippet-card">
                   <div className="snippet-card-header">

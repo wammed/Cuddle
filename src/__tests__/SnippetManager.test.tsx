@@ -6,6 +6,7 @@ import {
   DEFAULT_EDITOR_SNIPPETS,
   detectInitialSnippetLanguage,
   getAvailableSnippetLanguages,
+  normalizeSnippetLanguageKey,
   SnippetLanguageKey,
 } from "../utils/snippets";
 import type { EditorSnippetDto } from "../types/EditorSnippetDto";
@@ -50,7 +51,23 @@ describe("Snippet Management & Preset Rules", () => {
     expect(detectInitialSnippetLanguage(".gitconfig")).toBe("toml");
     expect(detectInitialSnippetLanguage("docker-compose.yaml")).toBe("yaml");
     expect(detectInitialSnippetLanguage("init.lua")).toBe("lua");
+    expect(detectInitialSnippetLanguage("main.cpp")).toBe("cpp");
     expect(detectInitialSnippetLanguage("README.txt")).toBe("plaintext");
+  });
+
+  it("normalizes language keys and aliases to canonical forms", () => {
+    expect(normalizeSnippetLanguageKey("plain text")).toBe("plaintext");
+    expect(normalizeSnippetLanguageKey("Plain Text")).toBe("plaintext");
+    expect(normalizeSnippetLanguageKey("txt")).toBe("plaintext");
+    expect(normalizeSnippetLanguageKey("text")).toBe("plaintext");
+    expect(normalizeSnippetLanguageKey("json")).toBe("jsonc");
+    expect(normalizeSnippetLanguageKey("jsonc")).toBe("jsonc");
+    expect(normalizeSnippetLanguageKey("c++")).toBe("cpp");
+    expect(normalizeSnippetLanguageKey("cpp")).toBe("cpp");
+    expect(normalizeSnippetLanguageKey("py")).toBe("python");
+    expect(normalizeSnippetLanguageKey("rs")).toBe("rust");
+    expect(normalizeSnippetLanguageKey("sh")).toBe("bash");
+    expect(normalizeSnippetLanguageKey("nix")).toBe("nix");
   });
 
   describe("SnippetManagerView Component", () => {
@@ -234,6 +251,97 @@ describe("Snippet Management & Preset Rules", () => {
       expect(screen.getByText("+ Python Main")).toBeDefined();
       expect(screen.queryByText("+ Test Bash")).toBeNull();
       expect(screen.queryByText("+ Rust Main")).toBeNull();
+    });
+
+    it("prevents duplicate language categories in dropdown when variations like 'plain text' or 'json' are added", () => {
+      const snippetsWithVariations: EditorSnippetDto[] = [
+        ...mockSnippets,
+        {
+          id: "pt-1",
+          language: "plain text",
+          label: "+ Plain Text Todo",
+          snippet: "TODO item",
+          description: "Plain text with space",
+        },
+        {
+          id: "pt-2",
+          language: "plaintext",
+          label: "+ Plain Text Note",
+          snippet: "Note item",
+          description: "Standard plaintext",
+        },
+        {
+          id: "json-1",
+          language: "json",
+          label: "+ Pure JSON",
+          snippet: '{"pure": true}',
+          description: "JSON snippet",
+        },
+        {
+          id: "jsonc-1",
+          language: "jsonc",
+          label: "+ JSONC Object",
+          snippet: '{\n  // comment\n}',
+          description: "JSONC snippet",
+        },
+        {
+          id: "cpp-1",
+          language: "cpp",
+          label: "+ C++ Hello",
+          snippet: '#include <iostream>',
+          description: "C++ code",
+        },
+      ];
+
+      // 1. Verify getAvailableSnippetLanguages normalizes and deduplicates
+      const available = getAvailableSnippetLanguages(snippetsWithVariations);
+      const plaintextOptions = available.filter((a) => a.key === "plaintext" || a.label.toLowerCase() === "plain text");
+      expect(plaintextOptions.length).toBe(1);
+
+      const jsonOptions = available.filter((a) => a.key === "jsonc" || a.label.toLowerCase() === "json");
+      expect(jsonOptions.length).toBe(1);
+      expect(jsonOptions[0].key).toBe("jsonc");
+      expect(jsonOptions[0].label).toBe("JSON / JSONC");
+
+      const cppOption = available.find((a) => a.key === "cpp");
+      expect(cppOption).toBeDefined();
+      expect(cppOption?.label).toBe("C++");
+
+      // 2. Render SnippetManagerView and verify dropdown option count & labels
+      render(
+        <SnippetManagerView
+          snippets={snippetsWithVariations}
+          onUpdateSnippets={vi.fn()}
+          initialLanguage="all"
+        />
+      );
+
+      const langSelect = screen.getByRole("combobox") as HTMLSelectElement;
+      const optionTexts = Array.from(langSelect.options).map((o) => o.textContent);
+
+      // Plain Text should be combined: Plain Text (2)
+      const plaintextEntry = optionTexts.find((t) => t?.startsWith("Plain Text"));
+      expect(plaintextEntry).toBe("Plain Text (2)");
+
+      // JSON / JSONC should be combined: JSON / JSONC (2)
+      const jsonEntry = optionTexts.find((t) => t?.startsWith("JSON / JSONC"));
+      expect(jsonEntry).toBe("JSON / JSONC (2)");
+
+      // No separate "Json (" or "Plain text (" entries
+      expect(optionTexts.some((t) => t?.startsWith("Json ("))).toBe(false);
+      expect(optionTexts.some((t) => t?.startsWith("Plain text ("))).toBe(false);
+
+      // Filtering with normalized key works for both "plain text" and "plaintext"
+      fireEvent.change(langSelect, { target: { value: "plaintext" } });
+      expect(screen.getByText("+ Plain Text Todo")).toBeDefined();
+      expect(screen.getByText("+ Plain Text Note")).toBeDefined();
+      expect(screen.queryByText("+ Pure JSON")).toBeNull();
+
+      // Filtering with "jsonc" shows both "json" and "jsonc"
+      fireEvent.change(langSelect, { target: { value: "jsonc" } });
+      expect(screen.getByText("+ Pure JSON")).toBeDefined();
+      expect(screen.getByText("+ JSONC Object")).toBeDefined();
+      expect(screen.queryByText("+ Plain Text Todo")).toBeNull();
     });
   });
 });

@@ -17,26 +17,13 @@ Cuddle is distributed strictly as an open-source **source-code-only project**. U
 
 ---
 
-## 2. Summary of License Compliance Audit
+## 2. Dependency Scope & Compliance Policy
 
-An automated and manual license audit was conducted covering all direct, dev, and transitive dependencies across both Rust (`Cargo.lock`) and Frontend (`pnpm-lock.yaml`).
+Cuddle tracks third-party dependencies through locked manifests (`Cargo.lock`, `pnpm-lock.yaml`) and verifies licenses against its source-only distribution model:
 
-| Category | Total Checked | PASS | REVIEW | FAIL | UNKNOWN |
-| :--- | ---:| ---:| ---:| ---:| ---:|
-| **Cargo Dependencies (Rust)** | 486 | 480 | 6 (MPL-2.0 audited) | 0 | 0 |
-| **npm Dependencies (Frontend)** | 114 | 112 | 2 (MPL-2.0 build tool) | 0 | 0 |
-| **In-Tree Third-Party Assets** | 0 | 0 | 0 | 0 | 0 |
-
-### Permissive License Categories
-
-The vast majority of dependencies utilize permissive open-source licenses:
-- **MIT / Apache-2.0 / Dual MIT/Apache-2.0:** Standard permissive licenses.
-- **BSD-2-Clause / BSD-3-Clause / 0BSD:** Permissive attribution licenses.
-- **ISC / Zlib / zlib-acknowledgement:** Permissive licenses.
-- **Unicode-3.0:** Permissive Unicode license for normalization & ICU data.
-- **Unlicense / CC0-1.0 / MIT-0:** Public domain dedication / zero-clause permissive licenses.
-- **BlueOak-1.0.0:** Permissive modern open-source license (`lru-cache`).
-- **CDLA-Permissive-2.0:** Permissive open agreement (`webpki-roots`).
+- **Rust / Cargo Dependencies:** Managed via `src-tauri/Cargo.lock`. Automated continuous license verification is enforced in CI via `cargo-deny` with [`deny.toml`](deny.toml), which permits explicitly defined permissive licenses and enforces individually audited exception entries for specific transitive MPL-2.0 utility crates.
+- **Frontend / npm Dependencies:** Defined in `package.json` and resolved via `pnpm-lock.yaml`. Direct runtime dependencies are specified under `dependencies`, while development, testing, and bundling tools are isolated under `devDependencies`.
+- **In-Tree Third-Party Graphic Assets:** **0**. All third-party template scaffolding logos have been removed from the repository. The sole graphic brand asset in-tree is Cuddle's original icon (`public/Cuddle-Icon.svg`), governed by Cuddle's MIT License (see [`IP_COMPLIANCE.md`](IP_COMPLIANCE.md)).
 
 ---
 
@@ -145,45 +132,76 @@ above as far as the program is concerned.
 
 ---
 
-### 3.2 Mozilla Public License 2.0 (MPL-2.0) & Frontend Dependencies Review
+### 3.2 Mozilla Public License 2.0 (MPL-2.0) Dependency Review
 
-#### A. MPL-2.0 Evaluation & Non-Infection Boundary
-MPL-2.0 is a file-level weak copyleft license. Under Sections 1.4, 3.1, and 3.3 of MPL-2.0:
-- Copyleft obligations apply strictly to "Covered Software" (the original MPL-licensed source code files and direct modifications to those files).
-- Unmodified MPL-licensed software may be combined with independent software into a "Larger Work" without subjecting the larger work or independent modules to MPL-2.0 terms.
-- In Cuddle, no MPL-2.0 source code is copied, modified, or incorporated into Cuddle's codebase.
-- Under Cuddle's **source-only distribution model**, Cuddle distributes only its own original source code under the MIT License.
+#### A. MPL-2.0 Licensing Principles & Scope
+The Mozilla Public License 2.0 (MPL-2.0) is a file-level weak copyleft license:
+1. **File-Level Copyleft Scope:** Copyleft obligations apply strictly to "Covered Software" (Sections 1.4, 3.1)—defined as the original MPL-licensed source code files and direct modifications to those specific files.
+2. **Combination in a Larger Work:** Section 3.3 explicitly permits combining Covered Software with files governed by different, independent licenses (e.g. MIT) to create a "Larger Work," provided the license terms for the independent files are respected and the MPL-2.0 terms continue to apply to the Covered Software files. MPL-2.0 does not automatically propagate to independent source files.
+3. **Executable Distribution Requirements:** If Covered Software is distributed in executable or binary form, Section 3.2 requires that the distributor inform recipients how they may obtain the source code of the Covered Software and provide a copy of the license.
+4. **Cuddle Source-Only Distribution Policy:** Cuddle is maintained and distributed strictly as a source-code-only project. The project does not distribute precompiled release binaries, packages, or installers. Users compile the software locally from source.
+5. **Project Impact & Assessment:**
+   - The presence of MPL-2.0 dependencies in the dependency graph does not alter Cuddle's own MIT License.
+   - Cuddle's own source tree contains zero copied or modified MPL-2.0 source code files.
+   - If the project's distribution model changes in the future to include precompiled binary distributions, the binary distribution obligations of MPL-2.0 (such as providing source access notices under Section 3.2) will need to be re-evaluated and accommodated.
 
-| Package / Crate | Type | Version | License | Role / Boundary | Review Verdict |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `cssparser` | Cargo (transitive) | 0.37.0 | MPL-2.0 | Used by `dom_query` inside Tauri HTML parsing | PASS (Unmodified utility, isolated) |
-| `cssparser-macros` | Cargo (transitive) | 0.7.1 | MPL-2.0 | Proc-macro for `cssparser` | PASS (Compile-time macro, isolated) |
-| `dtoa-short` | Cargo (transitive) | 0.3.5 | MPL-2.0 | Fast float-to-string conversion in `cssparser` | PASS (Unmodified utility, isolated) |
-| `selectors` | Cargo (transitive) | 0.38.0 | MPL-2.0 | CSS selector engine for `dom_query` | PASS (Unmodified utility, isolated) |
-| `option-ext` | Cargo (transitive) | 0.2.0 | MPL-2.0 | Extension trait for `Option` in `dirs-sys` | PASS (Unmodified utility, isolated) |
-| `htmlescape` | Cargo (transitive) | 0.3.1 | MPL-2.0 | HTML entity escaping in `tantivy` | PASS (Unmodified utility, isolated) |
-| `lightningcss` | npm (devDependencies) | 1.33.0 | MPL-2.0 | CSS bundler in Vite build toolchain | PASS (Build-time only, never bundled in runtime) |
-| `lightningcss-linux-x64-gnu` | npm (devDependencies) | 1.33.0 | MPL-2.0 | Platform native binary for `lightningcss` | PASS (Build-time only, never bundled in runtime) |
+#### B. Classification of MPL-2.0 Dependencies in Cuddle
 
-#### B. Frontend Dependencies Classification
-1. **Direct Runtime Dependencies (`dependencies`):**
-   - `@tanstack/react-virtual@^3.14.22`: MIT
-   - `@tauri-apps/api@^2`: Apache-2.0 OR MIT
-   - `@tauri-apps/plugin-opener@^2`: Apache-2.0 OR MIT
-   - `i18next@^26.5.6`: MIT
-   - `lucide-react@^1.61.0`: ISC
-   - `react@^19.1.0`: MIT
-   - `react-dom@^19.1.0`: MIT
-   - `react-i18next@^17.1.3`: MIT
-   - `react-resizable-panels@^4.14.8`: MIT
-   *All direct runtime dependencies are 100% permissively licensed (MIT, Apache-2.0, ISC).*
-2. **Development & Build-Time Dependencies (`devDependencies`):**
-   - Direct: `@tauri-apps/cli` (Apache-2.0/MIT), `@testing-library/jest-dom` (MIT), `@testing-library/react` (MIT), `@types/react` (MIT), `@types/react-dom` (MIT), `@vitejs/plugin-react` (MIT), `jsdom` (MIT), `typescript` (Apache-2.0), `vite` (MIT), `vitest` (MIT).
-   - Indirect: `lightningcss@1.33.0` and its Linux native companion `lightningcss-linux-x64-gnu@1.33.0` (MPL-2.0) are resolved as transitive build-time dependencies of `vite@8.3.5` for CSS bundling and minification. They are never executed in or shipped with the runtime frontend client. Cuddle's source code remains entirely unaffected under the MIT License.
+| Package / Crate | Ecosystem | Version | Role in Project | Execution Phase |
+| :--- | :--- | :--- | :--- | :--- |
+| `cssparser` | Cargo (transitive) | 0.37.0 | CSS parsing engine in `dom_query` (used in Tauri HTML handling) | Runtime library / Build utility |
+| `cssparser-macros` | Cargo (transitive) | 0.7.1 | Procedural macro for `cssparser` | Compile-time macro only |
+| `dtoa-short` | Cargo (transitive) | 0.3.5 | Fast float-to-string conversion in `cssparser` | Runtime library utility |
+| `selectors` | Cargo (transitive) | 0.38.0 | CSS selector engine in `dom_query` | Runtime library utility |
+| `option-ext` | Cargo (transitive) | 0.2.0 | Extension trait for `Option` in `dirs-sys` (directory resolution) | Runtime library utility |
+| `htmlescape` | Cargo (transitive) | 0.3.1 | HTML entity escaping utility in `tantivy` (search highlighting) | Runtime library utility |
+| `lightningcss` | npm (transitive via Vite) | 1.33.0 | CSS bundler and transformer in Vite build toolchain | Build-time tooling only (`devDependencies`) |
+| `lightningcss-linux-x64-gnu` | npm (transitive via Vite) | 1.33.0 | Native Linux x86_64 prebuilt binary for `lightningcss` | Build-time tooling only (`devDependencies`) |
+
+- **Rust MPL-2.0 Crates:** These are unmodified third-party libraries resolved from `crates.io`. They are not all strictly build-time tools: while `cssparser-macros` is compile-time only, crates like `option-ext`, `htmlescape`, `cssparser`, and `selectors` provide utility functions that may be linked into the binary at compile time. Because Cuddle does not modify their source code and distributes only source code, these crates are permitted via individually audited exceptions in `deny.toml`.
+- **Frontend MPL-2.0 Packages:** Both `lightningcss` and its Linux companion are transitive dependencies of `vite@8.3.5` under `devDependencies`. They act solely as build-time preprocessing and minification tools during `npm run build`. They are never executed in or shipped as part of the frontend client runtime assets.
 
 ---
 
-### 3.3 Disjunctive Tri-License Review: `r-efi`
+### 3.3 Frontend Dependencies Classification
+
+Cuddle distinguishes between direct and transitive dependencies, as well as runtime and build-time roles:
+
+#### A. Direct Runtime Dependencies (`dependencies` in `package.json`)
+The following 9 packages are directly declared as runtime dependencies:
+- `@tanstack/react-virtual` (`^3.14.22`): MIT
+- `@tauri-apps/api` (`^2`): Apache-2.0 OR MIT
+- `@tauri-apps/plugin-opener` (`^2`): Apache-2.0 OR MIT
+- `i18next` (`^26.5.6`): MIT
+- `lucide-react` (`^1.61.0`): ISC
+- `react` (`^19.1.0`): MIT
+- `react-dom` (`^19.1.0`): MIT
+- `react-i18next` (`^17.1.3`): MIT
+- `react-resizable-panels` (`^4.14.8`): MIT
+
+Each direct runtime package is confirmed to be licensed under permissive open-source terms (MIT, Apache-2.0, or ISC). This permissive status applies strictly to these declared direct dependencies and is not extrapolated as an unverified blanket statement covering the entire transitive tree.
+
+#### B. Direct Development & Build-Time Dependencies (`devDependencies` in `package.json`)
+Declared direct development dependencies include:
+- `@tauri-apps/cli` (`^2`): Apache-2.0 OR MIT
+- `@testing-library/jest-dom` (`^7.0.1`): MIT
+- `@testing-library/react` (`^16.3.3`): MIT
+- `@types/react` (`^19.1.8`): MIT
+- `@types/react-dom` (`^19.1.6`): MIT
+- `@vitejs/plugin-react` (`^6.0.2`): MIT
+- `jsdom` (`^30.1.3`): MIT
+- `typescript` (`~6.0.3`): Apache-2.0
+- `vite` (`^8.0.16`): MIT
+- `vitest` (`^5.0.5`): MIT
+
+These packages are used solely for local development, TypeScript typechecking, automated testing with Vitest, and asset bundling with Vite.
+
+#### C. Transitive Dependencies (`pnpm-lock.yaml`)
+Transitive dependencies are resolved and pinned by `pnpm-lock.yaml`. Notably, `vite` pulls `lightningcss@1.33.0` and `lightningcss-linux-x64-gnu@1.33.0` (MPL-2.0) as build-time CSS processors, as evaluated above. Cuddle does not assume or assert unverified license claims for transitive packages without specific investigation; under the source-only distribution model, users retrieve locked packages directly from the official registry.
+
+---
+
+### 3.4 Disjunctive Tri-License Review: `r-efi`
 
 | Crate | Version | License Expression | Selected Option |
 | :--- | :--- | :--- | :--- |
@@ -193,7 +211,7 @@ MPL-2.0 is a file-level weak copyleft license. Under Sections 1.4, 3.1, and 3.3 
 
 ---
 
-### 3.4 In-Tree Third-Party Scaffolding Assets (Removed)
+### 3.5 In-Tree Third-Party Scaffolding Assets (Removed)
 
 The original template scaffold generated by `create-tauri-app` included default logos for upstream frameworks (`public/tauri.svg`, `public/vite.svg`, and `src/assets/react.svg`).
 
@@ -205,7 +223,7 @@ The original template scaffold generated by `create-tauri-app` included default 
 
 ---
 
-### 3.5 Cuddle Project Original Brand Asset
+### 3.6 Cuddle Project Original Brand Asset
 
 | Asset Path | Origin | License | Description / Status |
 | :--- | :--- | :--- | :--- |
@@ -215,13 +233,13 @@ The original template scaffold generated by `create-tauri-app` included default 
 
 ---
 
-## 4. License Verification
+## 4. Continuous License Verification
 
-Rust / Cargo dependencies are continuously checked against allowed licenses in CI using `cargo-deny` with [`deny.toml`](deny.toml):
-
-```bash
-cargo deny --manifest-path src-tauri/Cargo.toml check licenses
-```
-
-Frontend / npm dependencies are documented above and audited against Cuddle's source-only distribution model. All runtime frontend packages utilize permissive licenses (MIT, Apache-2.0, BSD, ISC), with `lightningcss` (MPL-2.0) confined strictly to build-time tooling (`devDependencies`).
+- **Rust / Cargo:** Continuously enforced in CI via `cargo-deny` with [`deny.toml`](deny.toml):
+  ```bash
+  cargo deny --manifest-path src-tauri/Cargo.toml check licenses
+  cargo deny --manifest-path src-tauri/Cargo.toml check
+  ```
+  `cargo-deny` automatically checks all direct and transitive Rust dependencies against allowed license lists, unmaintained advisories, duplicate bans, and verified exception entries.
+- **Frontend / npm:** Direct dependencies are maintained in `package.json` and locked in `pnpm-lock.yaml`. Under the source-only distribution model, dependencies are resolved directly from official package registries by the user's package manager.
 

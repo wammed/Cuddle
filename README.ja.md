@@ -85,17 +85,19 @@ pnpm run tauri build
 # または ./scripts/install.sh  # GNOME / KDE / XFCE 汎用自動検知
 ```
 
-詳細な Linux 前提環境、システムパッケージ、推奨外部ツール、デスクトップ環境別のインストール設定については、**[BUILD.ja.md](BUILD.ja.md)**（または英語版 **[BUILD.md](BUILD.md)**）を参照してください。
+詳細な Linux 前提環境、システムパッケージ、推奨外部ツール、デスクトップ環境別のインストール設定については、**[BUILD.ja.md](docs/BUILD.ja.md)**（または英語版 **[BUILD.md](docs/BUILD.md)**）を参照してください。
 
 ---
 
 ## 関連ドキュメント
 
-* **[BUILD.ja.md](BUILD.ja.md)** / **[BUILD.md](BUILD.md)**: ビルド・環境構築・依存パッケージ導入ガイド
-* **[FileWorkbench-Design-ver0.9.ja.md](FileWorkbench-Design-ver0.9.ja.md)** / **[FileWorkbench-Design-ver0.9.en.md](FileWorkbench-Design-ver0.9.en.md)**: 統合基本設計書（残課題解決・バイリンガル仕様確定版）
-* **[FileWorkbench-Handover.ja.md](FileWorkbench-Handover.ja.md)** / **[FileWorkbench-Handover.en.md](FileWorkbench-Handover.en.md)**: 開発引き継ぎ書・実装進捗詳細記録
-* **[IP_COMPLIANCE.ja.md](IP_COMPLIANCE.ja.md)** / **[IP_COMPLIANCE.md](IP_COMPLIANCE.md)**: ブランドアイコン・知的財産コンプライアンス記録
-* **[THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)**: サードパーティ依存関係・ライセンス監査証跡
+* **[BUILD.ja.md](docs/BUILD.ja.md)** / **[BUILD.md](docs/BUILD.md)**: ビルド・環境構築・依存パッケージ導入ガイド
+* **[FileWorkbench-Design-ver0.9.ja.md](docs/FileWorkbench-Design-ver0.9.ja.md)** / **[FileWorkbench-Design-ver0.9.en.md](docs/FileWorkbench-Design-ver0.9.en.md)**: 統合基本設計書（残課題解決・バイリンガル仕様確定版）
+* **[FileWorkbench-Handover.ja.md](docs/FileWorkbench-Handover.ja.md)** / **[FileWorkbench-Handover.en.md](docs/FileWorkbench-Handover.en.md)**: 開発引き継ぎ書・実装進捗詳細記録
+* **[NEXT_IMPLEMENTATION_TASKS.ja.md](docs/NEXT_IMPLEMENTATION_TASKS.ja.md)** / **[NEXT_IMPLEMENTATION_TASKS.en.md](docs/NEXT_IMPLEMENTATION_TASKS.en.md)**: 次期実装タスク計画書・設計仕様書
+* **[IP_COMPLIANCE.ja.md](docs/licenses/IP_COMPLIANCE.ja.md)** / **[IP_COMPLIANCE.md](docs/licenses/IP_COMPLIANCE.md)**: ブランドアイコン・知的財産コンプライアンス記録
+* **[THIRD-PARTY-LICENSES.md](docs/licenses/THIRD-PARTY-LICENSES.md)**: サードパーティ依存関係・ライセンス監査証跡
+* **[ライセンス・知財ポータル](docs/licenses/README.ja.md)**: ライセンス基本方針およびメディアプレビュー知財監査記録
 
 ---
 
@@ -104,6 +106,6 @@ pnpm run tauri build
 本ソフトウェアは [MIT License](LICENSE) の下で公開されています。  
 Copyright (c) 2026 wammed and Cuddle Contributors.
 
-サードパーティの依存関係およびアセットには、それぞれのライセンスが適用されます。詳細は [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) を参照してください。
+サードパーティの依存関係およびアセットには、それぞれのライセンスが適用されます。詳細は [THIRD-PARTY-LICENSES.md](docs/licenses/THIRD-PARTY-LICENSES.md) を参照してください。
 
 Cuddle はソースコード公開を基本方針としています。コンパイル済みバイナリパッケージはプロジェクトとして配布していません。

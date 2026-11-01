@@ -40,4 +40,6 @@ recovery/
 # Documents / Drafts
 FileWorkbench*
 NEXT*
+docs/FileWorkbench*
+docs/NEXT*
 

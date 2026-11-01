@@ -1,7 +1,7 @@
 # Icon Design & IP Compliance Due Diligence Record
 
 <p align="center">
-  <strong>English</strong> | <a href="IP_COMPLIANCE.ja.md">日本語</a> | <a href="../docs/PORTAL.md">📚 Documentation Portal</a> | <a href="../README.md">🏠 Root README</a>
+  <strong>English</strong> | <a href="IP_COMPLIANCE.ja.md">日本語</a> | <a href="README.md">📜 License Portal</a> | <a href="../../README.md">🏠 Root README</a>
 </p>
 
 This document records the provenance, design-review history, and intellectual property (IP) due-diligence process for the **Cuddle** application icon.

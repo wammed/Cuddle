@@ -1,7 +1,7 @@
 # Cuddle ライセンス・知的財産（IP）管理ポータル
 
 <p align="center">
-  <a href="README.md">English</a> | <strong>日本語</strong> | <a href="../../README.ja.md">🏠 ルート README</a> | <a href="../../IP_COMPLIANCE.ja.md">🛡️ アイコン IP 記録</a>
+  <a href="README.md">English</a> | <strong>日本語</strong> | <a href="../../README.ja.md">🏠 ルート README</a> | <a href="IP_COMPLIANCE.ja.md">🛡️ アイコン IP 記録</a>
 </p>
 
 本書は、**Cuddle (File Workbench)** プロジェクトにおけるサードパーティライセンス、知的財産権（IP）、特許リスクの管理方針、および将来実施予定の包括的ライセンス監査（Comprehensive License Audit）に向けたドキュメンテーションインデックスです。
@@ -32,8 +32,9 @@ Cuddle は、開発者やパワーユーザーが安心して利用・改変・�
 | :--- | :--- | :--- |
 | [`IMAGE_PREVIEW_IP_AUDIT.ja.md`](IMAGE_PREVIEW_IP_AUDIT.ja.md) | 日本語 | **画像プレビュー機能（ネイティブ・RAW・HEIC・PSD 等）のライセンス・特許リスク分析と設計根拠、監査チェックリスト** |
 | [`IMAGE_PREVIEW_IP_AUDIT.en.md`](IMAGE_PREVIEW_IP_AUDIT.en.md) | English | Image Preview & Media Processing IP / Patent Audit Record & Checklist |
-| [`../../IP_COMPLIANCE.ja.md`](../../IP_COMPLIANCE.ja.md) | 日本語 | アプリケーションアイコンおよびブランド意匠の由来・デューデリジェンス記録 |
-| [`../../IP_COMPLIANCE.md`](../../IP_COMPLIANCE.md) | English | Application Icon & Brand IP Compliance and Due Diligence Record |
+| [`IP_COMPLIANCE.ja.md`](IP_COMPLIANCE.ja.md) | 日本語 | アプリケーションアイコンおよびブランド意匠の由来・デューデリジェンス記録 |
+| [`IP_COMPLIANCE.md`](IP_COMPLIANCE.md) | English | Application Icon & Brand IP Compliance and Due Diligence Record |
+| [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md) | 英語 | サードパーティ依存関係・ライセンス監査証跡 |
 | [`../../LICENSE`](../../LICENSE) | 英語 | Cuddle プロジェクト公式 MIT ライセンス条文 |
 
 ---

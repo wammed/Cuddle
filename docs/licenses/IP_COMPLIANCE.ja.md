@@ -1,7 +1,7 @@
 # アイコンデザインおよびIPコンプライアンス・デューデリジェンス記録
 
 <p align="center">
-  <a href="IP_COMPLIANCE.md">English</a> | <strong>日本語</strong> | <a href="../docs/PORTAL.ja.md">📚 ドキュメンテーションポータル</a> | <a href="../README.md">🏠 ルート README</a>
+  <a href="IP_COMPLIANCE.md">English</a> | <strong>日本語</strong> | <a href="README.ja.md">📜 ライセンスポータル</a> | <a href="../../README.ja.md">🏠 ルート README</a>
 </p>
 
 本文書は、**Cuddle** アプリケーションアイコンの由来（来歴）、デザインレビューの履歴、および知的財産（IP）デューデリジェンスのプロセスを記録するものです。

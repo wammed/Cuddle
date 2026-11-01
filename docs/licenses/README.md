@@ -1,7 +1,7 @@
 # Cuddle License & Intellectual Property (IP) Portal
 
 <p align="center">
-  <strong>English</strong> | <a href="README.ja.md">日本語</a> | <a href="../../README.md">🏠 Root README</a> | <a href="../../IP_COMPLIANCE.md">🛡️ Icon IP Record</a>
+  <strong>English</strong> | <a href="README.ja.md">日本語</a> | <a href="../../README.md">🏠 Root README</a> | <a href="IP_COMPLIANCE.md">🛡️ Icon IP Record</a>
 </p>
 
 This document serves as the central documentation portal for third-party licenses, intellectual property (IP), patent risk mitigation, and reference records for the future comprehensive license audit in the **Cuddle (File Workbench)** project.
@@ -32,8 +32,9 @@ To maintain uncompromising legal compliance and prevent license contagion, the c
 | :--- | :--- | :--- |
 | [`IMAGE_PREVIEW_IP_AUDIT.en.md`](IMAGE_PREVIEW_IP_AUDIT.en.md) | English | **Image Preview & Media Processing IP / Patent Audit Record & Checklist (Native, RAW, HEIC, PSD, etc.)** |
 | [`IMAGE_PREVIEW_IP_AUDIT.ja.md`](IMAGE_PREVIEW_IP_AUDIT.ja.md) | 日本語 | 画像プレビュー機能のライセンス・特許リスク分析と設計根拠、監査チェックリスト |
-| [`../../IP_COMPLIANCE.md`](../../IP_COMPLIANCE.md) | English | Application Icon & Brand IP Compliance and Due Diligence Record |
-| [`../../IP_COMPLIANCE.ja.md`](../../IP_COMPLIANCE.ja.md) | 日本語 | アプリケーションアイコンおよびブランド意匠の由来・デューデリジェンス記録 |
+| [`IP_COMPLIANCE.md`](IP_COMPLIANCE.md) | English | Application Icon & Brand IP Compliance and Due Diligence Record |
+| [`IP_COMPLIANCE.ja.md`](IP_COMPLIANCE.ja.md) | 日本語 | アプリケーションアイコンおよびブランド意匠の由来・デューデリジェンス記録 |
+| [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md) | English | Third-Party Dependency Licenses & Compliance Audit Record |
 | [`../../LICENSE`](../../LICENSE) | English | Official MIT License terms for the Cuddle project |
 
 ---

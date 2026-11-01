@@ -85,17 +85,19 @@ pnpm run tauri build
 # or ./scripts/install.sh     # GNOME / KDE / XFCE auto-detection
 ```
 
-For complete compilation instructions, Linux system prerequisites, external CLI recommendations, and desktop environment installation options, see **[BUILD.md](BUILD.md)** (or **[BUILD.ja.md](BUILD.ja.md)**).
+For complete compilation instructions, Linux system prerequisites, external CLI recommendations, and desktop environment installation options, see **[BUILD.md](docs/BUILD.md)** (or **[BUILD.ja.md](docs/BUILD.ja.md)**).
 
 ---
 
 ## Documentation
 
-* **[BUILD.md](BUILD.md)** / **[BUILD.ja.md](BUILD.ja.md)**: Detailed compilation guides, prerequisites, and system configuration.
-* **[FileWorkbench-Design-ver0.9.en.md](FileWorkbench-Design-ver0.9.en.md)** / **[FileWorkbench-Design-ver0.9.ja.md](FileWorkbench-Design-ver0.9.ja.md)**: Comprehensive architectural design specifications.
-* **[FileWorkbench-Handover.en.md](FileWorkbench-Handover.en.md)** / **[FileWorkbench-Handover.ja.md](FileWorkbench-Handover.ja.md)**: Engineering handover and implementation progress logs.
-* **[IP_COMPLIANCE.md](IP_COMPLIANCE.md)**: Trademark, brand icon, and asset compliance verification.
-* **[THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md)**: Third-party dependency licenses and attribution audit record.
+* **[BUILD.md](docs/BUILD.md)** / **[BUILD.ja.md](docs/BUILD.ja.md)**: Detailed compilation guides, prerequisites, and system configuration.
+* **[FileWorkbench-Design-ver0.9.en.md](docs/FileWorkbench-Design-ver0.9.en.md)** / **[FileWorkbench-Design-ver0.9.ja.md](docs/FileWorkbench-Design-ver0.9.ja.md)**: Comprehensive architectural design specifications.
+* **[FileWorkbench-Handover.en.md](docs/FileWorkbench-Handover.en.md)** / **[FileWorkbench-Handover.ja.md](docs/FileWorkbench-Handover.ja.md)**: Engineering handover and implementation progress logs.
+* **[NEXT_IMPLEMENTATION_TASKS.en.md](docs/NEXT_IMPLEMENTATION_TASKS.en.md)** / **[NEXT_IMPLEMENTATION_TASKS.ja.md](docs/NEXT_IMPLEMENTATION_TASKS.ja.md)**: Next implementation tasks and roadmap specifications.
+* **[IP_COMPLIANCE.md](docs/licenses/IP_COMPLIANCE.md)**: Trademark, brand icon, and asset compliance verification.
+* **[THIRD-PARTY-LICENSES.md](docs/licenses/THIRD-PARTY-LICENSES.md)**: Third-party dependency licenses and attribution audit record.
+* **[License Portal](docs/licenses/README.md)**: Licensing guidelines and third-party media IP audits.
 
 ---
 
@@ -104,6 +106,6 @@ For complete compilation instructions, Linux system prerequisites, external CLI 
 Cuddle is licensed under the [MIT License](LICENSE).
 Copyright (c) 2026 wammed and Cuddle Contributors.
 
-Third-party dependencies and assets remain subject to their respective licenses. See [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) for details.
+Third-party dependencies and assets remain subject to their respective licenses. See [THIRD-PARTY-LICENSES.md](docs/licenses/THIRD-PARTY-LICENSES.md) for details.
 
 Cuddle is distributed as source code. Precompiled binary packages are not distributed as part of this project.

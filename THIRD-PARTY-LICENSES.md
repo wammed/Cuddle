@@ -136,14 +136,17 @@ above as far as the program is concerned.
 
 #### A. MPL-2.0 Licensing Principles & Scope
 The Mozilla Public License 2.0 (MPL-2.0) is a file-level weak copyleft license:
-1. **File-Level Copyleft Scope:** Copyleft obligations apply strictly to "Covered Software" (Sections 1.4, 3.1)—defined as the original MPL-licensed source code files and direct modifications to those specific files.
-2. **Combination in a Larger Work:** Section 3.3 explicitly permits combining Covered Software with files governed by different, independent licenses (e.g. MIT) to create a "Larger Work," provided the license terms for the independent files are respected and the MPL-2.0 terms continue to apply to the Covered Software files. MPL-2.0 does not automatically propagate to independent source files.
-3. **Executable Distribution Requirements:** If Covered Software is distributed in executable or binary form, Section 3.2 requires that the distributor inform recipients how they may obtain the source code of the Covered Software and provide a copy of the license.
-4. **Cuddle Source-Only Distribution Policy:** Cuddle is maintained and distributed strictly as a source-code-only project. The project does not distribute precompiled release binaries, packages, or installers. Users compile the software locally from source.
+1. **Source Code Distribution Requirements (Section 3.1):** Any modifications to Covered Software files must remain under MPL-2.0 when distributed in source code form. Distribution of Covered Software in source code form requires providing recipients access to the source code under MPL-2.0 terms.
+2. **Combination in a Larger Work (Section 3.3):** Section 3.3 explicitly permits combining Covered Software with files governed by different, independent licenses (e.g. MIT) to create a "Larger Work," provided the license terms for the independent files are respected and the MPL-2.0 terms continue to apply to the Covered Software files. MPL-2.0 does not automatically propagate to independent source files.
+3. **Executable Distribution Requirements (Section 3.2):** If Covered Software is distributed in executable or binary form, Section 3.2 requires that the distributor inform recipients how they may obtain the source code of the Covered Software and provide a copy of the license.
+4. **Cuddle Source-Only Distribution & Ingestion Boundary:**
+   - Cuddle is maintained and distributed strictly as a source-code-only project; the project does not distribute precompiled release binaries, packages, or installers.
+   - Crucially, Cuddle's repository contains **zero** in-tree, bundled, or vendored source code files from MPL-2.0 dependencies. Dependencies are resolved directly and independently by package managers (`cargo`, `pnpm`) from upstream official registries (`crates.io`, `npmjs.org`) during local user compilation.
+   - Because Cuddle distributes only its own original source files and does not redistribute or modify the Covered Software files themselves, Cuddle's repository publication does not constitute redistributing Covered Software under Section 3.1.
 5. **Project Impact & Assessment:**
-   - The presence of MPL-2.0 dependencies in the dependency graph does not alter Cuddle's own MIT License.
+   - The presence of MPL-2.0 dependencies in the external dependency graph does not alter Cuddle's own MIT License.
    - Cuddle's own source tree contains zero copied or modified MPL-2.0 source code files.
-   - If the project's distribution model changes in the future to include precompiled binary distributions, the binary distribution obligations of MPL-2.0 (such as providing source access notices under Section 3.2) will need to be re-evaluated and accommodated.
+   - If the project's distribution model were to expand in the future—either by vendoring/bundling third-party source files directly into the repository (triggering Section 3.1 source distribution obligations) or by distributing precompiled binaries (triggering Section 3.2 source notice obligations)—those respective MPL-2.0 requirements must be re-evaluated and fulfilled at that time.
 
 #### B. Classification of MPL-2.0 Dependencies in Cuddle
 
@@ -158,7 +161,7 @@ The Mozilla Public License 2.0 (MPL-2.0) is a file-level weak copyleft license:
 | `lightningcss` | npm (transitive via Vite) | 1.33.0 | CSS bundler and transformer in Vite build toolchain | Build-time tooling only (`devDependencies`) |
 | `lightningcss-linux-x64-gnu` | npm (transitive via Vite) | 1.33.0 | Native Linux x86_64 prebuilt binary for `lightningcss` | Build-time tooling only (`devDependencies`) |
 
-- **Rust MPL-2.0 Crates:** These are unmodified third-party libraries resolved from `crates.io`. They are not all strictly build-time tools: while `cssparser-macros` is compile-time only, crates like `option-ext`, `htmlescape`, `cssparser`, and `selectors` provide utility functions that may be linked into the binary at compile time. Because Cuddle does not modify their source code and distributes only source code, these crates are permitted via individually audited exceptions in `deny.toml`.
+- **Rust MPL-2.0 Crates:** These are unmodified third-party libraries resolved from `crates.io`. They are not all strictly build-time tools: while `cssparser-macros` is compile-time only, crates like `option-ext` (directory path resolution in `dirs-sys`), `htmlescape` (HTML entity escaping in `tantivy`), `cssparser` and `selectors` (CSS parsing and selection in `dom_query`), and `dtoa-short` (fast float-to-string formatting helper in `cssparser`) provide utility functions that are linked into the binary at compile time. Because Cuddle does not modify their source code, does not vendor them in-tree, and distributes only its own source code, these crates are permitted via individually audited exceptions in `deny.toml`.
 - **Frontend MPL-2.0 Packages:** Both `lightningcss` and its Linux companion are transitive dependencies of `vite@8.3.5` under `devDependencies`. They act solely as build-time preprocessing and minification tools during `npm run build`. They are never executed in or shipped as part of the frontend client runtime assets.
 
 ---

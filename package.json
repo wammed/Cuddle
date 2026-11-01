@@ -11,6 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:spdx": "node scripts/test-spdx.mjs",
+    "test:parser": "node scripts/test-lockfile-parser.mjs",
+    "test:integration": "node scripts/test-audit-integration.mjs",
     "check:licenses": "node scripts/check-frontend-licenses.mjs",
     "tauri": "tauri"
   },

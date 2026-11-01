@@ -62,6 +62,12 @@ jobs:
       - name: Frontend SPDX evaluator unit tests
         run: node scripts/test-spdx.mjs
 
+      - name: Frontend lockfile parser abnormal & edge case tests
+        run: node scripts/test-lockfile-parser.mjs
+
+      - name: Frontend audit integration & coverage tests
+        run: node scripts/test-audit-integration.mjs
+
       - name: Frontend dependency license check (Node audit)
         run: pnpm run check:licenses
 

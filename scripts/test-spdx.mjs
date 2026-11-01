@@ -29,11 +29,35 @@ const testCases = [
   { expr: 'MIT OR GPL-3.0-only', pkgId: 'test-pkg@1.0.0', expected: 'PASS', desc: 'OR with permissive choice allowed' },
   { expr: 'GPL-3.0-only', pkgId: 'test-pkg@1.0.0', expected: 'FAIL', desc: 'Standalone copyleft license' },
 
-  // 3. MPL-2.0 Individual Exception Evaluation
-  { expr: 'MPL-2.0', pkgId: 'unregistered-pkg@1.0.0', expected: 'FAIL', desc: 'Unregistered MPL-2.0 package' },
-  { expr: 'MPL-2.0', pkgId: 'lightningcss@1.33.0', expected: 'REVIEW', desc: 'Registered individual exception' },
-  { expr: 'MPL-2.0', pkgId: 'lightningcss-linux-x64-gnu@1.33.0', expected: 'REVIEW', desc: 'Registered native exception' },
-  { expr: 'MPL-2.0', pkgId: 'lightningcss@1.34.0', expected: 'FAIL', desc: 'Version bump without updated review' },
+  // 3. MPL-2.0 Individual Exception Evaluation (Phase 8-1)
+  {
+    expr: 'MPL-2.0',
+    pkgId: 'unregistered-pkg@1.0.0',
+    expected: 'REVIEW',
+    expectedApproved: false,
+    desc: 'Unregistered MPL-2.0 package is REVIEW (unapproved exception, never PASS)',
+  },
+  {
+    expr: 'MPL-2.0',
+    pkgId: 'lightningcss@1.33.0',
+    expected: 'REVIEW',
+    expectedApproved: true,
+    desc: 'Registered individual exception (approved: true)',
+  },
+  {
+    expr: 'MPL-2.0',
+    pkgId: 'lightningcss-linux-x64-gnu@1.33.0',
+    expected: 'REVIEW',
+    expectedApproved: true,
+    desc: 'Registered native exception (approved: true)',
+  },
+  {
+    expr: 'MPL-2.0',
+    pkgId: 'lightningcss@1.34.0',
+    expected: 'REVIEW',
+    expectedApproved: false,
+    desc: 'Version bump without updated review is REVIEW (unapproved exception, never PASS)',
+  },
 
   // 4. Non-SPDX Operators (Requirement 3.1)
   { expr: 'MIT || Apache-2.0', pkgId: 'test-pkg@1.0.0', expected: 'UNKNOWN', desc: 'Rejection of non-SPDX || operator' },
@@ -108,19 +132,42 @@ const testCases = [
   { expr: 'MIT Apache-2.0', pkgId: 'test-pkg@1.0.0', expected: 'UNKNOWN', desc: 'Missing operator between identifiers' },
 ];
 
-console.log('Running SPDX Unit Tests (Phase 7)...');
+console.log('Running SPDX Unit Tests (Phase 8)...');
 let passed = 0;
 let failed = 0;
 
 for (const tc of testCases) {
   const result = evaluateLicenseExpression(tc.expr, tc.pkgId, individualExceptions);
-  if (result.status === tc.expected) {
+  let ok = result.status === tc.expected;
+  if (ok && tc.expectedApproved !== undefined) {
+    if (result.approved !== tc.expectedApproved) {
+      ok = false;
+    }
+  }
+  // Ensure unapproved MPL packages NEVER return PASS
+  if (tc.expr.includes('MPL') && !tc.expectedApproved && result.status === 'PASS') {
+    ok = false;
+  }
+  if (ok) {
     console.log(`  ✓ [${result.status.padEnd(7)}] "${tc.expr}" => ${tc.desc}`);
     passed++;
   } else {
-    console.error(`  ✗ FAIL: "${tc.expr}" => Expected ${tc.expected}, got ${result.status} (${result.reason})`);
+    console.error(`  ✗ FAIL: "${tc.expr}" (${tc.pkgId}) => Expected ${tc.expected} (approved: ${tc.expectedApproved}), got ${result.status} (approved: ${result.approved}) (${result.reason})`);
     failed++;
   }
+}
+
+// Verification of Individual Exceptions set: must strictly contain only the 2 approved items
+if (
+  individualExceptions.size === 2 &&
+  individualExceptions.has('lightningcss@1.33.0') &&
+  individualExceptions.has('lightningcss-linux-x64-gnu@1.33.0')
+) {
+  console.log('  ✓ [PASS   ] individualExceptions strictly restricted to 2 approved items');
+  passed++;
+} else {
+  console.error(`  ✗ FAIL: individualExceptions size expected 2, got ${individualExceptions.size}`);
+  failed++;
 }
 
 // Package.json parsing tests (Corrupted JSON & Missing license)

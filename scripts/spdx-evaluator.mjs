@@ -356,7 +356,7 @@ export function evaluateAstPolicy(ast, pkgId, individualExceptions) {
     if (individualExceptions && individualExceptions.has(pkgId)) {
       const exc = individualExceptions.get(pkgId);
       if (exc.license === id) {
-        return { status: 'REVIEW', reason: `Individually audited exception: ${exc.reason}` };
+        return { status: 'REVIEW', approved: true, reason: `Individually audited exception: ${exc.reason}` };
       }
     }
 
@@ -367,6 +367,13 @@ export function evaluateAstPolicy(ast, pkgId, individualExceptions) {
 
     // Check known restrictive
     if (KNOWN_RESTRICTIVE_LICENSES.has(id)) {
+      if (id === 'MPL-2.0' || id === 'MPL-1.1' || id === 'MPL-1.0') {
+        return {
+          status: 'REVIEW',
+          approved: false,
+          reason: `Weak copyleft license requiring individual review (unapproved exception): ${id}`,
+        };
+      }
       return { status: 'FAIL', reason: `Disallowed copyleft/restricted license: ${id}` };
     }
 

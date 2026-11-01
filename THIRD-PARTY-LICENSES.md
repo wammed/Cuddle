@@ -12,7 +12,7 @@
 Cuddle is distributed strictly as an open-source **source-code-only project**. Users build Cuddle directly from source on their Linux systems using standard toolchains (`cargo`, `pnpm`/`npm`).
 
 - **No Binary Distribution:** The Cuddle project does not distribute precompiled release binaries, packages (`.deb`, `.rpm`, `.AppImage`), or installers.
-- **Dependency Ingestion Boundary:** Build dependencies (Cargo crates, npm packages) are retrieved at build-time by the respective package managers from official registries (`crates.io`, `npmjs.org`) according to explicit locked manifests (`Cargo.lock`, `pnpm-lock.yaml`).
+- **Dependency Ingestion Boundary:** Build dependencies (Cargo crates, npm packages) are retrieved at build-time by the respective package managers from official registries (`crates.io`, `registry.npmjs.org`) according to explicit locked manifests (`Cargo.lock`, `pnpm-lock.yaml`).
 - **External CLI Delegation:** Media processing tools (ImageMagick, FFmpeg, ExifTool) and system search tools (plocate) are host-installed system utilities delegated via secure Landlock LSM isolation; they are never bundled into the Cuddle repository.
 
 ---
@@ -141,7 +141,7 @@ The Mozilla Public License 2.0 (MPL-2.0) is a file-level weak copyleft license:
 3. **Executable Distribution Requirements (Section 3.2):** If Covered Software is distributed in executable or binary form, Section 3.2 requires that the distributor inform recipients how they may obtain the source code of the Covered Software and provide a copy of the license.
 4. **Cuddle Source-Only Distribution & Ingestion Boundary:**
    - Cuddle is maintained and distributed strictly as a source-code-only project; the project does not distribute precompiled release binaries, packages, or installers.
-   - Crucially, Cuddle's repository contains **zero** in-tree, bundled, or vendored source code files from MPL-2.0 dependencies. Dependencies are resolved directly and independently by package managers (`cargo`, `pnpm`) from upstream official registries (`crates.io`, `npmjs.org`) during local user compilation.
+   - Crucially, Cuddle's repository contains **zero** in-tree, bundled, or vendored source code files from MPL-2.0 dependencies. Dependencies are resolved separately by the package managers (`cargo`, `pnpm`) from their configured package registries (normally crates.io for Rust and the npm registry for frontend packages) during local user compilation.
    - Because Cuddle distributes only its own original source files and does not redistribute or modify the Covered Software files themselves, Cuddle's repository publication does not constitute redistributing Covered Software under Section 3.1.
 5. **Project Impact & Assessment:**
    - The presence of MPL-2.0 dependencies in the external dependency graph does not alter Cuddle's own MIT License.

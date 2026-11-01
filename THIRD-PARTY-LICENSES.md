@@ -185,16 +185,13 @@ Under Cuddle's source-only distribution model, Cuddle does not modify any source
 
 ---
 
-## 4. Continuous License Verification
+## 4. License Verification
 
-To prevent accidental introduction of copyleft or unauthorized licenses, two automated license gates are integrated into the continuous integration (CI) workflow:
+Rust / Cargo dependencies are continuously checked against allowed licenses in CI using `cargo-deny` with [`deny.toml`](deny.toml):
 
-1. **Rust / Cargo (`deny.toml`):**
-   ```bash
-   cargo deny --manifest-path src-tauri/Cargo.toml check licenses
-   ```
-2. **Frontend / npm (`scripts/check-frontend-licenses.mjs`):**
-   ```bash
-   npm run check:licenses
-   ```
+```bash
+cargo deny --manifest-path src-tauri/Cargo.toml check licenses
+```
+
+Frontend / npm dependencies are documented above and audited against Cuddle's source-only distribution model. All runtime frontend packages utilize permissive licenses (MIT, Apache-2.0, BSD, ISC), with `lightningcss` (MPL-2.0) confined strictly to build-time tooling (`devDependencies`).
 
